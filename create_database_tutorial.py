@@ -1,6 +1,6 @@
 from src.infra.config.db_creator import create_db, Session, engine, Base
 
-from src.infra.tutorials import *
+from src.infra.tutorial import *
 
 
 def _load_fake_data(session):

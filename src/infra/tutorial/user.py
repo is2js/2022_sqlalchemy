@@ -1,3 +1,5 @@
+from typing import Any
+
 from src.infra.config.base import Base
 from sqlalchemy import Column, Integer, String, ForeignKey
 from sqlalchemy.orm import relationship
@@ -12,6 +14,10 @@ class User(Base):
     fullname = Column(String)
 
     addresses = relationship("Address", back_populates="user")
+
+    def __init__(self, name, fullname) -> None:
+        self.name = name
+        self.fullname = fullname
 
     def __repr__(self):
         info: str = f"{self.__class__.__name__}" \
