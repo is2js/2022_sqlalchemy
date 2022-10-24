@@ -1,12 +1,12 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from src.config.settings import settings
+from src.config import db
 
 
 class DBConnectionHandler:
     def __init__(self, echo: bool = False) -> None:
         # self.__connection_string = "mysql+pymysql://root:564123@localhost:3306/cinema"
-        self.__connection_string = settings.DATABASE_URL
+        self.__connection_string = db.DATABASE_URL
         self.__engine = self.__create_database_engine()
         self.session = None
 

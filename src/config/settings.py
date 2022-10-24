@@ -6,11 +6,15 @@ dotenv_path = Path("./.env")
 load_dotenv(dotenv_path=dotenv_path)
 
 
-class Settings:
+# fastapi 세팅 참고
+# https://github.com/heumsi/python-rest-api-server-101/blob/main/project/src/config.py
+class Project:
     # project
     PROJECT_NAME: str = os.getenv("PROJECT_NAME")
     PROJECT_VERSION: str = os.getenv("PROJECT_VERSION")
 
+
+class DB:
     # database
     DB_CONNECTION = os.getenv("DB_CONNECTION").lower()
 
@@ -32,10 +36,14 @@ class Settings:
         DATABASE_URL = f"{DB_CONNECTION}://{DB_USER}:{DB_PASSWORD}@{DB_SERVER}:{DB_PORT}/{DB_NAME}"
     print("*" * 15 + f"DATABASE_URL: {DATABASE_URL}" + "*" * 15)
 
+
+class Auth:
     # jwt. Watch out -> int( None )
     TOKEN_KEY = os.getenv("TOKEN_KEY")
     EXP_TIME_MIN = int(os.getenv("EXP_TIME_MIN", "30"))
     REFRESH_TIME_MIN = int(os.getenv("REFRESH_TIME_MIN", "15"))
 
 
-settings = Settings()
+project = Project()
+db = DB()
+auth = Auth()
