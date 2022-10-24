@@ -1,14 +1,15 @@
 ### 2022 SQLAlchemy & regex
 #### 기본 폴더 구성
-- 기본 폴더 구성은 [해당repo](https://github.com/is2js/2022_sqlalchemy)에서 아래 목록들을 확인한다.
-   - 폴더 구성 방법은 [제 블로그 포스팅](https://blog.chojaeseong.com/python/cleanpython/project/infra/orm/database/entities/models/2022/10/14/cp03_sqlalchemy%EB%A5%BC-%ED%86%B5%ED%95%9C-infra(DB)-%EC%82%AC%EC%9A%A9-%EC%84%B8%ED%8C%85.html)을 확인해주세요.
-   ![image-20221024183835868](https://raw.githubusercontent.com/is3js/screenshots/main/image-20221024183835868.png)
+- 폴더 구성 방법은 [제 블로그 포스팅](https://blog.chojaeseong.com/python/cleanpython/project/infra/orm/database/entities/models/2022/10/14/cp03_sqlalchemy%EB%A5%BC-%ED%86%B5%ED%95%9C-infra(DB)-%EC%82%AC%EC%9A%A9-%EC%84%B8%ED%8C%85.html)을 확인해주세요.
+  - 기본 폴더 구조 
+  ![image-20221024183835868](https://raw.githubusercontent.com/is3js/screenshots/main/image-20221024183835868.png)
 
 #### sqlite window function 대응   
  - 제 [블로그 포스팅](https://blog.chojaeseong.com/python/database/sqlalchemy/sqlite/windowfunction/sqlite3.dll/2022/10/15/window_sqlite_version_upgrade.html)을 참고해주세요
 
 #### SQLAlchemy 1.4 -> 2.0 Style 비교
 - [출저](https://daco2020.tistory.com/324)
+
 | 1.x 스타일                                                   | 2.0 스타일                                                   | 레퍼런스                                                     |
 | ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
 | session.query(User).get(42)                                  | session.get(User, 42)                                        | [ORM Query - get() method moves to Session](https://docs.sqlalchemy.org/en/14/changelog/migration_20.html#migration-20-get-to-session) |
