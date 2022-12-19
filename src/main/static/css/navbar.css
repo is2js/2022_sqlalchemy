@@ -1,0 +1,329 @@
+.navbar {
+    background-color:transparent;
+}
+
+/* 1. nav-item dropdown -> hover + mega menu */
+.dropdown-menu {
+    border-radius: 0;
+    padding: .5em;
+    /* box-shadow: 0 3px 6px rgba(0, 0, 0, .23); */
+    border: none;
+    /* border-top: 4px solid #062F87!important; */
+    /* border-bottom: 2px solid #062F87!important; */
+    /* dropdown 메뉴들 텍스트 정렬 */
+    text-align: center;
+    /* 부모의 right에 정렬 */
+
+    background-color: rgba(255, 255, 255, 1);
+}
+
+.dropdown-menu ul {
+    list-style: none;
+    padding: 0;
+    /* 1.5 dropdown-menu 속 ul마다 border-left주기 */
+    /* lg로 이동 */
+    /* border-left: 1px solid #dde1ee; */
+    /*background-color: rgba(43, 93, 151, 0.6);*/
+
+    /*border-top: 0.4px solid gray;*/
+}
+
+/* 1.6 첫번째는 안주기 */
+/*.dropdown-menu ul:first-child{*/
+/*    border-left: none;*/
+/*}*/
+/* 커스텀으로 ul이 아닌 li들에게 주어지는 중..*/
+/* -> 아래에서 ul첫번재제외 & li도 첫번째 제외하도록 변경해서 무쓸모가 됨*/
+/*.dropdown-menu ul:not(:first-child) > li:not(:first-child)*/
+
+
+.dropdown-menu li a {
+    color: black;
+    padding: .5em 1.5em;
+    /* font-size: small; */
+    font-size: 0.5em;
+    font-weight: bold;
+}
+
+.dropdown-menu li:first-child a {
+    color: #062F87;
+    font-size: 0.7em;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+
+@media screen and (min-width: 993px) {
+    /*배너땜에 닮*/
+    .navbar:hover {
+        background-color: rgba(255, 255, 255, 0.95) !important;
+    }
+
+
+    /* hover시 뜨는 창 */
+    .dropdown:hover .dropdown-menu {
+        display: flex;
+
+        /* main안에 들어갈땐, menu1이미지 양끝에 배치하기 위해 ??*/
+        /*justify-content: space-between; */
+
+        /* 필수 9: hover일 때 z-index줘서 가장 위로 -> 뒷메뉴 떠있을때, 앞메뉴호버는 더 위로 감 */
+
+        /*background-color: rgba(9, 32, 75, 0.4);*/
+        /*background-color: rgba(6, 47, 135, 0.7);*/
+        /*background-color: #09204B66;*/
+        /*background-color: rgba(238, 239, 246, 0.54);*/
+
+        /*background-color: rgba(34, 61, 76, 0.76);*/
+        /*background-color: rgba(9, 32, 75 , 0.4);*/
+        /*border-top: .4px solid #062F87;*/
+        /*border-bottom: .4px solid #062F87;*/
+        /*배경 때문에 드랍다운 메뉴에 흰색 적용*/
+        background-color: rgba(255, 255, 255, 0.92);
+
+        /*t필수3: hover시 transition을 줘야한다.*/
+        opacity: 1;
+        /*transform: translateZ(0);*/
+        /*필수5: flex는 opacity0이외에 visible hidden까지 줘야하므로, 다시 살려준다*/
+        visibility: visible;
+        transition: all 0.2s;
+    }
+
+    /* transtition 주기 위해 hover이전에는 opacity 0 + transition */
+    .dropdown-menu {
+        opacity: 0; /*t필수2: hover전, 투명도를 0*/
+        /*transform: translate3d(0, -5%, 0);*/
+        display: flex; /* t필수1: hover전, display를 똑같은 것으로 지정해줘야한다*/
+        /*t필수4: hover전이 flex로 변함으로 인해, opacity 0이라도 가상으로 살아있게 되어버려, hover가 아래쪽에서 발생하여 banner가 안보임 -> hidden*/
+        visibility: hidden;
+        /*  flex를 이용하는 이상, 안에 구조물때문에 height조정은 못함.*/
+        /*    transition을 주다보면, hover로 메뉴걸러들어가는게 잘안될 수 있ㅇ므.*/
+    }
+
+    /* 필수2: 부모가 flex가 되어, 자식들을 나의 end에 정렬한다. */
+    /* li nav-item dropdown은 부모로서 display:flex로 만들고, 자식들(dropdown-menu)는 end에 오게 한다 */
+    /* 이 때, 모든.dropdown이 아니라 .dropdown 내부 .dropdown-menu에-end를 달고 있는 놈들만 */
+    /*.dropdown:hover:has(div.dropdown-menu-end) {*/
+    /*    display: flex;*/
+    /*    justify-content: end;*/
+    /*}*/
+    .dropdown-menu.show {
+        display: flex;
+        /*z-index:9999;*/
+    }
+
+    /* 2. level 0(nav-item) underline hover */
+    .navbar {
+        padding: 0;
+        /*background-color: white!important;*/
+    }
+
+    .navbar .navbar-nav .nav-link {
+        /* padding: 1rem; */
+        padding: 1rem 0;
+    }
+
+    .navbar .navbar-nav .nav-link {
+        /* padding: 1rem; */
+        /*메뉴1간 간격*/
+        margin: 0 0.4rem;
+    }
+
+    /*lg일때만, ul==menu2 위마다 border */
+    /*.dropdown-menu ul {*/
+    /*border-top: 1px solid gray;*/
+    /*    }*/
+    /* lg ul==menu1의 그림 추가할 땐 border안뜨도록 제외하고 그리기..*/
+    /*img태그를 가지지has 않는 not*/
+    .dropdown-menu ul:not(:has(img)) {
+        border-top: 1px solid gray;
+    }
+
+    /* 그림들어간 부분의 a태그 padding 제거 -> 직접 제거*/
+    /* 동적으로 부모 height에 맞추면 또 absolute로 밀려버림*/
+    /*  .dropdown-menu ul:has(img) {*/
+    /*display: flex;*/
+    /*position: relative;*/
+    /*  }*/
+    /*  .dropdown-menu ul img {*/
+    /*      position: absolute;*/
+    /*    max-height: 100%;              !*  added  *!*/
+    /*      left: 0;*/
+    /*right: 0;*/
+    /*top: 0;*/
+    /*bottom: 0;*/
+    /*  }*/
+    /*.dropdown-menu ul {*/
+    /* 커스텀: menu2말고 menu3들 중에서도 li태그들에만 줘서 글자들 있는 곳에만*/
+    .dropdown-menu ul:not(:first-child) > li:not(:first-child) {
+        /* 1.5 -> 필수5. dropdown-menu 속 ul마다 border-left주기 */
+        /* lg로 이동 */
+        /*border-left: 1px solid rgba(228, 231, 241, 0.91);*/
+        border-left: 1px solid rgba(228, 231, 241, 0.95);
+    }
+
+    /* 필수 5. underline은 lg일때만 작동하도록 변경(dropdown열릴때와 아래쪽이 겹침) */
+    .navbar .navbar-nav .nav-link::after {
+        position: absolute;
+        /* content: '...'; */
+        /* bottom: 0; */
+        bottom: 10%; /* unlderline 높이<-> 메뉴와의 거리**/
+        left: 0;
+        right: 0;
+        content: '';
+        background-color: #153e9a;
+        /*width: 100%; 시작시 0으로 시작해서 transition*/
+        width: 0;
+        height: 3px; /* underline hover*/
+        transition: all .3s;
+        margin: 0 auto;
+
+    }
+
+    .navbar .navbar-nav .nav-link {
+        position: relative;
+    }
+
+    .navbar .navbar-nav .nav-link:hover::after {
+        width: 100%;
+    }
+
+    .navbar .has-megamenu {
+        position: static !important;
+    }
+
+    .navbar .megamenu {
+        left: 0;
+        right: 0;
+        width: auto;
+        margin-top: 0;
+        justify-content: center;
+    }
+}
+
+/* 3. 3번대 lg 로고 크기 조절 */
+.navbar-brand img {
+    width: 130px;
+    margin-bottom: 10px;
+}
+
+
+@media screen and (max-width: 992px) {
+    /* sm일때 navbar의 색상변화 (기본은 투명)*/
+    .navbar {
+        background-color: rgba(255, 255, 255, 1) !important;
+    }
+
+
+
+    /* 3번대 햄버거 로고 크기 조절 */
+    .navbar-brand img {
+        width: 180px;
+        margin-bottom: 5px;
+    }
+
+    /*sm level 1~2 menu*/
+
+    /*sm일때 navbar-nav의 배경 추가 */
+    .navbar-nav {
+        background-color: rgba(255, 255, 255, 0.90) !important;
+    }
+
+    .dropdown-menu.show {
+        max-height: 30vh;
+         /*max-height: 500px !important;*/
+        overflow-y: scroll;
+    }
+    /*sm일때도 hover오픈 메뉴 z-index추가*/
+    .dropdown .dropdown-menu {
+        z-index: 999 !important;
+        /*sm일 때, 배경 추가*/
+        border: 1px solid rgb(190, 190, 190);
+        border-radius:5px;
+        background-color: rgb(250, 249, 249);
+    }
+
+    /* sm일때 각각의 menu에 margin추가  */
+    .dropdown-item {
+        margin: 3px;
+        margin-top: 1.5px;
+    }
+
+}
+
+
+/* 3. 로고 사진 및 메뉴 정렬 */
+
+/* 로고를 가운데 위치시킬 때  왼쪽시위치의 margin을 제거낄 때,  */
+.navbar-brand {
+    margin-right: 0;
+}
+
+/* 로고의 글자들 세로 정렬 ul navbar-nav 속 li들은 flexbox들임. */
+/* 만약, lg에서 아래쪽 정렬하고 싶다고, flex-end를 선택하면, 햄버거에서 block들로서 오른쪽 정렬된다. */
+.navbar-nav {
+    align-items: center;
+    /* align-items: flex-end; */
+}
+
+/* menu 글자들 스타일 지정. 좌우padding만 주지말자 for underline hover */
+.navbar .navbar-nav .nav-link {
+    color: black;
+    font-size: 0.8em;
+    font-weight: bold;
+}
+
+
+/* 5. 왼쪽으로 dropdown 시도 */
+/* 필수1: 클릭시 그대로 보존되려면 <div class="dropdown-menu" 에  dropdown-menu-end class 달아주고 오기 */
+/* -> 가운데 로고보다 더 오른쪽메뉴의 dropdown-menu에 대해서만 달아주기 */
+
+
+/* 필수3: end정렬은 아래가 아니라 부모의 오른쪽벽에 붙어서 시작하므로
+부모의 top으로부터 떨어져야함. */
+.dropdown-menu {
+    top: 100%; /* dropdown <-> menu 사이 거리: 너무 멀어지면 hover에서 클릭이 어렵다*/
+}
+
+/* 필수4: 이 모든 것들이 large상태일때만으로 다시 이동 */
+
+
+/* 필수6~7. 햄버거에서 dropdown a nav-link show 가 될때, 가운데 정렬이 안되고 삐져나감 */
+/* a.nav-link.show {
+    justify-content: center;
+} */
+/* 필수7. 넣었어도 hover가 작동하여.. flex가 되어 좌우로 갈라짐. -> 필수 2가 햄버거에도 영향*/
+/* -> 필수2를 lg에 집어놓고 */
+/* => 햄버거에서 a태그 nav-link에는 모두 text-center가 있어야한다. 평소에도 다 집어넣자 */
+
+/* 필수8. lg에서는 dropdown 클릭시 고정되는 div기능 아예 빼자 by d-none?*/
+/* -> 일케 하면, 메뉴선택이 빡세서, 나오게 함 + hover에 z-index */
+
+
+/* 배경 */
+.masthead {
+    /*margin-top:40px;*/
+    background-size: cover;
+    /*백그라운드 위치 옵션을 center 정중앙에 위치  */
+    background-position: center;
+    /*기본적으로 백그라운드의 옵션은 repeat이다. */
+    background-repeat: no-repeat;
+    min-height: 80vh;
+    /* 부모로서 relative를 설정해주면, color-overlay는 absolute를 주면 똑같은 사이즈를 가질 수 있다.  */
+    position: relative;
+    /*글자*/
+    /*color: black;*/
+    /*text-shadow: 2px 2px 2px rgba(0, 0, 0, .2);*/
+}
+
+
+.color-overlay {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    /*background-color: rgba(0,0,0,.1);*/
+    /*background-color: rgba(255,255,255,.1);*/
+    /*글자 수직배치*/
+    flex-direction: column;
+}
+

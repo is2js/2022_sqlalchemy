@@ -1,0 +1,35 @@
+/* @import "url(https://fonts.googleapis.com/earlyaccess/notosanskr.css)"; */
+/* https://www.hallym.or.kr/common/css/HallymM.woff */
+
+@font-face {
+    font-family: 'HallymR';
+    src: url('../fonts/HallymR.eot');
+    src: url('../fonts/HallymR.eot?#iefix') format('embedded-opentype'),
+    url('../fonts/HallymR.woff') format('woff');
+    font-weight: normal;
+    font-style: normal;
+}
+
+@font-face {
+    font-family: 'HallymM';
+    src: url('../fonts/HallymM.eot');
+    src: url('../fonts/HallymM.eot?#iefix') format('embedded-opentype'),
+    url('../fonts/HallymM.woff') format('woff');
+    font-weight: normal;
+    font-style: normal;
+}
+
+
+@font-face {
+    font-family: 'HallymB';
+    src: url('../fonts/HallymB.eot');
+    src: url('../fonts/HallymB.eot?#iefix') format('embedded-opentype'),
+    url('../fonts/HallymB.woff') format('woff');
+    font-weight: normal;
+    font-style: normal;
+}
+
+table, ul, li, dl, dd, dt, ol, table, th, tr, td, thead, tbody, h1, h2, h3, h4, div, p, span, html, form, input, button, select, textarea, checkbox, fieldset {
+    font-family: "HallymR", sans-serif !important;
+}
+    
