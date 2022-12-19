@@ -1,0 +1,45 @@
+{% extends 'base.html'%}
+{% block content%}
+<div class="container row">
+    <div class="shadow-sm p-4 col-lg-12 col-sm-6">
+        {% for comment in comments %}
+        <!--  design 1 : dynamic -> flat but level() 존재 -> view에서 level값으로 확인. 해당 post_id가 들어간 것 다 조회 -> lazy 면 됨. but flat하지만 level()로 알아차림.       -->
+        <div class="row">
+            <!-- Begin comment indentation -->
+            <div class="col-{{12 - comment.level()}} offset-{{comment.level()}} border-start border-primary">
+                <!-- End comment indentation -->
+                <div>
+                    <p class="m-0"><b>{{comment.author}}</b>님 {{comment.timestamp.strftime('%Y-%m-%d')}}</p>
+                    <!-- 필터 만들고 싶다면: https://sooooooyn.tistory.com/4?category=863481-->
+                    <p class="m-0">{{comment.text}}</p>
+                    <!-- 특정level이상부터는 못달게 작성부분을 if문 걸어보기-->
+                    {% if comment.level() < 2 %}
+                    <a class="" data-bs-toggle="collapse" href="#comment-{{comment.id}}"
+                       role="button" aria-expanded="false" aria-controls="collapseExample">
+                        <i class="bi bi-reply"></i>
+                    </a>
+                    {% else %}
+                        <i class="bi-reply"></i>
+                    {% endif %}
+                </div>
+                <div class="collapse w-50" id="comment-{{comment.id}}">
+
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+
+        <!-- design 2 : comment 1개를 조회하면, 필드에 다 하위댓글들 다 품고 조회      -->
+        <!-- path + level이 필요없이, view에선 계층적구조 -> 재귀로 level별 출력       -->
+        {% for comment in comments2 recursive %}
+            <li>{{ comment.text }} by {{ comment.author}}</li>
+                <!-- 없어도 될듯. 존재할때만 collection에 담겨 순회 for-->
+                {% if comment.replies %}
+                <ul class="children">{{loop(comment.replies)}}</ul>
+                {% endif %}
+        {% endfor %}
+
+    </div>
+</div>
+</div>
+{% endblock%}

@@ -1,0 +1,193 @@
+{% extends 'admin/index.html' %}
+
+{% block member %}
+<!-- 위쪽 제목 공간 -->
+<div class="is-block">
+    <!-- left 제목 -->
+    <div class="is-pulled-left">
+        <h1 class="is-size-4">
+            <span class="icon"><i class="mdi mdi-receipt-outline"></i></span>
+            User 관리
+        </h1>
+    </div>
+    <!-- right 버튼(상속할 form에선 달라짐) -> block개설 -->
+    {% block button %}
+
+    <!-- CheifStaff부터 보이게   -->
+    {% if g.user.is_chiefstaff %}
+    <div class="is-pulled-right">
+        <!--  route) user_add route 및 user_form.html 개발 후 href채우기  -->
+        <a href="{{url_for('admin.user_add')}}" class="button is-primary is-light">
+            <span class="icon"><i class="mdi mdi-plus-thick"></i></span>
+            <span>User 추가</span>
+        </a>
+    </div>
+    {% endif %}
+
+    {% endblock button %}
+    <!--  분류선 by div2개: pulled-쓰과서 is-clearfix는 필수  -->
+    <div class="is-clearfix"></div>
+    <div class="dropdown-divider"></div>
+
+    <!-- 아래쪽 table의 처리에 대한 flash 메세지를 위쪽에서   -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+            <b-message type="{{category}}">
+                <ul class=flashes>
+                    <li class="{{category}}">{{ message }}</li>
+                </ul>
+            </b-message>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <!-- my) form validation errors -->
+    {% for field in errors %}
+    <b-message type="is-danger">
+        <ul class="errors">
+            {% for message in field.messages %}
+            <li> {{ message }}</li>
+            {% endfor %}
+        </ul>
+    </b-message>
+    {% endfor %}
+</div>
+
+<!-- 위쪽 아래쪽 table or form 공간 -->
+{% block table_content %}
+<div class="table-container">
+    <table class="table is-fullwidth is-hoverable is-striped">
+        <thead>
+        <tr>
+            <th>ID</th>
+            <th>Avatar</th>
+            <th>Username</th>
+            <th>Email</th>
+            <th>Active</th>
+            <th>Role</th>
+            <th>가입일</th>
+            <th>작업</th>
+        </tr>
+        </thead>
+        <tbody>
+        <!--  route) 에서 post객체들을 id역순으로 넘겨주면, for문이 돌아가면서 a태그 에러가 걸리게 됨.  -->
+        <!--  a태그-href들 주석처리된 상태  -->
+        {% for user in user_list %}
+        <tr>
+        <tr>
+            <td>{{ user.id }}</td>
+            <td>
+                {% if user.avatar %}
+                <figure class="image is-48x48">
+                    <!--                         src="/uploads/{{user.avatar}}"-->
+                    <img class="is-rounded" style="height: 100%;"
+                         src="{{url_for('download_file', filename=user.avatar) }}"
+                         alt="{{ user.username }}">
+                </figure>
+                {% else %}
+                -
+                {% endif %}
+            </td>
+            <td>{{ user.username }}</td>
+            <td>{{ user.email }}</td>
+            <td>
+                {% if user.is_active %}
+                <span class="icon has-text-success-dark">
+                            <i class="mdi mdi-check"></i>
+                </span>
+                {% else %}
+                <span class="icon has-text-danger-dark">
+                            <i class="mdi mdi-close"></i>
+                </span>
+                {% endif %}
+            </td>
+            <td>
+                <div class="tags">
+                    <span class="tag {% if not user.is_staff %}is-white{% elif user.is_executive %}is-danger{% else %}is-info{% endif %} is-light">
+                        {{ user.role.name }}
+                    </span>
+                </div>
+            </td>
+
+            <td>{{ user.add_date | format_date}}</td>
+
+            <!--  User수정/삭제 버튼은 Chief부터 -->
+            <td>
+
+                <!-- user보기 버튼은 staff도 가능하도록 -->
+                <!-- view 버튼 넣기 -->
+
+                {% if g.user.is_chiefstaff %}
+                <div class="tags">
+                    <a href="{{url_for('admin.employee_invite', user_id=user.id)}}" class="tag is-info is-light">
+                            <span class="icon">
+                                 <i class="mdi mdi-graph-outline"></i>
+                            </span>
+                        직원 초대
+                    </a>
+
+                    <a href="{{url_for('admin.employee_add', user_id=user.id)}}" class="tag is-warning is-light">
+                            <span class="icon">
+                                 <i class="mdi mdi-graph-outline"></i>
+                            </span>
+                        직원 전환
+                    </a>
+
+                    <a href="{{url_for('admin.user_edit', id=user.id)}}" class="tag is-success is-light">
+                            <span class="icon">
+                                <i class="mdi mdi-square-edit-outline"></i>
+                            </span>
+                        수정
+                    </a>
+
+                    <a href="{{url_for('admin.user_delete', id=user.id)}}" class="tag is-danger is-light">
+                            <span class="icon">
+                                 <i class="mdi mdi-trash-can-outline"></i>
+                            </span>
+                        삭제
+                    </a>
+                </div>
+                {% endif %}
+            </td>
+
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+<!-- route) 에서 user_list외에 [pagination]객체도 던져줘야한다-->
+<nav class="pagination is-small" role="navigation" aria-label="pagination">
+    {% if pagination.has_prev %}
+    <a href="{{ url_for('admin.user') }}?page={{ pagination.prev_num }}" class="pagination-previous"
+       title="This is the first page">Previous</a>
+    {% endif %}
+    {% if pagination.has_next %}
+    <a href="{{ url_for('admin.user') }}?page={{ pagination.next_num }}" class="pagination-next">Next page</a>
+    {% endif %}
+
+    <ul class="pagination-list">
+        {% for page in pagination.iter_pages() %}
+        {% if page %}
+        {% if page != pagination.page %}
+        <li>
+            <a href="{{ url_for('admin.user') }}?page={{ page }}" class="pagination-link" aria-label="Page 1"
+               aria-current="page">{{ page }}</a>
+        </li>
+        {% else %}
+        <li>
+            <a class="pagination-link is-current" aria-label="Page 1" aria-current="page">{{ page }}</a>
+        </li>
+        {% endif %}
+        {% else %}
+        <span class=pagination-ellipsis>&hellip;</span>
+        {% endif %}
+        {% endfor %}
+
+    </ul>
+</nav>
+
+{% endblock table_content %}
+{% endblock member %}
+
+{% block vue_script %}{% endblock vue_script %}

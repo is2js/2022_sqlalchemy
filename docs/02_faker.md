@@ -182,7 +182,7 @@ if __name__ == '__main__':
     my_faker.add_provider(PizzaProvider)
 
     for i in range(6):
-        print('*'*10 + f'{i}' + '*'*10)
+        print('*'*10 + file'{i}' + '*'*10)
         print(my_faker.create_fake_pizza())
 
 # **********5**********
@@ -232,7 +232,7 @@ def create_faker_student(faker: Faker) -> Student:
         age=faker.random.randint(16, 25),
         # course=faker.random.randint(1, 4),
         course=course,
-        group_name=faker.bothify(text=f'{course}-???-##', letters='MDATI'),
+        group_name=faker.bothify(text=file'{course}-???-##', letters='MDATI'),
         address=faker.address(),
         vk_url='https://vk.com/' + faker.user_name()
     )
@@ -241,7 +241,7 @@ def create_faker_student(faker: Faker) -> Student:
 if __name__ == '__main__':
     my_faker = Faker('ko_KR')
     for i in range(6):
-        print('*'*10 + f'{i}' + '*'*10)
+        print('*'*10 + file'{i}' + '*'*10)
         print(create_faker_student(my_faker))
 
 # **********0**********

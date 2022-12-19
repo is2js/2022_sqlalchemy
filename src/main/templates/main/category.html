@@ -1,0 +1,160 @@
+{% extends 'base.html' %}
+
+{% block title %} {{ category.name }} {% endblock title %}
+
+{% block hero %}{% endblock hero %}
+
+{% block box %}
+<div class="columns">
+    <div class="column is-9" style="border-right:solid 1px #eee ;">
+        <div class="box is-shadowless has-background-light">
+            <!-- new breadcrumb block  -->
+            {% block breadcrumb %}
+            <nav class="breadcrumb is-small" aria-label="breadcrumbs">
+                <ul>
+                    <!-- Home만 addrule /로 직접 걸어주고 -->
+                    <li><a href="/">Home</a></li>
+                    <!-- 이후로는 직접 객체로 걸어주는데, [현재]면 #으로 걸고, .name만 / [부모]도 껴있으면 부모객체 -->
+                    <li class="is-active">
+                        <a href="#" aria-current="page">{{ category.name }}</a>
+                    </li>
+                </ul>
+            </nav>
+            {% endblock breadcrumb %}
+        </div>
+
+        <!-- new 해당domain_box block 안에서 하위들을 돌린다. -->
+        {% block cate_box %}
+        {% for post in post_list %}
+        <div class="pl-2">
+            <h1 class="is-size-4">
+                <a href="{{ url_for('main.post_detail', category_id=post.category_id, id=post.id) }}">{{ post.title
+                    }}</a>
+            </h1>
+            <p class="has-text-grey-light is-size-6 mt-1">
+                <span class="icon"><i class="mdi mdi-clipboard-text-clock-outline"></i></span>{{ post.add_date }}
+                <span class="icon"><i class="mdi mdi-shape-outline"></i></span>{{ post.category.name }}
+                <span class="icon"><i class="mdi mdi-tag-heart-outline"></i></span>{{ post.tags|join(',') }}
+            </p>
+            <div class="has-text-grey mt-1">{{ post.desc }}</div>
+        </div>
+        <div class=" dropdown-divider mb-3"></div>
+        {% endfor %}
+
+        {% block pagination %}
+        <nav class="pagination is-small" role="navigation" aria-label="pagination">
+            {% if pagination.has_prev %}
+            <!-- 현재route를 걸어줘야한다 -->
+            <a href="{{ url_for('main.category', id=cate.id ) }}?page={{ pagination.prev_num }}"
+               class="pagination-previous" title="This is the first page">Previous</a>
+            {% endif %}
+            {% if pagination.has_next %}
+            <a href="{{ url_for('main.category', id=cate.id ) }}?page={{ pagination.next_num }}"
+               class="pagination-next">Next page</a>
+            {% endif %}
+
+            <ul class="pagination-list">
+                {% for page in pagination.iter_pages() %}
+                {% if page %}
+                {% if page != pagination.page %}
+                <li>
+                    <a href="{{ url_for('main.category', id=cate.id) }}?page={{ page }}" class="pagination-link"
+                       aria-label="Page 1" aria-current="page">{{ page }}</a>
+                </li>
+                {% else %}
+                <li>
+                    <a class="pagination-link is-current" aria-label="Page 1" aria-current="page">{{ page }}</a>
+                </li>
+                {% endif %}
+                {% else %}
+                <span class=pagination-ellipsis>&hellip;</span>
+                {% endif %}
+                {% endfor %}
+
+            </ul>
+        </nav>
+        {% endblock pagination %}
+        {% endblock cate_box %}
+    </div>
+
+    <!-- new html -> block아니라서 상속한 자식들은 다 공유  -->
+    <div class="column">
+
+        <!-- 검색 -->
+        <div class="box is-shadowless" style="border:solid 1px #eee ;">
+            <h1 class="is-size-6 icon-text">
+                <span class="icon"><i class="mdi mdi-search-web"></i></span>
+                검색
+            </h1>
+            <div class=" dropdown-divider"></div>
+            <form action="{{url_for('main.search')}}" method="get">
+                <div class="field has-addons">
+                    <div class="control">
+                        <input class="input" type="search" value="{{word}}" name="word" placeholder="검색keyword 입력">
+                    </div>
+                    <div class="control">
+                        <input type="submit" value="Search" class="button is-info">
+                    </div>
+                </div>
+            </form>
+        </div>
+
+
+        <!-- 최근게시물   -->
+        <div class="box is-shadowless" style="border:solid 1px #eee ;">
+            <h1 class="is-size-6 icon-text">
+                <span class="icon"><i class="mdi mdi-calendar-month-outline"></i></span>
+                Recent Article
+            </h1>
+            <div class=" dropdown-divider"></div>
+            <ul>
+                {% for post in new_posts %}
+                <li class="pl-2">
+                    <span class=" has-text-grey-light">{{ loop.index }}.</span>
+                    <a href="{{ url_for('main.post_detail', category_id=post.category.id, id=post.id) }}">
+                        {{post.title}}
+                    </a>
+                </li>
+                <div class="dropdown-divider"></div>
+                {% endfor %}
+            </ul>
+        </div>
+
+
+        <div class="box is-shadowless" style="border:solid 1px #eee ;">
+            <h1 class="is-size-6 icon-text">
+                <span class="icon"><i class="mdi mdi-calendar-month-outline"></i></span>
+                Archive
+            </h1>
+            <div class="dropdown-divider"></div>
+            <!-- archive  -->
+            <ul>
+                {% for date in dates %}
+                <li class="pl-2">
+                    <a href="{{ url_for('main.archive', date=date) }}"> {{date}} </a>
+                </li>
+                <div class="dropdown-divider"></div>
+                {% endfor %}
+            </ul>
+        </div>
+
+        <div class="box is-shadowless" style="border:solid 1px #eee ;">
+            <h1 class="is-size-6 icon-text">
+                <span class="icon"><i class="mdi mdi-tag-multiple-outline"></i></span>
+                Tag
+            </h1>
+            <div class=" dropdown-divider"></div>
+            <!-- tag  -->
+            <div class="tags">
+                {% for tag in tags %}
+                <a class="tag {{ tag.style | random() }}"
+                   href="{{ url_for('main.tag', id=tag.id) }}">
+                    {{ tag.name }}
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock box %}

@@ -1,0 +1,163 @@
+{% extends 'auth/userinfo.html' %}
+
+
+{% block tab_content %}
+
+<b-tabs>
+    <!-- 탭1 내 정보 -->
+    <b-tab-item label="내 정보" icon="account-outline">
+        <!-- form 추가 시작 -->
+        <form action="" method="post" class="mt-4" enctype="multipart/form-data">
+            {{ form.csrf_token }}
+            <!-- 바깥 columns 에 is-multine을 주면, 다음줄로 안넘어가던 column들이,flex처럼 자기보다 작아지면  다음줄로 내린다-->
+            <!-- 내리지말고, 내부요소들을 가운데 정렬해서 모이게 하자. 크기정해진 column => has-text-centered / b-field처럼 flex -> is-justify-content-centered           -->
+<!--            <div class="columns is-mobile is-multiline"-->
+            <div class="columns is-mobile"
+                 style="border-bottom: #ededed solid 1px; padding-bottom: 1rem">
+                <div class="column is-narrow">
+                    <figure class="image is-96x96">
+                        <img class="is-rounded" style="height: 100%;"
+                             :src="
+                                 img_file_url ? img_file_url :
+                                 `
+                                 {% if g.user.avatar %}
+                                 {{url_for('download_file', filename=g.user.avatar)}}
+                                 {% else %}
+                                 {{url_for('static', filename='/img/user/default_avatar.svg')}}
+                                 {% endif %}
+                                 `
+                                "
+                        >
+                    </figure>
+                </div>
+                <div class="column is-narrow">
+                    <div style="padding-top: 1.5rem;">
+                        <h1 class="title is-size-4">{{ g.user['username'] }}</h1>
+                        {% if g.user.is_staff %}
+                        <p class="subtitle is-size-6">직급: {{ g.user.role.name }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- avatar  -->
+                <!-- column 에 is- 를 줘야, 넘어가면 내부 p태그안의 글자가 newline으로 찍힌다 -->
+                <!--                    <div class="column is-narrow">-->
+                <!-- 크기정해진 column + has-text-centered는 가운데 정렬 먹어야하는데, b-field를 F12로 보면 flex다
+                -> 어차피 담줄로 넘어가므로,  is-flex생략되어있다 치고 is-justify-content-center-center를 b-field에 추가로 준다.--->
+                <div class="column is-narrow is-7 has-text-centered">
+                    <div style="padding-top: 1.5rem;">
+                        <!--                            <b-field label="{{form.avatar.label.text}}">-->
+                        <!-- b-field는 flex로 만든다. -> 가운데 정렬을 위해 has-text-centered대신 is-justify-content-center -->
+                        <b-field class="file is-primary is-justify-content-center" :class="{'has-name': !!img_file}">
+                            <!-- preview를 위한 v-model="" 추가 / upload를 위한 name=""속성 추가 -->
+                            <b-upload
+                                    class="file-label" rounded
+                                    v-model="img_file"
+                                    name="avatar"
+                            >
+                                      <span class="file-cta">
+                                        <b-icon class="file-icon" icon="upload"></b-icon>
+                                        <span class="file-label">{$ img_file.name || "아바타 사진 업로드" $}</span>
+                                      </span>
+                            </b-upload>
+                        </b-field>
+                    </div>
+                    <p class="help has-text-grey-light">
+                        {{ form.avatar.description }}
+                    </p>
+                </div>
+
+
+            </div>
+            <!-- 필수입력된 정보들  -->
+            <div class="columns" style=" ">
+                <!-- Username -->
+                <div class="column is-2">
+                    <p>{{ form.username.label(class='label')}}</p>
+                </div>
+                <div class="column is-3 ">
+                    <div class="content">
+                        {{form.username(class='input')}}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Email -->
+            <div class="columns" style="padding:1rem 0; ">
+                <div class="column is-2 is-align-items-center is-flex">
+                    <p>{{ form.email.label(class='label')}}</p>
+                </div>
+                <div class="column is-4 ">
+                    <div class="content">
+                        {{form.email(class='input')}}
+                    </div>
+                </div>
+            </div>
+
+
+            <div class="columns" style="padding:1rem 0; ">
+                <div class="column is-2">
+                    <p>추가 정보</p>
+                </div>
+                <div class="column">
+                    <!-- 성별 -->
+                    <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
+                        <div class="column is-2 is-align-items-center is-flex">
+                            <span class=" has-text-grey-light">{{form.sex.label(class='label')}}</span>
+                        </div>
+                        <div class="column is-narrow">
+                            <!-- 성별 radio form -->
+                            {% for subfield in form.sex %}
+                            <input {%if subfield.checked %}checked {% endif %} type="radio"
+                                   id="{{ subfield.id }}" name="{{ form.sex.id }}"
+                                   value="{{ subfield.data }}">
+                            {{ subfield.label }}
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <!-- phone  -->
+                    <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
+                        <div class="column is-2 is-align-items-center is-flex ">
+                            <span class=" has-text-grey-light">{{form.phone.label(class='label')}}</span>
+                        </div>
+                        <div class="column ">
+                            <span class="has-text-black-ter column is-6">{{ form.phone(class='input') }}</span>
+                            <p class="help has-text-primary-dark column py-0">
+                                {{ form.phone.description }}
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
+                        <div class="column is-2 is-align-items-center is-flex">
+                            <span class=" has-text-grey-light">{{ form.address.label(class='label')}}</span>
+                        </div>
+                        <div class="column  ">
+                            <span class=" has-text-black-ter column">{{ form.address(class='input') }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 수정완료 submit -->
+            <!-- column을 가운데 놓으려면, columns가 is-centered -->
+            <div class="columns is-mobile is-centered">
+                <div class="column is-narrow">
+                    <input type="submit" value="수정완료"
+                           class="button is-primary"
+                           style="margin-top: 1.8rem"
+                    >
+                </div>
+            </div>
+            <!-- form 끝 -->
+        </form>
+
+    </b-tab-item>
+    <!-- 탭1 끝 -->
+
+</b-tabs>
+{% endblock tab_content %}
+
+
+{% block vue_script %}{% endblock vue_script %}

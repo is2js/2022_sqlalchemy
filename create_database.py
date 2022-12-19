@@ -1,4 +1,4 @@
-from src.infra.config.db_creator import create_db, Session
+from src.infra.config.db_creator import create_db, Session, dump_sqlalchemy
 from src.infra.entities import *
 from faker import Faker
 

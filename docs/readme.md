@@ -1,4 +1,6 @@
 ### 2022 SQLAlchemy & regex
+- sqlalchemy는 query객체 대신 2.0 style인 select객체를 활용하여 작성한다.
+- 
 #### 기본 폴더 구성
 - 폴더 구성 방법은 [제 블로그 포스팅](https://blog.chojaeseong.com/python/cleanpython/project/infra/orm/database/entities/models/2022/10/14/cp03_sqlalchemy%EB%A5%BC-%ED%86%B5%ED%95%9C-infra(DB)-%EC%82%AC%EC%9A%A9-%EC%84%B8%ED%8C%85.html)을 확인해주세요.
   - 기본 폴더 구조 
@@ -12,7 +14,7 @@
 
 | 1.x 스타일                                                   | 2.0 스타일                                                   | 레퍼런스                                                     |
 | ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
-| session.query(User).get(42)                                  | session.get(User, 42)                                        | [ORM Query - get() method moves to Session](https://docs.sqlalchemy.org/en/14/changelog/migration_20.html#migration-20-get-to-session) |
+| session.quenry(User).get(42)                                  | session.get(User, 42)                                        | [ORM Query - get() method moves to Session](https://docs.sqlalchemy.org/en/14/changelog/migration_20.html#migration-20-get-to-session) |
 | session.query(User).all()                                    | session.execute(   select(User) ).scalars().all() # or session.scalars(select(User)).all() | [ORM Query Unified with Core Select](https://docs.sqlalchemy.org/en/14/changelog/migration_20.html#migration-20-unify-select) [Session.scalars()](https://docs.sqlalchemy.org/en/14/orm/session_api.html#sqlalchemy.orm.Session.scalars) [Result.scalars()](https://docs.sqlalchemy.org/en/14/core/connections.html#sqlalchemy.engine.Result.scalars) |
 | session.query(User).\ filter_by(name='some user').one()      | session.execute(   select(User).   filter_by(name="some user") ).scalar_one() | [ORM Query Unified with Core Select](https://docs.sqlalchemy.org/en/14/changelog/migration_20.html#migration-20-unify-select) [Result.scalar_one()](https://docs.sqlalchemy.org/en/14/core/connections.html#sqlalchemy.engine.Result.scalar_one) |
 | session.query(User).\ filter_by(name='some user').first()    | session.scalars(  select(User).  filter_by(name="some user").  limit(1) ).first() | [ORM Query Unified with Core Select](https://docs.sqlalchemy.org/en/14/changelog/migration_20.html#migration-20-unify-select) [Result.first()](https://docs.sqlalchemy.org/en/14/core/connections.html#sqlalchemy.engine.Result.first) |
@@ -23,7 +25,53 @@
 | session.query(User).\   filter(User.name == 'foo').\   update(     {"fullname": "Foo Bar"},     synchronize_session="evaluate"   ) | session.execute(   update(User).   where(User.name == 'foo').   values(fullname="Foo Bar").   execution_options(synchronize_session="evaluate") ) | [UPDATE and DELETE with arbitrary WHERE clause](https://docs.sqlalchemy.org/en/14/orm/session_basics.html#orm-expression-update-delete) |
 | session.query(User).count()                                  | session.scalar(select(func.count()).select_from(User)) session.scalar(select(func.count(User.id))) | [Session.scalar()](https://docs.sqlalchemy.org/en/14/orm/session_api.html#sqlalchemy.orm.Session.scalar) |
 
+#### 참고
+- .first() 와 .one()
+```python
+# first -> scalars().first()
+# -> scalars( 복수 ).one()은 없다 -> .one()은 이미 1개의 결과가 만족된 상태여야한다.
+# 1) scalars( limit(1)).one() or
+# 2) execute((). scalar_one()  or
+# 3) scalars( ).first() # 이것을 제일 많이 쓸 듯.
+```
+- select exists()문은 subquery로서만 활용되어, 단독 사용시
+  - extist().where() 후 .select()를 붙여서 -> scalars( ).one()으로 가져오면 T/F가 반환된다.
+```python
+stmt = exists().where(User.username == field.data).select()
 
+exists_user = db.session.scalars(
+    stmt
+).one()
+
+# SELECT EXISTS (SELECT * 
+# FROM users
+# WHERE users.username = :username_1) AS anon_1
+
+# exists_user >>> True
+```
+- 숫자만 가져오고 싶다면 execute + .scalar()
+```python
+## 숫자만 추출하고 싶다면, .scalar()로 값을 가져오면 된다.
+stmt = (
+    select(func.count())
+    .select_from(User)
+    .filter(User.name.like('j%'))
+)
+print(stmt)
+print(session.execute(stmt).scalar())
+```
+
+#### Pycharm live template 추천
+- 작성한 statement를 출력해보고, 실행결과를 확인한다.
+```python
+stmt = (
+    $START_$
+)
+print(stmt)
+for it in session.execute(stmt):
+    print(it)
+print('*' * 30)
+```
 
 #### SQLALCHEMY 학습 출저
 1. [유튜브 1: Programador Lhama](https://www.youtube.com/watch?v=to39SFUxOpg&list=PLAgbpJQADBGKbwhOvd9DVWy-xhA1KEGm1)

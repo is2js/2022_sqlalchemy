@@ -1,0 +1,358 @@
+{% extends 'admin/setting.html' %}
+
+
+{% block tab_content %}
+<!-- form 추가 시작 -->
+<form action="" method="post" class="mt-4" enctype="multipart/form-data">
+    {{ form.csrf_token }}
+
+    <div class="columns is-mobile">
+        <div class="column is-3">
+            <figure class="image is-2by1">
+                <img class="" style="height: 100%;"
+                     :src="
+                         img_file_url ? img_file_url :
+                         `
+                         {% if form.s_dict.logo %}
+                         {{url_for('download_file', filename=form.s_dict.logo)}}
+                         {% else %}
+                         {{url_for('static', filename='/img/placeholders/1200x650.png')}}
+                         {% endif %}
+                         `
+                        "
+                >
+            </figure>
+        </div>
+        <!-- 업로드 버튼 -->
+        <div class="column is-narrow is-7">
+            <div style="padding-top: 1rem;">
+                <b-field>
+                    <b-field class="file is-primary" :class="{'has-name': !!img_file}">
+                        <b-upload
+                                class="file-label" rounded
+                                v-model="img_file"
+                                name="logo"
+                        >
+                                      <span class="file-cta">
+                                        <b-icon class="file-icon" icon="upload"></b-icon>
+                                        <span class="file-label">{$ img_file.name || "병원 로고 업로드" $}</span>
+                                      </span>
+                        </b-upload>
+                    </b-field>
+                </b-field>
+            </div>
+            <p class="help has-text-grey-light">
+                {{ form.logo.description }}
+            </p>
+        </div>
+    </div>
+
+
+    <!--    <b-tabs type="is-boxed" expanded>-->
+    <!--        &lt;!&ndash; 탭1 병원관련 정보 &ndash;&gt;-->
+    <!--        <b-tab-item label="병원관련 정보" icon="hospital-building">-->
+
+    <div class="columns">
+        <!-- 병원 정보들 -->
+        <div class="column is-2">
+            <p>병원 정보</p>
+        </div>
+        <div class="column">
+
+            <!-- 병원 이름 -->
+            <div class="columns">
+                <div class="column is-2">
+                    <p>{{ form.site_name.label(class='label')}}</p>
+                </div>
+                <div class="column is-6 ">
+                    <div class="content">
+                        {{form.site_name(class='input')}}
+                    </div>
+                    <p class="help has-text-primary-dark">
+                        {{ form.site_name.description }}
+                    </p>
+                </div>
+            </div>
+
+            <!-- 테마 색 -->
+            <div class="columns">
+                <div class="column is-2">
+                    <p>{{ form.theme_color.label(class='label')}}</p>
+                </div>
+                <div class="column is-6 ">
+                    <div class="content">
+                        {{form.theme_color(class='input')}}
+                    </div>
+                    <p class="help has-text-primary-dark">
+                        {{ form.theme_color.description }}
+                    </p>
+                </div>
+            </div>
+            <!-- 대표명 -->
+            <div class="columns">
+                <div class="column is-2">
+                    <p>{{ form.ceo.label(class='label')}}</p>
+                </div>
+                <div class="column is-6 ">
+                    <div class="content">
+                        {{form.ceo(class='input')}}
+                    </div>
+                    <p class="help has-text-primary-dark">
+                        {{ form.ceo.description }}
+                    </p>
+                </div>
+            </div>
+
+
+            <!-- 사업자등록번호 -->
+            <div class="columns">
+                <div class="column is-2">
+                    <p>{{ form.business_license_number.label(class='label')}}</p>
+                </div>
+                <div class="column is-6 ">
+                    <div class="content">
+                        {{form.business_license_number(class='input')}}
+                    </div>
+                    <p class="help has-text-primary-dark">
+                        {{ form.business_license_number.description }}
+                    </p>
+                </div>
+            </div>
+
+            <!-- 병원 전화번호 -->
+            <div class="columns">
+                <div class="column is-2">
+                    <p>{{ form.call_number.label(class='label')}}</p>
+                </div>
+                <div class="column is-6 ">
+                    <div class="content">
+                        {{form.call_number(class='input')}}
+                    </div>
+                    <p class="help has-text-primary-dark">
+                        {{ form.call_number.description }}
+                    </p>
+                </div>
+            </div>
+
+            <!-- 병원 주소 -->
+
+            <div class="columns">
+                <div class="column is-2">
+                    <p>{{ form.address.label(class='label')}}</p>
+                </div>
+                <div class="column is-6 ">
+                    <div class="content">
+                        {{form.address(class='input')}}
+                    </div>
+                    <p class="help has-text-primary-dark">
+                        {{ form.address.description }}
+                    </p>
+                </div>
+            </div>
+
+
+            <!-- 개원 일자 -->
+            <div class="columns">
+                <div class="column is-2">
+                    <p>{{ form.start_date.label(class='label')}}</p>
+                </div>
+                <div class="column is-6 ">
+                    <div class="content">
+                        {{form.start_date(class='input')}}
+                    </div>
+                    <p class="help has-text-primary-dark">
+                        {{ form.start_date.description }}
+                    </p>
+                </div>
+            </div>
+
+        </div>
+    </div>
+    <!--  SNS관련 정보들  -->
+    <div class="columns">
+        <div class="column is-2">
+            <p>추가 정보</p>
+        </div>
+
+        <div class="column">
+          <!-- 저작권 문구 -->
+            <div class="columns">
+                <div class="column is-2">
+                    <p>{{ form.copyright.label(class='label')}}</p>
+                </div>
+                <div class="column is-6 ">
+                    <div class="content">
+                        {{form.copyright(class='textarea', rows="3")}}
+                    </div>
+                    <p class="help has-text-primary-dark">
+                        {{ form.copyright.description }}
+                    </p>
+                </div>
+            </div>
+            <!-- Naver Blog Url  -->
+            <div class="columns">
+                <div class="column is-2">
+                    <p>{{ form.naver_blog_url.label(class='label')}}</p>
+                </div>
+                <div class="column is-6 ">
+                    <div class="content">
+                        {{form.naver_blog_url(class='input')}}
+                    </div>
+                    <p class="help has-text-primary-dark">
+                        {{ form.naver_blog_url.description }}
+                    </p>
+                </div>
+            </div>
+            <!-- Youtube Url -->
+            <div class="columns">
+                <div class="column is-2">
+                    <p>{{ form.youtube_url.label(class='label')}}</p>
+                </div>
+                <div class="column is-6 ">
+                    <div class="content">
+                        {{form.youtube_url(class='input')}}
+                    </div>
+                    <p class="help has-text-primary-dark">
+                        {{ form.youtube_url.description }}
+                    </p>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <div class="columns">
+        <div class="column is-2">
+            <p>Meta 정보</p>
+        </div>
+        <div class="column">
+            <!-- 사이트 제목 -->
+            <div class="columns">
+                <div class="column is-2">
+                    <p>{{ form.title.label(class='label')}}</p>
+                </div>
+                <div class="column is-6 ">
+                    <div class="content">
+                        {{form.title(class='textarea', rows="4")}}
+                    </div>
+                    <p class="help has-text-primary-dark">
+                        {{ form.title.description }}
+                    </p>
+                </div>
+            </div>
+
+
+            <!-- 사이트 설명 -->
+
+            <div class="columns">
+                <div class="column is-2">
+                    <p>{{ form.description.label(class='label')}}</p>
+                </div>
+                <div class="column is-6 ">
+                    <div class="content">
+                        {{form.description(class='textarea', rows="4")}}
+                    </div>
+                    <p class="help has-text-primary-dark">
+                        {{ form.description.description }}
+                    </p>
+                </div>
+            </div>
+
+            <!-- 검색 키워드 -->
+            <div class="columns">
+                <div class="column is-2">
+                    <p>{{ form.keywords.label(class='label')}}</p>
+                </div>
+                <div class="column is-6 ">
+                    <div class="content">
+                        {{form.keywords(class='textarea', rows="5")}}
+                    </div>
+                    <p class="help has-text-primary-dark">
+                        {{ form.keywords.description }}
+                    </p>
+                </div>
+            </div>
+
+            <!-- 접속할 최종 url -->
+            <div class="columns">
+                <div class="column is-2">
+                    <p>{{ form.url.label(class='label')}}</p>
+                </div>
+                <div class="column is-6 ">
+                    <div class="content">
+                        {{form.url(class='input')}}
+                    </div>
+                    <p class="help has-text-primary-dark">
+                        {{ form.url.description }}
+                    </p>
+                </div>
+            </div>
+
+
+            <!--구글 인증 코드-->
+            <div class="columns">
+                <div class="column is-2">
+                    <p>{{ form.google_site_verification.label(class='label')}}</p>
+                </div>
+                <div class="column is-6 ">
+                    <div class="content">
+                        {{form.google_site_verification(class='input')}}
+                    </div>
+                    <p class="help has-text-primary-dark">
+                        {{ form.google_site_verification.description }}
+                    </p>
+                </div>
+            </div>
+
+            <!-- 네이버 인증 코드 -->
+            <div class="columns">
+                <div class="column is-2">
+                    <p>{{ form.naver_site_verification.label(class='label')}}</p>
+                </div>
+                <div class="column is-6 ">
+                    <div class="content">
+                        {{form.naver_site_verification(class='input')}}
+                    </div>
+                    <p class="help has-text-primary-dark">
+                        {{ form.naver_site_verification.description }}
+                    </p>
+                </div>
+            </div>
+
+            <!-- 구글 통계 스크립트 -->
+            <div class="columns">
+                <div class="column is-2">
+                    <p>{{ form.google_static_script.label(class='label')}}</p>
+                </div>
+                <div class="column is-6 ">
+                    <div class="content">
+                        {{form.google_static_script(class='input')}}
+                    </div>
+                    <p class="help has-text-primary-dark">
+                        {{ form.google_static_script.description }}
+                    </p>
+                </div>
+            </div>
+
+        </div>
+    </div>
+    <!-- 수정완료 submit -->
+    <!-- column을 가운데 놓으려면, columns가 is-centered -->
+    <div class="columns is-mobile is-centered">
+        <div class="column is-narrow">
+            <a href="{{ url_for('admin.setting') }}"
+               class="button is-light">
+                뒤로가기
+            </a>
+        </div>
+        <div class="column is-narrow">
+            <input type="submit" value="수정완료"
+                   class="button is-primary"
+            >
+        </div>
+    </div>
+</form>
+{% endblock tab_content %}
+
+
+{% block vue_script %}{% endblock vue_script %}

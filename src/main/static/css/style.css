@@ -1,0 +1,34 @@
+html, body{
+    height: 100%;
+    background-color: rgb(255, 255, 255) !important;
+    /*background-color: red !important;*/
+}
+
+/* .navbar-item 하위 프로필이미지 + 버튼들 속성 수정 */
+.navbar-item .image img {
+  max-height: 2.4rem;
+}
+
+/* 버튼들로 나타내지만 다 배경 투명(호버시 색 알아서 나옴) */
+.navbar-item .button {
+  background: transparent;
+}
+/* 닉네임 표시 or (회원가입) */
+.navbar-item .is-primary {
+  color: hsl(256, 60%, 56%);
+}
+/* 관리자 or 내 정보 */
+.navbar-item .is-success {
+  color: hsl(184, 79%, 41%);;
+}
+/* 로그아웃 */
+.navbar-item .is-danger {
+  color: hsl(348, 86%, 61%);;
+}
+/* 로그인 */
+.navbar-item .is-link {
+  color: hsl(256, 60%, 56%);
+}
+.navbar-item .image img {
+  max-height: 2.4rem;
+}

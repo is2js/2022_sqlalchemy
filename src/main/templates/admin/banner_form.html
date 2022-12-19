@@ -1,0 +1,97 @@
+{% extends 'admin/banner.html' %}
+
+{% block button %}{% endblock button %}
+
+
+{% block table_content %}
+<form action="" method="post" class="mt-4" enctype="multipart/form-data">
+    {{ form.csrf_token }}
+    <div class="field">
+        {{ form.img.label(class='label') }}
+        <div class="control">
+            <b-field class="file">
+                <b-upload
+                        v-model="img_file"
+                        name="img" expanded>
+                    <a class="button is-primary is-fullwidth">
+                        <b-icon icon="upload"></b-icon>
+                        <span>{$ img_file.name || "{% if form.banner %}{{ form.banner.img }}{% else %}Click to upload{% endif %}" $}</span>
+                    </a>
+                </b-upload>
+            </b-field>
+            <p class="help has-text-grey-light">
+                {{ form.img.description }}
+            </p>
+        </div>
+        <!--   banner preview를 위한 img태그 공간 추가: columns >column is-7 안에 figure>img 추가   -->
+        <div class="columns is-centered">
+            <div class="column is-7" style="padding-top: 1.5rem;">
+                <figure class="image is-16by9">
+                    <img class="" style="width:100%;min-height: 50%"
+                         :src="
+                             img_file_url ? img_file_url :
+                             `
+                             {% if form.banner.img %}
+                             {{url_for('download_file', filename=form.banner.img)}}
+                             {% else %}
+                             {{url_for('static', filename='/img/placeholders/1920x1080.png')}}
+                             {% endif %}
+                             `
+                            "
+                    >
+                </figure>
+            </div>
+        </div>
+
+    <div class="field is-horizontal">
+        {{ form.banner_type.label(class='label') }}
+        <div class="field-body ml-4">
+            <div class="control">
+                <!--  radio 필드는 input필드를 직접 구현해야 생성시 default 와 edit시 현재값이 checked를 확인할 수 있다.-->
+                {% for subfield in form.banner_type %}
+                <input {%if subfield.checked %}checked {% endif %} type="radio"
+                       id="{{ subfield.id }}" name="{{ form.banner_type.id }}" value="{{ subfield.data }}">
+                {{ subfield.label }}
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <div class="field">
+        <label class="checkbox">
+            {{ form.is_fixed.label(style='font-weight:600') }}
+            {{ form.is_fixed }}
+        </label>
+    </div>
+
+    <div class="field">
+        {{ form.url.label(class='label') }}
+        <div class="control">
+            {{ form.url(class='input', placeholder='url을 입력해주세요. ex>') }}
+            <p class="help has-text-grey-light">
+                {{ form.url.description }}
+            </p>
+        </div>
+    </div>
+
+    <div class="field">
+        {{ form.desc.label(class='label') }}
+        <div class="control">
+            {{ form.desc(class='input', placeholder='Banner 설명을 입력해주세요.') }}
+            <p class="help has-text-grey-light">
+                {{ form.desc.description }}
+            </p>
+        </div>
+    </div>
+
+    <div class="is-block">
+        <div class="box has-background-light is-shadowless level">
+            <button class=" is-danger button level-left">다시 입력</button>
+            <div class="level-right">
+                <a href="{{ url_for('admin.banner') }}" class="button is-primary is-light mr-2">뒤로가기</a>
+                <input type="submit" value="완료" class=" button is-success">
+            </div>
+        </div>
+    </div>
+</form>
+{% endblock table_content %}

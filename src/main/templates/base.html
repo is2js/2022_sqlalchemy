@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <!-- settings -> meta태그 적용   -->
+    <meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/>
+    <meta http-equiv="Content-Script-Type" content="text/javascript"/>
+    <meta http-equiv="Content-Style-Type" content="text/css"/>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge"/>
+    <meta name="viewport"
+          content="width=device-width, initial-scale=0.3, minimum-scale=0.3, maximum-scale=2.0, user-scalable=yes"/>
+    <!-- google meta -->
+    <meta name="google-site-verification" content="{{settings.google_site_verification}}"/>
+    <meta name="naver-site-verification" content={{settings.naver_site_verification}}/>
+    <!-- 병원 meta -->
+    <meta name="Description"
+          content="{{settings.description}}"/>
+    <meta name="Keywords"
+          content="{{settings.keywords}}"/>
+    <meta name="Copyright" content="{{settings.copyright}}"/>
+
+    <meta property="og:title" content="{{settings.title}}"/>
+    <meta property="og:description"
+          content="{{settings.description}}"/>
+    <meta property="og:url" content="{{settings.url}}"/>
+    <meta property="og:image" content="{{settings.url}}{{url_for('download_file', filename=settings.logo)}}"/>
+    <meta property="og:site-name" content="{{settings.site_name}}"/>
+
+
+    <title>{% block title %} {{ settings.site_name }} {% endblock title %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/buefy.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/materialdesignicons.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <!-- settings -> 테마색 적용하기  -->
+    <style>
+        .navbar-item .is-primary, /* 닉네임 표시 or (회원가입)  */
+        .navbar-start > a:hover, /* 상단메뉴 hover  */
+        .navbar-start > a.navbar-item.has-text-primary /* 상단메뉴 active  */
+        {
+
+        color: {
+
+        {
+            settings . theme_color
+        }
+        }
+        !important
+        ;
+        }
+    </style>
+    {% block extra_head_style %}{% endblock extra_head_style %}
+</head>
+
+<body>
+<div id="app" style="height:100%;">
+    <div class="container is-fluid1" style="height:100%; ">
+        <div class="is-block" style="height:100%;">
+            <!-- navigation -->
+            {% block navbar %}
+            <template>
+                <b-navbar spaced shadow>
+                    <!-- logo-->
+                    <template #brand>
+                        <b-navbar-item>
+                            <figure class="image  py-0 m-0" style="height: 32px; width: 128px;">
+
+                            <img class="" style="min-height: 32px; width: 100%;"
+                                src="{{ url_for('download_file', filename=settings.logo) }}"
+                                 alt="{{settings.site_name}}">
+                            </figure>
+                        </b-navbar-item>
+                    </template>
+
+                    <template #start>
+                        <!-- home 메뉴만 수동으로 href='/' 유지-->
+                        <b-navbar-item href="/">
+                            Home
+                        </b-navbar-item>
+                        <!-- home 제외 메뉴는 전역 categories로 구성-->
+                        <!-- base.html에 app_context로 넘어오는 category와, category(id) route에 진입했을 때넘겨주는category_id를 비교한다 -->
+                        <!-- 1) 그렇다면, 평소에는 category_id는 None으로서 비교안되고, 해당route에 들어갓을때만 값이 넘어와서 비교되서 class를 표기 -->
+                        <!-- 2) 해당route에 진입안해서 못받은 {{ category_id }}는 None으로서 아예 표기도 안된다.-->
+                        {% for category in categories %}
+                        <b-navbar-item
+                                {% if category.id== category_id %}
+                                class="has-text-primary"
+                                {% endif %}
+                                href="{{ url_for('main.category', id=category.id) }}">
+                            {{category.name }}
+                        </b-navbar-item>
+                        {% endfor %}
+                    </template>
+
+                    <!-- dropdown 메뉴는 혹시 몰라서 주석처리-->
+                    <!--                        <b-navbar-dropdown label="Info">-->
+                    <!--                            <b-navbar-item href="#">-->
+                    <!--                                About-->
+                    <!--                            </b-navbar-item>-->
+                    <!--                            <b-navbar-item href="#">-->
+                    <!--                                Contact-->
+                    <!--                            </b-navbar-item>-->
+                    <!--                        </b-navbar-dropdown>-->
+
+                    <template #end>
+                        <!-- g.user if  avatar/
+                                        이름 + 내 정보/
+                                        (g.user.is_super_user if   admin)/
+                                        로그아웃
+                                     else 회원가입/
+                                          로그인 -->
+                        <b-navbar-item tag="div">
+                            {% if g.user %}
+                            <!-- avatar -->
+                            <figure class="image is-32x32 mx-2" style="border: none;">
+                                <!--                                     style="height: 100%"-->
+                                <img class="is-rounded" style="min-height: 32px; width: 100%;"
+                                     src="
+                                         {% if g.user.avatar %}
+                                         {{url_for('download_file', filename=g.user.avatar)}}
+                                         {% else %}
+                                         {{url_for('static', filename='/img/user/default_avatar.svg')}}
+                                         {% endif %}
+                                        "
+                                     alt="{{ g.user.username }}">
+                            </figure>
+
+                            <div class="buttons">
+                                <!-- 닉네임 + 내 정보-->
+                                <a class="button is-primary"
+                                   href="{{ url_for('auth.userinfo') }}"
+                                >
+                                    {{g.user['username']}}님 정보
+                                </a>
+                                <!-- 직원이상이라면 admin 추가 -->
+                                {% if g.user.is_staff %}
+                                <a class="button is-success"
+                                   href="{{ url_for('admin.index') }}">
+                                    Admin
+                                </a>
+                                {% endif %}
+                                <!-- 로그아웃 -->
+                                <a class="button is-danger" href="{{ url_for('auth.logout')}}">
+                                    로그아웃
+                                </a>
+                            </div>
+                            {% else %}
+                            <div class=" buttons">
+                                <a class="button is-primary" href="{{ url_for('auth.register')}}">
+                                    회원가입
+                                </a>
+                                <a class="button is-light" href="{{ url_for('auth.login')}}">
+                                    로그인
+                                </a>
+                            </div>
+                            {% endif %}
+                        </b-navbar-item>
+                    </template>
+                </b-navbar>
+            </template>
+            {% endblock navbar %}
+
+            {% block hero %}
+            <section class="hero is-medium is-primary">
+                <div class="hero-body">
+                    <p class="title">
+                        Large hero
+                    </p>
+                    <p class="subtitle">
+                        Large subtitle
+                    </p>
+                </div>
+            </section>
+            {% endblock hero %}
+
+            {% block main %}
+            <div class="box is-marginless is-shadowless is-radiusless">
+                {% block box %}
+                <div class="columns is-multiline">
+                    {% for post in post_list %}
+                    <div class="column is-4-fullhd">
+                        <div class="card">
+                            <div class="card-image">
+                                <figure class="image is-4by3">
+                                    <!--                                    <img src="https://bulma.io/images/placeholders/1280x960.png"-->
+                                    <img src="{{url_for('static', filename=post.img )}}"
+                                         loading="prelaod" decoding="async"
+                                         alt="Placeholder image">
+                                </figure>
+                            </div>
+                            <div class="card-content">
+                                <div class="media">
+                                    <div class="media-content">
+                                        <p class="title is-4"><a
+                                                href="{{url_for('main.post_detail', category_id=post.category_id, id=post.id) }}">{{
+                                            post.title }}</a></p>
+                                    </div>
+                                </div>
+
+                                <div class="content">
+                                    <p class="has-text-grey is-size-7">
+                                        {{ post.desc | truncate(30)}}
+                                    </p>
+                                    <time datetime="{{ post.add_date }}">{{ post.add_date }}</time>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <nav class="pagination is-small" role="navigation" aria-label="pagination">
+                    {% if pagination.has_prev %}
+                    <a href="{{ url_for('main.index') }}?page={{ pagination.prev_num }}" class="pagination-previous"
+                       title="This is the first page">Previous</a>
+                    {% endif %}
+                    {% if pagination.has_next %}
+                    <a href="{{ url_for('index') }}?page={{ pagination.next_num }}" class="pagination-next">Next
+                        page</a>
+                    {% endif %}
+
+                    <ul class="pagination-list">
+                        {% for page in pagination.iter_pages() %}
+                        {% if page %}
+                        {% if page != pagination.page %}
+                        <li>
+                            <a href="{{ url_for('index') }}?page={{ page }}" class="pagination-link"
+                               aria-label="Page 1"
+                               aria-current="page">{{ page }}</a>
+                        </li>
+                        {% else %}
+                        <li>
+                            <a class="pagination-link is-current" aria-label="Page 1" aria-current="page">{{ page }}</a>
+                        </li>
+                        {% endif %}
+                        {% else %}
+                        <span class=pagination-ellipsis>&hellip;</span>
+                        {% endif %}
+                        {% endfor %}
+
+                    </ul>
+                </nav>
+                {% endblock box %}
+            </div>
+            {% endblock main %}
+
+            {% block footer %}
+            <div class="footer has-background-black-ter is-marginless">
+                <div class="has-text-centered has-text-grey-light">
+                    <div class="columns is-centered is-mobile is-multiline"
+                         style="border-bottom: #ededed solid 1px; padding-bottom: 1rem">
+                        <div class="column is-narrow is-half">
+
+                            <div class="columns has-text-centered">
+                                <div class="column is-narrow is-half">
+                                    <h1 class="has-text-white is-size-5">콜센터 : {{settings.call_number}}</h1>
+                                </div>
+                                <div class="column is-narrow is-half">
+                                    <h1 class="has-text-white-ter is-size-5">{{settings.site_name}}</h1>
+                                </div>
+                            </div>
+
+                            <div class="columns has-text-centered">
+                                <div class="column is-narrow is-half">
+                                    <h1>{{settings.address}}</h1>
+                                </div>
+                                <div class="column is-narrow is-half">
+                                    <div>
+                                        사업자등록번호 {{settings.business_license_number}} {{settings.ceo}}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="column is-narrow is-half">
+                            footer
+                            <p class="help has-text-grey-light">
+                                footer content
+                            </p>
+                        </div>
+                    </div>
+                    <h1 class="has-text-grey-light" href="">
+                        {{settings.copyright}}
+                    </h1>
+                </div>
+            </div>
+
+            {% endblock footer %}
+        </div>
+
+    </div>
+</div>
+
+<script src="{{url_for('static', filename='js/vue.js')}}"></script>
+<script src="{{url_for('static', filename='js/buefy.min.js')}}"></script>
+{% block extra_foot_script %}{% endblock extra_foot_script %}
+<script>
+    var app = new Vue({
+        el: '#app',
+        delimiters: ['{$', '$}'],  // jinja와 같이 쓸 vue 변수
+        data: {
+            // file: {}, // admin/banner_form에서 b-upload에 쓰이는 변수
+            // carousels: [], // main/index에서 b-carousel-item에 test
+            banner_list: [], // main/index에서 b-carousel-item에서 슬 변 수
+            // activeTab: 0,
+
+            // admin/banner_form , auth/userinfo_form 에서 쓰는 b-upload v-model변수
+            img_file: {},
+            img_file_url: null,
+
+            // admin/setting_form에서 쓰는 b-colorpicker, b-datepicker v-model 변수
+            selectedColor: null,
+            date: null,
+            stringDate: null,
+            //userinfo.html에서 tab 및 a태그
+            tab_list: [],
+            activeTab: 0,
+            activeAnchor: 0,
+            className: '',
+        },
+        watch: {
+            // admin/banner_form , auth/userinfo_form 에서 쓰는 b-upload v-model변수
+            // -> this.url변수에 동적으로 할당해주면 -> img태그의 :src에서 url에 정보유무에 따라 다른 img src을 걸 수 있게
+            // img_file변화시 -> img_file_url을 채우는 역할
+            img_file: function (file, n) {
+                this.img_file_url = URL.createObjectURL(file);
+            },
+
+            // admin/setting_form에서 쓰는 b-datepicker v-model date -> stringDate에 변환해서 채우도록 한다.
+            date: function (date) {
+                // console.log(date)
+                //Tue Nov 15 2022 00:00:00 GMT+0900 (한국 표준시) // 이미 date가 아닌 상태로 온다..
+                this.stringDate = this.convertDateYyyymmdd(date)
+                // console.log(this.stringDate)
+                // this.stringDate = '2020-08-19'
+                //
+            },
+        },
+        methods: {
+            // main/index에서 props.i 정보 -> banner_list[i]로 banner객체를 얻게해주는 메서드
+            getBannerImg(value) {
+                return `${this.banner_list[value].img}`
+            },
+            getBannerTitle(value) {
+                return `${this.banner_list[value].desc}`
+            },
+
+            convertDateYyyymmdd(value) {
+                // 들어오는 value 값이 공백이면 그냥 공백으로 돌려줌
+                if (value == null) return null;
+
+                // 현재 Date 혹은 DateTime 데이터를 javaScript date 타입화
+                var js_date = new Date(value);
+
+                // 연도, 월, 일 추출
+                var dd = String(js_date.getDate()).padStart(2, '0');
+                var mm = String(js_date.getMonth() + 1).padStart(2, '0'); //January is 0!
+                var yyyy = js_date.getFullYear();
+                return yyyy + '-' + mm + '-' + dd;
+            },
+
+            // tabClicked(index) {
+            //     if (index === 1) alert('Index 1 is the third button');
+            // },
+
+            // userinfo.html 에서 각 tab클릭시마다 작동하는 method
+            tabClicked(index) {
+                let tab_item = document.querySelector(".tab-item#" + this.tab_list[index].tabItemId);
+                // console.log(tab_item)
+
+                axios({
+                    url: this.tab_list[index].url,
+                    method: 'get',
+                    dataType: 'html',
+                    headers: {'content-type': 'application/json;charset=utf-8'},
+                }).then(res => {
+                    // alert(res.data)
+                    tab_item.innerHTML = res.data
+                }).catch(err => {
+                    console.log(err)
+                    tab_item.innerHTML = ('페이지를 찾을 수 없습니다.');
+                });
+
+                // a태그에도 반영해주기 (tab과 다르게 클릭해줄 필요없음.. active표시만 들어가면 됨)
+                this.activeAnchor = index;
+
+            },
+            anchorClicked(e, index) {
+                // console.log(e, index)
+                this.activeTab = index;
+                this.tabClicked(index);
+
+                this.activeAnchor = index;
+
+                // const ul = e.currentTarget; // FYI
+                // const a = e.target;
+                // console.log(ul);
+                // console.log(a);
+                // [a.parentElement.children].forEach(sib => sib.classList.remove('is-active'));
+                // a.classList.add('is-active');
+
+
+            },
+            getActiveClass(current_index) {
+
+                return {
+                    'is-active' : this.activeAnchor === current_index
+                }
+            }
+        },
+        filters:
+            {
+                // main/index에서 너무긴 배너정보를 잘라주는 메서드
+                truncate: function (text, length, suffix) {
+                    if (text.length > length) {
+                        return text.substring(0, length) + suffix;
+                    } else {
+                        return text;
+                    }
+                }
+                ,
+            }
+        ,
+        mounted() {
+
+        }
+    })
+</script>
+{% block vue_script %}{% endblock vue_script %}
+</body>
+</html>

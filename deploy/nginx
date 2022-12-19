@@ -1,0 +1,14 @@
+server {
+    listen 80;                              # 개방포트
+    server_name flask.proae.cn;            # 도메인이름 = server_name
+    location / {
+        uwsgi_pass 127.0.0.1:3000;          # uwsgi servie 포트
+        include uwsgi_params;               # 고정배열?!
+    }
+    location /admin/static {                      # static파일 경로1
+        alias /www/wwwroot/flask.proae.cn/flask-blog/app/admin/static/;
+    }
+    location /blog/static {                       # static파일 경로2
+        alias /www/wwwroot/flask.proae.cn/flask-blog/app/blog/static/;
+    }
+}

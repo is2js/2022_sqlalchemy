@@ -1,0 +1,226 @@
+{% extends 'admin/article.html' %}
+
+{% block extra_head_style %}
+
+<!-- selectize css & jquery -> js   -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/selectize.js/0.12.1/css/selectize.min.css">
+<script src="https://code.jquery.com/jquery-2.2.4.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/selectize.js/0.12.1/js/standalone/selectize.min.js"></script>
+
+<!--quill css & axios js-->
+<link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet"/>
+<script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+
+{% endblock extra_head_style %}
+
+
+<!-- select 화면에서 우측상단 버튼들(add) 제거-->
+{% block button %}{% endblock button %}
+
+
+{% block table_content %}
+<form action="" method="post" class="mt-4">
+    {{ form.csrf_token }}
+    <div class="field">
+        {{ form.title.label(class='label') }}
+        <div class="control">
+            {{ form.title(class='input', placeholder='Title') }}
+        </div>
+    </div>
+    <div class="field">
+        {{ form.desc.label(class='label') }}
+        <div class="control">
+            {{ form.desc(class='input', placeholder='Description') }}
+        </div>
+    </div>
+
+    <div class="field">
+        {{ form.category_id.label(class='label') }}
+        <div class="control">
+            <div class="select is-fullwidth">
+                {{ form.category_id }}
+            </div>
+        </div>
+    </div>
+
+    <div class="field">
+        {{ form.content.label(class='label') }}
+        <div class="control">
+            <!-- form input 중에 textarea는 class='input' 대신 class='textarea' + rows=''를 준다.  -->
+            {{ form.content(class='textarea', rows="10", placeholder='Contents') }}
+            <!--  markdown적용할 필드의 form.필드 input태그아래에 rich editor를 위한 div개설-->
+            <div id="editor" style="height: 500px;"></div>
+        </div>
+    </div>
+
+    <div class="field">
+        {{ form.tags.label(class='label') }}
+        <div class="control">
+            <div class="select is-fullwidth is-multiple">
+                <!-- <select id='tags'> 태그가 완성되는데, selecize에 의해 이쁘게 나오게 한다-->
+                {{ form.tags(size='5') }}
+            </div>
+        </div>
+    </div>
+
+    <!-- label+input을 한번에 올리려면 div.field 이외에 .is-horizontal을 class로 넣어줘야한다.   -->
+    <div class="field is-horizontal">
+        {{ form.has_type.label(class='label') }}
+        <div class="field-body ml-4">
+            <div class="control">
+                <!--  radio 필드는 input필드를 직접 구현해야 생성시 default 와 edit시 현재값이 checked를 확인할 수 있다.-->
+                {% for subfield in form.has_type %}
+                <input {%if subfield.checked %}checked {% endif %} type="radio"
+                       id="{{ subfield.id }}" name="{{ form.has_type.id }}" value="{{ subfield.data }}">
+                {{ subfield.label }}
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    <div class="is-block">
+        <div class="box has-background-light is-shadowless level">
+            <a href="" class="is-danger button level-left">다시 입력</a>
+            <div class="level-right">
+                <a href="{{ url_for('admin.article') }}" class="button is-primary is-light mr-2">뒤로가기</a>
+                <input type="submit" value="생성" class=" button is-success">
+            </div>
+        </div>
+    </div>
+
+</form>
+{% endblock table_content %}
+
+
+{% block extra_foot_script %}
+<!--selectize init -->
+<script>
+    $(function () {
+        // select태그를 selectize화 시켜서, tags들을 여러개 선택할 수 있게 한다.
+        $('select#tags').selectize({
+            plugins: ['remove_button'],
+        });
+    });
+</script>
+
+<!--quill js 추가(아마도 axios불러오고나서 해야되서?) -->
+<script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
+<!--<script src="https://cdn.quilljs.com/2.0.0-dev.3/quill.js"></script>-->
+{% endblock extra_foot_script %}
+
+<!--quill js 초기화 in vue block-->
+{% block vue_script %}
+<script>
+    var toolbarOptions = [
+        ['bold', 'italic', 'underline', 'strike', 'link'],        // toggled buttons
+        ['blockquote', 'code-block', 'image'],
+
+        // [{ 'header': 1 }, { 'header': 2 }],               // custom button values
+        [{'list': 'ordered'}, {'list': 'bullet'}],
+        // [{ 'script': 'sub'}, { 'script': 'super' }],      // superscript/subscript
+        [{'indent': '-1'}, {'indent': '+1'}],          // outdent/indent
+        [{'direction': 'rtl'}],                         // text direction
+
+        // [{ 'size': ['small', false, 'large', 'huge'] }],  // custom dropdown
+        [{'header': [1, 2, 3, 4, 5, 6, false]}],
+
+        [{'color': []}, {'background': []}],          // dropdown with defaults from theme
+        [{'font': []}],
+        [{'align': []}],
+
+        // table 1 : https://dalezak.medium.com/using-tables-in-quill-js-with-rails-and-stimulus-ddd0521ab0cb
+        // ['table', 'column-left', 'column-right', 'row-above', 'row-below', 'row-remove', 'column-remove'],
+
+        ['clean']                                         // remove formatting button
+    ];
+    var quill = new Quill('#editor', {
+        debug: 'info',
+        modules: {
+            toolbar: toolbarOptions,
+            // table: true
+        },
+        theme: 'snow',
+        placeholder: '내용을 작성해주세요.',
+        readOnly: false,
+        formats: {}
+    })
+
+    // 기존 내용을 주입하기 위해, html요소들 미리 변수화
+    var html = quill.container.firstChild.innerHTML;
+    var content = document.querySelector("textarea[name='content']");
+
+    //7. 작동확인이 끝나서, 자동으로 채워지는 content는 display:none으로 돌린다
+    content.setAttribute('style', 'display:none');
+
+    // Listen to rich text and sync to the form
+    quill.on('text-change', function (delta, oldDelta, source) {
+        content.innerHTML = quill.container.firstChild.innerHTML;
+    });
+
+    // textarea[name='content']로 잡은 태그의 내용인.value로 quill에 집어넣기 by .pasteHTML
+    quill.pasteHTML(content.value)
+
+    // upload image를 위한 함수 선언
+    var showImageUI = function () {
+        // console.log('asdkjlfalsd')
+        // 1. 애초에 file input태그가 존재하는지 받아본다. quill에서는 input class="ql-image" type="file"로 존재하나보다.
+        var fileInput = this.container.querySelector('input.ql-image[type=file]')
+        // console.log(fileInput)
+        // 2. file input태그가 없으면 실시간 생성해야한다.
+        if (fileInput == null) {
+            // console.log("fileInput없다")
+            fileInput = document.createElement('input');
+            fileInput.setAttribute('type', 'file');
+            fileInput.setAttribute('accept', 'image/png, image/gif, image/jpeg, image/jpeg, image/bmp, image/x-icon');
+            fileInput.classList.add('ql-image');
+        }
+        // } else {
+        //     console.log("fileInput있다")
+        // }
+        //3. fileInput태그에 change listener를 달아서
+        // (1) fileinput에 든 files files[0]이 null이 아니라면,
+        // (2) new Formdata()객체를 만들고
+        // (3) fileinput에 있는 files[0]을 formdata에 'upload'이름으로 append하고
+        // (4) axios()로 post요청을 보낸다. -> route완성전에는 log만 찍어본다.
+        fileInput.addEventListener('change', function () {
+            if (fileInput.files != null && fileInput.files[0] != null) {
+
+                const formData = new FormData();
+                formData.append('upload', fileInput.files[0]);
+
+                axios({
+                    url: '{{ url_for("util.upload", directory_name="post") }}',
+                    method: 'post',
+                    data: formData,
+                    headers: {'content-type': 'multipart/form-data'},
+                }).then(res => {
+                    // 5. route 자체에서 파일크기제한으로 'code': 'err'가 올 수 있다.
+                    if (res.data.code == 'err') {
+                        alert(res.data.message)
+                        return
+                    }
+                    // 6.  정상으로 이미지 url이 올경우, quill에서, 현재위치를 찾은 뒤, 넣고 다음칸으로
+                    var curr = quill.getSelection(true);
+                    quill.insertEmbed(curr.index, 'image', res.data.url);
+                    quill.setSelection(curr.index + 1);
+                }).catch(err => {
+                    console.log( err);
+                });
+            }
+        });
+
+        // 8. 원본에는 동적생성한 코드를 quill에 append해주는데, 딱히, 업로드의 역할만 하는거라서 안해줘도 된다?
+        // this.container.appendChild(fileInput);
+        // 만약 해주면, 글 수정시 file input태그가 있는 것으로 인식될 것이다?
+        // 기본 wtf form에서 내려주는 input태그가 아니므로 안찍히게 된다. => 생략
+
+
+        // 4. fileINnput태그를 click()까지 해줘야 그림창이 열리고 -> change가 작동하게 된다.
+        fileInput.click();
+    };
+
+    // pload image를 위한 handler 함수 추가
+    var toolbar = quill.getModule('toolbar');
+    toolbar.addHandler('image', showImageUI);
+
+</script>
+{% endblock vue_script %}

@@ -1,0 +1,84 @@
+{% extends 'admin/user.html' %}
+
+{% block button %}{% endblock button %}
+
+
+{% block table_content %}
+<!-- file을 포함하는 form: enctype="multipart/form-data" -->
+<form action="" method="post" class="mt-4" enctype="multipart/form-data">
+    {{ form.csrf_token }}
+    <div class="field">
+        {{ form.username.label(class='label') }}
+        <div class="control">
+            <!-- edit일 경우, form-->
+            {{ form.username(class='input', placeholder='username') }}
+        </div>
+    </div>
+
+    <div class="field">
+        {{ form.password.label(class='label') }}
+        <div class="control">
+            {{ form.password(class='input', placeholder='password') }}
+            <!-- description도 추가 -->
+            <p class="help has-text-grey-light">
+                {{ form.password.description }}
+            </p>
+        </div>
+    </div>
+
+    <div class="field">
+        {{ form.email.label(class='label') }}
+        <div class="control">
+            <!-- edit일 경우, form-->
+            {{ form.email(class='input', placeholder='email') }}
+        </div>
+    </div>
+
+    <div class="field">
+        {{ form.avatar.label(class='label') }}
+        <!-- 수정form일 경우, form.user 필드를 채워놨을 것이다.(원본에는 user=user객체를 수정route에서 따로 넘김) -->
+        <!-- xx if user xx-->
+        <!-- 수정form일 경 & avatar가 있을 경우 img를 띄운다. -->
+        {% if form.user %}
+        <figure class="image is-96x96">
+            <!-- /uploads/{{ form.user.avatar }}-->
+            <img class="is-rounded" style="height:100%;"
+                 src="
+                 {% if form.user.avatar %}
+                 {{url_for('download_file', filename=form.user.avatar)}}
+                 {% else %}
+                 {{url_for('static', filename='/img/user/default_avatar.svg')}}
+                 {% endif %}
+                "
+                 alt="{{ form.user.username }}">
+        </figure>
+        {% endif %}
+        <div class="control">
+            {{ form.avatar(class='input', placeholder='avatar') }}
+            <!-- description도 추가 -->
+            <p class="help has-text-grey-light">
+                {{ form.avatar.description }}
+            </p>
+        </div>
+    </div>
+
+
+
+    <div class="field">
+        <label class="checkbox">
+            {{ form.is_active }}
+            {{ form.is_active.label }}
+        </label>
+    </div>
+
+    <div class="is-block">
+        <div class="box has-background-light is-shadowless level">
+            <a href="" class=" is-danger button level-left">다시입력</a>
+            <div class="level-right">
+                <a href="{{ url_for('admin.user') }}" class="button is-primary is-light mr-2">뒤로가기</a>
+                <input type="submit" value="완료" class=" button is-success">
+            </div>
+        </div>
+    </div>
+</form>
+{% endblock table_content %}

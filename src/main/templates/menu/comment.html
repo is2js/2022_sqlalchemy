@@ -1,0 +1,117 @@
+{% extends 'menu/base.html'%}
+{% block content%}
+<div class="container row">
+    <div class="shadow-sm p-4 col-lg-12 col-sm-6">
+        <!-- COMMENT POST       -->
+        <div class="shadow p-4 mb-4 col-lg-12 col-sm-6">
+            <form action="{{url_for('api_routes.index') }}" method="POST">
+                {{ comment_form.csrf_token }}
+                <div class="form-group mt-2">
+                    {{comment_form.author(class="form-control", placeholder="Author")}}
+                </div>
+                <div class="form-group mt-2">
+                    {{comment_form.text(class="form-control", placeholder="Comment")}}
+                </div>
+                <button type="submit" class="btn btn-primary mt-2">Post comment</button>
+                전체 댓글 수 : {{ comments | length }}
+            </form>
+        </div>
+
+
+        <!--  COMMENT SELECT and REPLY POST     -->
+        <div class="shadow-sm p-4 col-lg-12 col-sm-6">
+            <!--  COMMENT pagination     -->
+            <div class="text-center mb-3">
+                <!--  이전 페이지가 있으면, 이전url객체 + 아이콘     -->
+                {% if prev_url %}
+                    <a href="{{ prev_url }}"><i class="fs-5 bi bi-caret-left-fill danger" ></i></a>
+                {% endif %}
+
+                <!--  전체페이지 중에 가운데 숫자 current_page와 차이 2개까지 표시     -->
+                {% for number in range(1, pages) %}
+                    {% if ((number - current_page) | abs)  <= 2 %}
+                        {% if number == current_page %}
+                        <span class=" fs-2 fw-bold danger">{{ number }}</span>
+                        {% else %}
+                        <span > <a class="default" href="{{url_for('api_routes.index', page=number)}}" style="text-decoration: none;">{{ number }}</a></span>
+                        {% endif %}
+                    {% endif %}
+                {% endfor %}
+
+                <!--  다음 페이지가 있으면, 다음url객체 + 아이콘     -->
+                {% if next_url %}
+                    <a href="{{ next_url }}"><i class="fs-5 bi bi-caret-right-fill danger"></i></a>
+                {% endif %}
+            </div>
+
+
+            {% for comment in comments %}
+            <!--  design 1 : dynamic -> flat but level() 존재 -> view에서 level값으로 확인. 해당 post_id가 들어간 것 다 조회 -> lazy 면 됨. but flat하지만 level()로 알아차림.       -->
+            <div class="row">
+                <!-- Begin comment indentation -->
+                <div class="
+                col-{{12 - comment.level}} offset-{{comment.level}}
+                 {{ 'border-1 ' if comment.level == 0 else 'border-1' }} border-muted py-1
+                comment-body {{'comment-body-odds' if loop.index  %2 == 1}}
+                ">
+                    <!-- End comment indentation -->
+                    <div>
+                        <p class="my-1">
+                            <span class="label label-default">#{{comment.id}}</span>
+                            <span class="label {{ 'label-danger' if comment.author == '돌범' else 'label-primary'}}"> {{comment.author}}</span>
+                            <span class="label text-muted">{{comment.timestamp | feed_datetime(is_feed=True)}}</span>
+                        </p>
+                        <!-- 필터 만들고 싶다면: https://sooooooyn.tistory.com/4?category=863481-->
+                        <p class="my-2">{{comment.text}} <a href="{{url_for('api_routes.delete_comment', comment_id=comment.id)}}" class="bi bi-x-square danger"></a></p>
+
+                        <!-- 특정level이상부터는 못달게 작성부분을 if문 걸어보기-->
+                        {% if comment.level < 6 %}
+                        <!--[1] 대댓글 아이콘i태그를 a태그에 감싼다. -->
+                        <!--(1) a태그에 data-bs-toggle="collapse" 속성 + role="button" 속성 -->
+                        <!--(2) a태그에 href ="#나타날 공간이 받을 id"  -->
+                        <a class="" data-bs-toggle="collapse" href="#comment-{{comment.id}}"
+                           role="button" aria-expanded="false" aria-controls="collapseExample">
+                            {% if comment.level < 1 %}
+                            <i class="bi bi-chat-left-dots" style="color:gray"></i>
+                            {% else %}
+                            <i class="bi bi-reply" style="color:gray"></i>
+                            {% endif %}
+                        </a>
+                        {% else %}
+                        <i class="bi-reply"></i>
+                        {% endif %}
+                    </div>
+                    <!--[2] 대댓글 form이 나타날 공간 div -->
+                    <!--(1) class="collapse w-50" 속성 -->
+                    <!--(2) id="{컬랩스트리거 a태그의 href속성값에서 #을 뺀 문자열}" -->
+                    <div class="collapse w-50" id="comment-{{comment.id}}">
+                        <form action="{{url_for('api_routes.register_reply', comment_id=comment.id) }}" method="POST">
+                            {{ reply_form.csrf_token }}
+                            <div class="form-group mt-2">
+                                {{reply_form.author(class="form-control", placeholder="Author")}}
+                            </div>
+                            <div class="form-group mt-2">
+                                {{reply_form.text(class="form-control" ,placeholder="Comment")}}
+                            </div>
+                            <button type="submit" class="btn btn-primary mt-2 btn-sm">Post Reply</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+
+            <!-- design 2 : comment 1개를 조회하면, 필드에 다 하위댓글들 다 품고 조회      -->
+            <!-- path + level이 필요없이, view에선 계층적구조 -> 재귀로 level별 출력       -->
+            {% for comment in comments2 recursive %}
+            <li>{{ comment.text }} by {{ comment.author}}</li>
+            <!-- 없어도 될듯. 존재할때만 collection에 담겨 순회 for-->
+            {% if comment.replies %}
+            <ul class="children">{{loop(comment.replies)}}</ul>
+            {% endif %}
+            {% endfor %}
+
+        </div>
+    </div>
+</div>
+</div>
+{% endblock%}

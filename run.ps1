@@ -1,0 +1,5 @@
+$env:FLASK_APP='manage.py'
+$env:FLASK_ENV='development'
+$env:FLASK_DEBUG='true'
+$env:FLASK_RUN_HOST='localhost'
+$env:FLASK_RUN_PORT='5000'

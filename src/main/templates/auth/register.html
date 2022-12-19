@@ -1,0 +1,83 @@
+{% extends 'auth/login.html' %}
+
+{% block title %}회원가입{% endblock title %}
+
+{% block auth_form %}
+<!--<form action="" method="post" style="margin-top: 40%;" class="box">-->
+<form action="" method="post" style="margin-top: 10%;" class="box">
+    {{ form.csrf_token }}
+    <div class=" has-text-centered mb-3">
+        <p class="subtitle">회원가입</p>
+        <h1 class="title">{{settings.site_name}}</h1>
+    </div>
+
+    <!-- message flash -->
+    {% with messages = get_flashed_messages() %}
+    <b-message type="is-danger">
+        {% if messages %}
+        <ul class=flashes>
+            {% for message in messages %}
+            <li>{{ message }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </b-message>
+    {% endwith %}
+
+
+    <!-- form validation errors -->
+    {% for field in errors %}
+    <b-message type="is-danger">
+        <ul class="errors">
+            {% for message in field.messages %}
+            <li> {{ message }}</li>
+            {% endfor %}
+        </ul>
+    </b-message>
+    {% endfor %}
+
+    <div class="field">
+        <p class="control has-icons-left has-icons-right">
+            <!--            <input class="input" type="text" name="username" id="id_username" maxlength="128" placeholder="Username">-->
+            {{ form.username(class='input', placeholder='Username') }}
+            <span class="icon is-small is-left">
+                <i class="mdi mdi-account-outline"></i>
+            </span>
+            <!--            <span class="icon is-small is-right">-->
+            <!--                <i class="mdi mdi-check"></i>-->
+            <!--            </span>-->
+        </p>
+    </div>
+    <div class="field">
+        <p class="control has-icons-left has-icons-right">
+            {{ form.email(class='input', placeholder='e-mail 입력') }}
+            <span class="icon is-small is-left">
+                <i class="mdi mdi-email-outline"></i>
+            </span>
+        </p>
+    </div>
+    <div class="field">
+        <p class="control has-icons-left">
+            <!--            <input class="input" type="password" name="password" id="id_password" maxlength="320" minlength="6"                    placeholder="Password">-->
+            {{ form.password(class='input', placeholder='비밀번호') }}
+            <span class="icon is-small is-left">
+                <i class="mdi mdi-lock-outline"></i>
+            </span>
+        </p>
+    </div>
+    <div class="field">
+        <p class="control has-icons-left">
+            <!--            <input class="input" type="password" name="password1" id="id_password1" maxlength="320" minlength="6"                    placeholder="Password1">-->
+            {{ form.password1(class='input', placeholder='비밀번호 확인') }}
+            <span class="icon is-small is-left">
+                <i class="mdi mdi-lock-outline"></i>
+            </span>
+        </p>
+    </div>
+    <div class="field">
+        <p class="control">
+            <input class="button is-success is-fullwidth" type="submit" value="가입하기">
+        </p>
+    </div>
+</form>
+{% endblock auth_form %}

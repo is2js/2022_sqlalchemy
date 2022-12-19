@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+
+{% block hero %}
+<!-- backend에서 넘겨준 json을 div#banner_list + display:none;으로 banner_list를 받아본다-->
+<!--<div id="banner_list" style="display:none;">-->
+<!--<div id="banner_list">-->
+<!--    {{ banner_list | tojson }}-->
+<!--</div>-->
+
+<!--1차) template > b-carousel > b-carousel-item안에 v-for로  base의 section태그를 돌린다. -->
+<template>
+    <!--    <b-carousel>-->
+    <!--        <b-carousel-item v-for="(carousel, i) in carousels" :key="i">-->
+    <!--            <section :class="`hero is-medium is-${carousel.color}`">-->
+    <!--                <div class="hero-body has-text-centered">-->
+    <!--                    <h1 class="title">{$ carousel.text $}</h1>-->
+    <!--                </div>-->
+    <!--            </section>-->
+    <!--        <b-carousel-item v-for="(banner, i) in banner_list" :key="i">-->
+    <!--            <a :href="banner.url">-->
+    <!--                <figure class="image is-16by9">-->
+    <!--                    <img :src="banner.img" alt="">-->
+    <!--                </figure>-->
+    <!--            </a>-->
+    <!--        </b-carousel-item>-->
+    <!--    </b-carousel>-->
+
+    <b-carousel :indicator-inside="false">
+        <b-carousel-item v-for="(banner, i) in banner_list" :key="i">
+            <!--            <b-image class="image is-16by9" :src="banner.img"> </b-image>-->
+            <a :href="banner.url">
+                <figure class="image is-16by9">
+                    <img :src="banner.img" alt="">
+                </figure>
+<!--                <div class="is-overlay is-flex is-justify-content-center">-->
+<!--                    <h1 class="is-size-3">{$ banner.desc $}</h1>-->
+<!--                </div>-->
+            </a>
+        </b-carousel-item>
+        <template #indicators="props">
+            <b-image class="al image" :src="getBannerImg(props.i)" :title="props.i"></b-image>
+            <h1 class="is-size-6 has-text-centered" style="color:black;">
+                {$ getBannerTitle(props.i) | truncate(15, '...') $}
+            </h1>
+        </template>
+    </b-carousel>
+</template>
+{% endblock hero %}
+
+<!-- vue객체(app) 초기화 아래를 차지하는 vue_script block에 예시데이터를 만든다. -->
+{% block vue_script %}
+<script>
+    // 초기화된 app(vue객체)의 data는 ._data로 접근할 수있고 .변수로 base에서 초기화된 데이터에 데이터를 삽입할 수 있다.
+    // app._data.carousels = [
+    //     {text: 'Slide 1', color: 'primary'},
+    //     {text: 'Slide 2', color: 'info'},
+    //     {text: 'Slide 3', color: 'success'},
+    //     {text: 'Slide 4', color: 'warning'},
+    //     {text: 'Slide 5', color: 'danger'},
+    // ]
+    // app._data.banner_list = JSON.parse(document.querySelector('#banner_list').innerHTML)
+    app._data.banner_list = JSON.parse('{{ banner_list | tojson }}')
+    // console.log(app._data.banner_list)
+
+</script>
+
+<style>
+    .is-active .al img {
+        filter: grayscale(0%);
+    }
+
+    .al img {
+        filter: grayscale(100%);
+        max-height: 100%;
+    }
+
+</style>
+{% endblock vue_script %}

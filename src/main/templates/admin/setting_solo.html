@@ -1,0 +1,289 @@
+{% extends 'admin/index.html' %}
+
+<!-- admin/index.html 중 왼쪽칼럼2개짜리 메뉴의 실제 aside태그부분-->
+{% block menus %}
+<aside class="menu">
+    <p class="menu-label">
+        Setting
+    </p>
+    <ul class="menu-list">
+        <li>
+            <a class="{% if  '/setting' in request.path %}is-active{% endif %}"
+               href="{{ url_for('admin.setting') }}">
+                사이트 설정
+            </a>
+        </li>
+        <li>
+            <a class="" href="">
+                세부 페이지 설정
+            </a>
+        </li>
+        <li>
+            <a class="" href="">
+                관리자 문의
+            </a>
+        </li>
+    </ul>
+</aside>
+{% endblock menus %}
+
+{% block member %}
+<template>
+
+    <!-- flash message -->
+    {% with messages = get_flashed_messages() %}
+    <b-message type="is-success">
+        {% if messages %}
+        <ul class=flashes>
+            {% for message in messages %}
+            <li>{{ message }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </b-message>
+    {% endwith %}
+
+    <!-- form validation -->
+    {% if form and form.errors %}
+    <b-message type="is-danger">
+        <ul class="errors">
+            {% for error, v in form.errors.items() %}
+            <!--            <li>{{ error }}：{{ v[0] }}</li>-->
+            <li>{{ v[0] }}</li>
+            {% endfor %}
+        </ul>
+    </b-message>
+    {% endif %}
+    <!-- setting_form에서 달라질 부분 block개설  -->
+
+
+    {% block tab_content %}
+
+    <div class="columns is-mobile" >
+        <div class="column is-3">
+            <figure class="image is-2by1">
+                <!--                        <img class="is-rounded" style="height: 100%;"-->
+                <img class="" style="height: 100%;"
+                     src="
+                         {% if s_dict.get('logo', None) %}
+                         {{url_for('download_file', filename=s_dict.logo)}}
+                         {% else %}
+                         {{url_for('static', filename='/img/placeholders/1200x650.png')}}
+                         {% endif %}
+                        "
+                >
+            </figure>
+        </div>
+
+        <div class="column is-4">
+            <div style="padding-top: 1rem;">
+                <h1 class="title is-size-4">{{ s_dict.get('site_name') or '병원 이름 미설정'  }}</h1>
+                <p class="subtitle is-size-6"> ← 병원 로고</p>
+            </div>
+        </div>
+
+
+        <div class="column is-narrow-mobile">
+            <a class=" button is-primary"
+               href="{{url_for('admin.setting_edit') }}"
+               style="margin-top: 1.8rem">수정</a>
+        </div>
+    </div>
+
+
+    <b-tabs type="is-boxed" expanded>
+        <!-- 탭1 병원관련 정보 -->
+        <b-tab-item label="병원관련 정보" icon="hospital-building">
+
+            <div class="columns" style="padding:1rem 0; ">
+                <!-- 필수 정보들 -->
+                <div class="column is-2">
+                    <p>필수 정보</p>
+                </div>
+                <div class="column">
+                     <!-- 병원 이름 -->
+                    <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
+                        <div class="column is-2">
+                            <span class=" has-text-grey-light">병원 이름</span>
+                        </div>
+                        <div class="column is-narrow">
+                            <span class=" has-text-black-ter">{{ s_dict.get('site_name') or '미설정' }}</span>
+                        </div>
+                    </div>
+                    <!-- 테마 색 -->
+                    <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
+                        <div class="column is-2">
+                            <span class=" has-text-grey-light">테마 색</span>
+                        </div>
+                        <div class="column is-narrow">
+                            <span class=" has-text-black-ter">{{ s_dict.get('theme_color') or '미설정' }}</span>
+                        </div>
+                    </div>
+                    <!-- 대표명 -->
+                    <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
+                        <div class="column is-2">
+                            <span class=" has-text-grey-light">대표명</span>
+                        </div>
+                        <div class="column is-narrow">
+                            <span class=" has-text-black-ter">{{ s_dict.get('ceo') or '미설정' }}</span>
+                        </div>
+                    </div>
+                    <!-- 사업자등록번호 -->
+                    <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
+                        <div class="column is-2">
+                            <span class=" has-text-grey-light">사업자등록번호</span>
+                        </div>
+                        <div class="column is-narrow">
+                            <span class=" has-text-black-ter">{{ s_dict.get('business_license_number') or '미설정' }}</span>
+                        </div>
+                    </div>
+                    <!-- 병원 전화번호 -->
+                    <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
+                        <div class="column is-2">
+                            <span class=" has-text-grey-light">병원 전화번호</span>
+                        </div>
+                        <div class="column is-narrow">
+                            <span class=" has-text-black-ter">{{ s_dict.get('call_number') or '미설정' }}</span>
+                        </div>
+                    </div>
+                    <!-- 병원 주소 -->
+                    <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
+                        <div class="column is-2">
+                            <span class=" has-text-grey-light">병원 주소</span>
+                        </div>
+                        <div class="column is-narrow">
+                            <span class=" has-text-black-ter">{{ s_dict.get('address') or '미설정' }}</span>
+                        </div>
+                    </div>
+
+                    <!-- 개원 일자 -->
+                    <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
+                        <div class="column is-2">
+                            <span class=" has-text-grey-light">개원 일자</span>
+                        </div>
+                        <div class="column is-narrow">
+                            <span class=" has-text-black-ter">{{ s_dict.get('start_date') or '미설정' }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!--  추가정보들  -->
+            <div class="columns" style="padding:1rem 0; ">
+                <div class="column is-2">
+                    <p>추가 정보</p>
+                </div>
+                <div class="column">
+                    <!-- 저작권 문구 -->
+                    <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
+                        <div class="column is-2">
+                            <span class=" has-text-grey-light">저작권 문구</span>
+                        </div>
+                        <div class="column is-narrow">
+                            <span class=" has-text-black-ter">{{ s_dict.get('copyright') or '미설정' }}</span>
+                        </div>
+                    </div>
+                    <!-- Naver Blog Url  -->
+                    <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
+                        <div class="column is-2">
+                            <span class=" has-text-grey-light">Naver Blog Url</span>
+                        </div>
+                        <div class="column is-narrow">
+                            <span class=" has-text-black-ter">{{ s_dict.get('naver_blog_url') or '미운영' }}</span>
+                        </div>
+                    </div>
+                    <!-- Youtube Url -->
+                    <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
+                        <div class="column is-2">
+                            <span class=" has-text-grey-light">Youtube Url</span>
+                        </div>
+                        <div class="column is-narrow">
+                            <span class=" has-text-black-ter">{{ s_dict.get('youtube_url') or '미운영' }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </b-tab-item>
+        <!-- 탭1 끝 -->
+
+        <!-- 탭2 Site Meta 정보 -->
+        <b-tab-item label="Site Meta 정보" icon="hospital">
+
+            <div class="columns" style="padding:1rem 0; ">
+
+                <div class="column">
+                    <!-- 사이트 제목 -->
+                    <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
+                        <div class="column is-2">
+                            <span class=" has-text-grey-light">사이트 제목</span>
+                        </div>
+                        <div class="column is-narrow">
+                            <span class=" has-text-black-ter">{{ s_dict.get('title') or '미설정' }}</span>
+                        </div>
+                    </div>
+
+                    <!-- 사이트 설명 -->
+                    <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
+                        <div class="column is-2">
+                            <span class=" has-text-grey-light">사이트 설명</span>
+                        </div>
+                        <div class="column is-narrow">
+                            <span class=" has-text-black-ter">{{ s_dict.get('description') or '미설정' }}</span>
+                        </div>
+                    </div>
+                    <!-- 검색 키워드 -->
+                    <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
+                        <div class="column is-2">
+                            <span class=" has-text-grey-light">검색 키워드</span>
+                        </div>
+                        <div class="column is-narrow">
+                            <span class=" has-text-black-ter">{{ s_dict.get('keywords') or '미설정' }}</span>
+                        </div>
+                    </div>
+                    <!-- 접속할 최종 url -->
+                    <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
+                        <div class="column is-2">
+                            <span class=" has-text-grey-light">접속할 최종 url</span>
+                        </div>
+                        <div class="column is-narrow">
+                            <span class=" has-text-black-ter">{{ s_dict.get('url') or '미설정' }}</span>
+                        </div>
+                    </div>
+                    <!--구글 인증 코드-->
+                    <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
+                        <div class="column is-2">
+                            <span class=" has-text-grey-light">구글 인증 코드</span>
+                        </div>
+                        <div class="column is-narrow">
+                            <span class=" has-text-black-ter">{{ s_dict.get('google_site_verification') or '미설정' }}</span>
+                        </div>
+                    </div>
+                    <!-- 네이버 인증 코드 -->
+                    <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
+                        <div class="column is-2">
+                            <span class=" has-text-grey-light">네이버 인증 코드</span>
+                        </div>
+                        <div class="column is-narrow">
+                            <span class=" has-text-black-ter">{{ s_dict.get('naver_site_verification') or '미설정' }}</span>
+                        </div>
+                    </div>
+                    <!-- 구글 통계 스크립트 -->
+                    <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
+                        <div class="column is-2">
+                            <span class=" has-text-grey-light">구글 통계 스크립트</span>
+                        </div>
+                        <div class="column is-narrow">
+                            <span class=" has-text-black-ter">{{ s_dict.get('google_static_script') or '미설정' }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </b-tab-item>
+        <!-- 탭2 끝 -->
+
+    </b-tabs>
+    {% endblock tab_content %}
+</template>
+{% endblock member %}
+
+
+{% block vue_script %}{% endblock vue_script %}

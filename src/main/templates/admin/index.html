@@ -1,0 +1,491 @@
+{% extends 'base.html' %}
+
+{% block title %}
+{{ g.user['username'] }}-내 정보
+{% endblock title %}
+
+{% block extra_head_style %}
+<!-- echart js & axios -->
+<!--suppress BadExpressionStatementJS -->
+<script src="{{url_for('static', filename='js/admin/echarts.min.js')}}"></script>
+<script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+<script src="https://code.jquery.com/jquery-2.2.4.min.js"></script>
+{% endblock extra_head_style %}
+
+{% block hero %}{% endblock hero %}
+
+<!--base.html에서 <block main > 내부 <div class="box is-marginless is-shadowless is-radiusless"> 바로 아래
+div.box 안쪽으로  block box /endblock을 추가한다-->
+
+{% block box %}
+<div class="columns">
+    <!-- admin의 왼쪽메뉴 column 2칸 -->
+    <div class="column is-2">
+        <div class="card is-shadowless" style="border-right:solid 1px #eee">
+            <div class="card-content">
+                <!--  aside왼쪽메뉴를 채우는 block( 자식중에 나를 상속해서 다르게 채울 수 있는 block -->
+                {% block menus %}
+                <aside class="menu">
+                    <p class="menu-label">
+                        <span class="icon"><i class="mdi mdi-google-assistant"></i></span>
+                        Dashboard | {{request.path}}
+                    </p>
+                    <ul class="menu-list">
+                        <li>
+                            <a class="{% if request.path == '/admin/' %}is-active{% endif %}"
+                               href="{{ url_for('admin.index') }}">
+                                <span class="icon"><i class="mdi mdi-home-variant-outline"></i></span>
+                                Home
+                            </a>
+                        </li>
+                    </ul>
+
+                    <!-- Category for executive -->
+                    {% if g.user.is_executive %}
+                    <p class="menu-label">
+                        <span class="icon"><i class="mdi mdi-shape-outline"></i></span>
+                        Category
+                    </p>
+                    <ul class="menu-list">
+                        <!-- 각 entity별 select route/tempalte완성시 마다 걸어주기 -->
+                        <li>
+                            <a class="{% if 'category' in request.path %}is-active{% endif %}"
+                               href="{{ url_for('admin.category') }}">
+                                <span class="icon"><i class="mdi mdi-menu"></i></span>
+                                Category 관리
+                            </a>
+                        </li>
+                    </ul>
+                    {% endif %}
+
+
+                    <!-- Article (post, tag) -->
+                    <p class="menu-label">
+                        <span class="icon"><i class="mdi mdi-clipboard-text-multiple-outline"></i></span>
+                        Article
+                    </p>
+                    <ul class="menu-list">
+                        <li>
+                            <a class="{% if 'article' in request.path %}is-active{% endif %}"
+                               href="{{ url_for('admin.article') }}">
+                                <span class="icon"><i class="mdi mdi-clipboard-text-outline"></i></span>
+                                Post 관리
+                            </a>
+                        </li>
+                        <li>
+                            <a class="{% if 'tag' in request.path %}is-active{% endif %}"
+                               href="{{ url_for('admin.tag') }}">
+                                <span class="icon"><i class="mdi mdi-tag-plus-outline"></i></span>
+                                Tag 관리
+                            </a>
+                        </li>
+                    </ul>
+
+                    <p class="menu-label">
+                        <span class="icon"><i class="mdi mdi-image-outline"></i></span>
+                        BANNER
+                    </p>
+                    <ul class="menu-list">
+                        <li>
+                            <a class="{% if 'banner' in request.path %}is-active{% endif %}"
+                               href="{{ url_for('admin.banner') }}">
+                                <span class="icon"><i class="mdi mdi-image-sync-outline"></i></span>
+                                Banner 관리
+                            </a>
+                        </li>
+                    </ul>
+
+                    <!-- USER -->
+                    <p class="menu-label">
+                        <span class="icon"><i class="mdi mdi-account-group-outline"></i></span>
+                        User
+                    </p>
+                    <ul class="menu-list">
+                        <li>
+                            <a class="{% if 'user' in request.path %}is-active{% endif %}"
+                               href="{{ url_for('admin.user') }}">
+                                <span class="icon"><i class="mdi mdi-account-outline"></i></span>
+                                User 관리
+                            </a>
+                        </li>
+                        <!-- 직원 관리 for chiefstaff -->
+                        {% if g.user.is_chiefstaff %}
+                        <li>
+                            <a class="{% if 'password' in request.path %}is-active{% endif %}"
+                               href="{{ url_for('admin.employee') }}">
+<!--                                <span class="icon"><i class="mdi mdi-lock-outline"></i></span>-->
+                                <span class="icon"><i class="mdi mdi-graph-outline"></i></span>
+                                직원 관리
+                            </a>
+                        </li>
+                        {% endif %}
+                    </ul>
+
+                    <!-- Setting for executive -->
+                    {% if g.user.is_executive %}
+
+                    <p class="menu-label">
+                        <span class="icon"><i class="mdi mdi-cog-outline"></i></span>
+                        SETTING
+                    </p>
+                    <ul class="menu-list">
+                        <li>
+                            <a class="{% if 'setting' in request.path %}is-active{% endif %}"
+                               href="{{ url_for('admin.setting') }}">
+                                <span class="icon"><i class="mdi mdi-window-shutter-cog"></i></span>
+                                Site 관리
+                            </a>
+                        </li>
+                    </ul>
+                    {% endif %}
+
+                </aside>
+                {% endblock menus %}
+            </div>
+        </div>
+    </div>
+    <div class="column">
+        {% block member %}
+        <!-- 내부요소들의 text 모두 가운데 정렬:has-text-centered -->
+        <div class="tile is-ancestor">
+
+            <div class="tile is-parent">
+                <article class="tile is-child notification is-warning is-light">
+                    <div class="content">
+                        <p class="subtitle is-size-6 mb-5">
+                            📑 카테고리 수
+                        </p>
+                        <p class="title has-text-black">
+                            {{category_count[0]}}
+                            <span class="is-size-6">
+                                {% if category_count[1] > 0 %}
+                                <span class="has-text-success-dark">
+                                            {{category_count[1] }}%
+                                            <i class="mdi mdi-trending-up"></i>
+                                </span>
+                                {% elif category_count[1] == 0 %}
+                                <span class="has-text-grey">
+                                            {{category_count[1]}}%
+                                            <i class="mdi mdi-trending-neutral"></i>
+                                </span>
+                                {% else %}
+                                <span class="has-text-danger-dark">
+                                            {{category_count[1]}}%
+                                            <i class="mdi mdi-trending-down"></i>
+                                </span>
+                                {% endif %}
+                            </span>
+                        </p>
+                    </div>
+                </article>
+            </div>
+
+            <div class="tile is-parent">
+                <article class="tile is-child notification is-info is-light">
+                    <div class="content">
+                        <p class="subtitle is-size-6 mb-5">
+                            🧾 Post 수
+                        </p>
+                        <p class="title has-text-black">
+                            {{post_count[0]}}
+                            <span class="is-size-6">
+                                {% if post_count[1] > 0 %}
+                                <span class="has-text-success-dark">
+                                            {{post_count[1]}}%
+                                            <i class="mdi mdi-trending-up"></i>
+                                </span>
+                                {% elif post_count[1] == 0 %}
+                                <span class="has-text-grey">
+                                            {{post_count[1]}}%
+                                            <i class="mdi mdi-trending-neutral"></i>
+                                </span>
+                                {% else %}
+                                <span class="has-text-danger-dark">
+                                            {{post_count[1]}}%
+                                            <i class="mdi mdi-trending-down"></i>
+                                </span>
+                                {% endif %}
+                            </span>
+                        </p>
+                    </div>
+                </article>
+            </div>
+            <div class="tile is-parent">
+                <article class="tile is-child notification is-light">
+                    <div class="content">
+                        <p class="subtitle is-size-6 mb-5">
+                            📸 배너 수
+                        </p>
+                        <p class="title has-text-black">
+                            {{banner_count[0]}}
+                            <span class="is-size-6">
+                                {% if banner_count[1] > 0 %}
+                                <span class="has-text-success-dark">
+                                            {{banner_count[1]}}%
+                                            <i class="mdi mdi-trending-up"></i>
+                                </span>
+                                {% elif banner_count[1] == 0 %}
+                                <span class="has-text-grey">
+                                            {{banner_count[1]}}%
+                                            <i class="mdi mdi-trending-neutral"></i>
+                                </span>
+                                {% else %}
+                                <span class="has-text-danger-dark">
+                                            {{banner_count[1]}}%
+                                            <i class="mdi mdi-trending-down"></i>
+                                </span>
+                                {% endif %}
+                            </span>
+                        </p>
+                    </div>
+                </article>
+            </div>
+
+
+            <div class="tile is-parent">
+                <article class="tile is-child notification is-danger is-light">
+                    <div class="content">
+                        <p class="subtitle is-size-6 mb-5">
+                            👦 유저 수
+                        </p>
+                        <p class="title has-text-black">
+                            {{user_count[0]}}
+                            <span class="is-size-6">
+                                {% if user_count[1] > 0 %}
+                                <span class="has-text-success-dark">
+                                            {{user_count[1]}}%
+                                            <i class="mdi mdi-trending-up"></i>
+                                </span>
+                                {% elif user_count[1] == 0 %}
+                                <span class="has-text-grey">
+                                            {{user_count[1]}}%
+                                            <i class="mdi mdi-trending-neutral"></i>
+                                </span>
+                                {% else %}
+                                <span class="has-text-danger-dark">
+                                            {{user_count[1]}}%
+                                            <i class="mdi mdi-trending-down"></i>
+                                </span>
+                                {% endif %}
+                            </span>
+                        </p>
+                    </div>
+                </article>
+            </div>
+
+            <div class="tile is-parent">
+                <article class="tile is-child notification is-success is-light">
+                    <div class="content">
+                        <p class="subtitle is-size-6 mb-5">
+                            👨‍🎓 직원 수
+                        </p>
+                        <p class="title has-text-black">
+                            {{employee_count[0]}}
+                            <span class="is-size-6">
+                                {% if employee_count[1] > 0 %}
+                                <span class="has-text-success-dark">
+                                            {{employee_count[1]}}%
+                                            <i class="mdi mdi-trending-up"></i>
+                                </span>
+                                {% elif employee_count[1] == 0 %}
+                                <span class="has-text-grey">
+                                            {{employee_count[1]}}%
+                                            <i class="mdi mdi-trending-neutral"></i>
+                                </span>
+                                {% else %}
+                                <span class="has-text-danger-dark">
+                                            {{employee_count[1]}}%
+                                            <i class="mdi mdi-trending-down"></i>
+                                </span>
+                                {% endif %}
+                            </span>
+                        </p>
+                    </div>
+                </article>
+            </div>
+
+
+        </div>
+
+        <!-- column - 2 chart 2개를 위한 tile 깔기 -->
+        <!-- is-ancestor > 아래 개별요소마다 sm에서 각각 나눠지는 is-parent까지만 구분-->
+        <div class="tile is-ancestor ">
+            <!-- 사이즈는 is-parent에선 나눠가지면 되고 일단 맨 왼쪽놈만 주면 된다.-->
+            <div class="tile is-parent is-5 ">
+                <article class="tile is-child notification is-white"
+                         style="border: 1px solid lightgray;"
+                >
+                    <div class="content">
+                        <p class="title is-size-5">📚 카테고리 통계</p>
+                        <!--                        <p class="subtitle is-size-6 ml-1 my-1">카테고리별 Post 수 집계</p>-->
+                        <div id="post_chart" class="content"
+                             style="width: 100%; min-height: 250px">
+                            <!-- Content -->
+                            chart
+                        </div>
+                        <p class="title is-size-5">🔖 태그 통계</p>
+                        <!--                        <p class="subtitle is-size-6 ml-1 my-1">tag별 post 수 집계</p>-->
+                        <div class="content has-text-centered"
+                             style="width: 100%; min-height: 150px"
+                        >
+                            <!-- post 딸린 수 상위 2개 Tag table -->
+                            <table class="table is-fullwidth is-hoverable is-striped">
+                                <thead>
+                                <tr>
+                                    <th>랭킹</th>
+                                    <th>태그이름</th>
+                                    <th>Post수</th>
+                                    <th>누적조회수</th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                {% for tag in tag_with_post_count %}
+                                <tr>
+                                    <td>
+                                        <div class="tags">
+                                            <span class="tag is-light">
+                                              {{loop.index}}위
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div class="tags">
+                                            <span class="tag is-primary is-light">
+                                                {{ tag.name }}
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td>{{ tag.count }}</td>
+                                    <td>{{ tag.sum }}</td>
+                                </tr>
+                                {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </article>
+            </div>
+            <div class="tile is-parent">
+                <!--  notification class를 빼면 내부 tab의 밑줄이 사라짐. 그러면 정렬이 깨짐 -->
+                <!--                <article class="tile is-child is-white"-->
+                <article class="tile is-child notification is-white"
+                         style="border: 1px solid lightgray;"
+                >
+                    <div class="content">
+                        <p class="title is-size-5">✨ 유저 통계</p>
+                        <!-- 일주일간 유저 수 -->
+                        <p class="subtitle is-size-6 ml-1 my-1">지난 7일 등록 유저 수</p>
+                        <div id="user_count_bar_chart" class="content" style="width: 100%; min-height: 250px"
+                        >
+                            <!-- Content -->
+                            chart
+                        </div>
+                        <!-- chart2 유저 성별별 카운트 -->
+                        <p class="subtitle is-size-6 ml-1 my-1">성별별 유저 수</p>
+                        <div id="user_sex_pie_chart" class="content"
+                             style="width: 100%; min-height: 250px;"
+                        >
+
+                        </div>
+
+                    </div>
+                </article>
+
+            </div>
+
+        </div>
+
+        <!-- 년간 chart 1줄 -->
+        <div class="tile is-ancestor ">
+            <div class="tile is-parent">
+                <article class="tile is-child notification is-white"
+                         style="border: 1px solid lightgray;"
+                >
+                    <div class="content">
+                        <p class="title is-size-5">🗓 년간 통계</p>
+                        <p class="subtitle is-size-6 ml-1 my-1">월별 데이터 변화</p>
+                        <div id="year_chart" class="content" style="width: 100%; min-height: 300px">
+                            <!-- Content -->
+                            chart
+                        </div>
+                    </div>
+                </article>
+            </div>
+        </div>
+
+        {% endblock member %}
+    </div>
+</div>
+{% endblock box %}
+
+{% block vue_script %}
+<script type="text/javascript">
+
+    // category별 post
+    let postChart = echarts.init(document.getElementById('post_chart'));
+
+    let tab_0 = document.getElementById('user_count_bar_chart');
+    let userChart1 = echarts.init(tab_0);
+    let tab_1 = document.getElementById('user_sex_pie_chart');
+    let userChart2 = echarts.init(tab_1);
+
+    let yearChart = echarts.init(document.getElementById('year_chart'));
+
+    // 차트를 반응형으로 (width:100%, min-height:300px)상태에서
+    window.onresize = function () {
+        console.log("window.onresize")
+        postChart.resize();
+        userChart1.resize();
+        userChart2.resize();
+        yearChart.resize();
+    };
+
+    // pyecharts 사용시,option을 backend에서 받은 것을 |safe로
+    //user_count_bar_options | safe
+    userChart1.setOption({{user_count_bar_options | safe}})
+    //user_sex_pie_options | safe
+    userChart2.setOption({{user_sex_pie_options | safe}})
+    //year_options | safe
+    yearChart.setOption({{year_options | safe}})
+
+
+    // Specify the configuration items and data for the chart
+    let postChartOption = {
+        // title: {
+        //     text: 'ECharts Getting Started Example'
+        // },
+        tooltip: {},
+        legend: {
+            data: ['카테고리'] // series의 name과 일치해야한다
+        },
+        xAxis: {
+            data: JSON.parse('{{post_by_category[0] | tojson}}')
+        },
+        yAxis: {},
+        series: [
+            {
+                name: '카테고리',
+                type: 'bar',
+                data: JSON.parse('{{post_by_category[1] | tojson}}'),
+                // bar에 색 넣기
+                itemStyle: {
+                    color: function (param) {
+                        const color = ['#76b143', '#7d7c6a', '#0065b3', '#7d7c6a',];
+                        // param.value[0] is the x-axis value
+                        // param.value is data 값
+                        // param.dataIndex is 0부터 순서
+                        // console.log(param)
+                        return color[param.dataIndex % color.length]
+                    }
+                },
+            }
+        ]
+    };
+
+
+    // Display the chart using the configuration items and data just specified.
+    postChart.setOption(postChartOption);
+
+</script>
+
+{% endblock vue_script %}

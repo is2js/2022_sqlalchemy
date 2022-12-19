@@ -1,0 +1,110 @@
+<!-- 탭1 내 정보 -->
+<div class="columns is-mobile" style="border-bottom: #ededed solid 1px; padding-bottom: 1rem">
+    <div class="column is-narrow">
+        <figure class="image is-96x96">
+            <img class="is-rounded" style="height: 100%;"
+                 src="
+                         {% if g.user.avatar %}
+                         {{url_for('download_file', filename=g.user.avatar)}}
+                         {% else %}
+                         {{url_for('static', filename='/img/user/default_avatar.svg')}}
+                         {% endif %}
+                        "
+            >
+        </figure>
+    </div>
+    <div class="column is-narrow">
+        <div style="padding-top: 1.5rem;">
+            <h1 class="title is-size-4">{{ g.user['username'] }}</h1>
+            {% if g.user.is_staff %}
+            <p class="subtitle is-size-6">직급: {{ g.user.role.name }}</p>
+            {% endif %}
+        </div>
+    </div>
+    <!-- 버튼 가운데 정렬은 부모div에 is-flex + is-justify-center-center를 준다. F12에서 flex가 아닌 부모에게만 is-flex-->
+    <!-- flex로 주면 담줄로 넘어가버리니, 크기가 정해진(is-narrow) 상태의 column에 has-text-centered를 준다.-->
+    <div class="column is-narrow-mobile has-text-centered ">
+        <a class=" button is-primary"
+           href="{{url_for('auth.userinfo_edit') }}"
+           style="margin-top: 1.8rem">정보 수정</a>
+    </div>
+</div>
+
+<div class="columns" style="padding:1rem 0; ">
+    <div class="column is-2">
+        <p>내 정보</p>
+    </div>
+    <div class="column">
+        <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
+            <div class="column is-2">
+                <span class=" has-text-grey-light">Username</span>
+            </div>
+            <div class="column is-narrow">
+                <span class=" has-text-black-ter">{{ g.user['username'] }}</span>
+            </div>
+        </div>
+
+        <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
+            <div class="column is-2">
+                <span class=" has-text-grey-light">이메일</span>
+            </div>
+            <div class="column is-narrow">
+                    <span class=" has-text-black-ter">
+                        {% if g.user.email %}
+                        {{g.user.email  }}
+                        {% else %}
+                        미입력
+                        {% endif %}
+                    </span>
+            </div>
+        </div>
+
+        <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
+            <div class="column is-2">
+                <span class=" has-text-grey-light">성별</span>
+            </div>
+            <div class="column is-narrow">
+                    <span class=" has-text-black-ter">
+                        {% if g.user.sex.value %}
+                        {{g.user.sex.name }}
+                        {% else %}
+                        미입력
+                        {% endif %}
+                    </span>
+            </div>
+
+        </div>
+
+
+        <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
+            <div class="column is-2">
+                <span class=" has-text-grey-light">주소</span>
+            </div>
+            <div class="column is-narrow">
+                    <span class=" has-text-black-ter">
+                        {% if g.user.address %}
+                        {{g.user.address  }}
+                        {% else %}
+                        미입력
+                        {% endif %}
+                    </span>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<div class="columns" style="padding:1rem 0; ">
+    <div class="column is-2">
+        <p>휴대폰번호</p>
+    </div>
+    <div class="column">
+        <div class="content">
+            {% if g.user.phone %}
+            {{g.user.phone | join_phone }}
+            {% else %}
+            미입력
+            {% endif %}
+        </div>
+    </div>
+</div>

@@ -1,0 +1,98 @@
+{% extends 'admin/index.html' %}
+
+<!-- admin/index.html 중 왼쪽칼럼2개짜리 메뉴의 실제 aside태그부분-->
+{% block menus %}
+<template>
+    <aside class="menu">
+        <p class="menu-label">
+            User 설정
+        </p>
+<!--        <ul class="menu-list">-->
+            <!--        <li><a class="{% if  '/auth/' == request.path %}is-active{% endif %}"-->
+            <!--               href="{{ url_for('auth.userinfo') }}">-->
+            <!--            내 정보</a>-->
+            <!--        </li>-->
+            <!--        <li>-->
+            <!--            <a class="{% if  '/auth/invite/invitee' == request.path %}is-active{% endif %}"-->
+            <!--               href="{{ url_for('auth.invite_invitee') }}">받은 초대</a>-->
+            <!--        </li>-->
+
+
+<!--        <ul class="menu-list" v-for="tab in tab_list" @click="anchorClicked">-->
+<!--        <ul class="menu-list" v-for="(tab, index) in tab_list" @click="anchorClicked">-->
+        <ul class="menu-list"
+            v-for="(tab, index) in tab_list"
+            @click="anchorClicked($event, index)"
+        >
+            <li>
+                <a
+                        href="javascript:;"
+                        :key = "index"
+                        class=""
+                        :class="getActiveClass(index)"
+                >
+<!--                        :class="{'is-active': activeAnchor === index}"-->
+                    {$ tab.label $}
+                </a>
+            </li>
+
+        </ul>
+    </aside>
+</template>
+{% endblock menus %}
+
+{% block member %}
+<template>
+    <!-- flash message -->
+    {% with messages = get_flashed_messages() %}
+    <b-message type="is-success">
+        {% if messages %}
+        <ul class=flashes>
+            {% for message in messages %}
+            <li>{{ message }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </b-message>
+    {% endwith %}
+
+    <!-- form validation -->
+    {% if form and form.errors %}
+    <b-message type="is-danger">
+        <ul class="errors">
+            {% for error, v in form.errors.items() %}
+            <li>{{ v[0] }}</li>
+            {% endfor %}
+        </ul>
+    </b-message>
+    {% endif %}
+
+    <!-- userinfo_form에서 달라질 부분 block개설  -->
+    {% block tab_content %}
+    <b-tabs v-if="tab_list.length" v-model="activeTab" @input="tabClicked(activeTab)">
+        <b-tab-item
+                v-for="tab in tab_list"
+                :label="tab.label"
+                :key="tab.key"
+                :icon="tab.icon"
+                :id="tab.tabItemId"
+        >
+        {% if init_html %}
+            {{init_html |safe}}
+        {% endif %}
+        </b-tab-item>
+    </b-tabs>
+    {% endblock tab_content %}
+
+
+</template>
+{% endblock member %}
+
+
+{% block vue_script %}
+<script>
+    app._data.tab_list = JSON.parse('{{ tab_list | tojson }}');
+    // console.log(app._data.tab_list[0].tabItemId) // userinfo_main;
+
+</script>
+{% endblock vue_script %}

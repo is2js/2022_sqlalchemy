@@ -1,0 +1,184 @@
+{% extends 'admin/index.html' %}
+
+{% block member %}
+<!-- 위쪽 제목 공간 -->
+<div class="is-block">
+    <!-- left 제목 -->
+    <div class="is-pulled-left">
+        <h1 class="is-size-4">
+            <span class="icon"><i class="mdi mdi-receipt-outline"></i></span>
+            직원 관리
+        </h1>
+    </div>
+
+    {% block button %}
+    <div class="is-pulled-right">
+        <a href="{{url_for('admin.employee')}}" class="button is-primary is-light">
+            <span class="icon"><i class="mdi mdi-plus-thick"></i></span>
+            <span>직원 추가</span>
+        </a>
+    </div>
+
+    {% endblock button %}
+    <div class="is-clearfix"></div>
+    <div class="dropdown-divider"></div>
+
+    <!-- 아래쪽 table의 처리에 대한 flash 메세지를 위쪽에서   -->
+    {% with messages = get_flashed_messages() %}
+    <b-message type="is-success">
+        {% if messages %}
+        <ul class=flashes>
+            {% for message in messages %}
+            <li>{{ message }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </b-message>
+    {% endwith %}
+
+    <!-- form validation -->
+    {% if form and form.errors %}
+    <b-message type="is-danger">
+        <ul class="errors">
+            {% for error, v in form.errors.items() %}
+            <li>{{ error }}：{{ v[0] }}</li>
+            {% endfor %}
+        </ul>
+    </b-message>
+    {% endif %}
+</div>
+
+<!-- 위쪽 아래쪽 table or form 공간 -->
+{% block table_content %}
+<div class="table-container">
+    <table class="table is-fullwidth is-hoverable is-striped is-vcentered">
+        <thead>
+        <tr>
+            <th>사번</th>
+            <th>Avatar</th>
+            <th>이름</th>
+            <th>나이</th>
+            <th>Email</th>
+            <th>Phone</th>
+            <th>직위</th>
+            <!-- 가입일은 안쓰고,
+                 (1) 입사일(user_form : user-> staff수정시 입력되도록 해야함 + 직원추가시 입력되도록 해야함.)
+                 (2) 퇴사일(직원수정form에서만 -> 퇴사체크시 자동으로 입력)
+                 (3) 퇴사여부(퇴사클릭시 -> user로 밴 + 퇴사여부y + 퇴사일기록)를 추가 -->
+            <th>연차</th>
+            <th>상태</th>
+            <!-- 작업 수정삭제에  + (4)퇴사버튼 추가 -->
+            <th>작업</th>
+        </tr>
+        </thead>
+        <tbody>
+        <!--  route) 에서 post객체들을 id역순으로 넘겨주면, for문이 돌아가면서 a태그 에러가 걸리게 됨.  -->
+        <!--  a태그-href들 주석처리된 상태  -->
+        {% for employee in employee_list %}
+        <tr>
+        <tr>
+            <td><span class="is-size-7">{{ employee.employee_number }}</span></td>
+            <td>
+                {% if employee.user.avatar %}
+                <figure class="image is-48x48">
+                    <!--                         src="/uploads/{{employee.avatar}}"-->
+                    <img class="is-rounded" style="height: 100%;"
+                         src="{{url_for('download_file', filename=employee.user.avatar) }}"
+                         alt="{{ employee.name }}">
+                </figure>
+                {% else %}
+                -
+                {% endif %}
+            </td>
+            <td>{{ employee.name }}</td>
+            <td><span class="is-size-7">{{ employee.age }}</span></td>
+            <td><span class="is-size-7">{{ employee.user.email }}</span></td>
+            <td><span class="is-size-7">{{ employee.user.phone | join_phone }}</span></td>
+
+            <td>
+                <div class="tags">
+                    <span class="
+                    tag
+                    {% if not employee.user.is_staff %}
+                    is-white
+                    {% elif employee.user.is_executive %}
+                    is-danger
+                    {% else %}
+                    is-info
+                    {% endif %}
+                     is-light">
+                        {{ employee.user.role.name }}
+                    </span>
+                </div>
+            </td>
+
+            <td><span class="is-size-7">{{employee.years_from_join_date}}년차({{ employee.working_days}})</span></td>
+            <td><span class="is-size-7">{{ employee.job_status.name }}</span></td>
+
+            <!--  User수정/삭제 버튼은 Chief부터 -->
+            <td>
+                <div class="tags">
+                    <a href="{{url_for('admin.employee', id=employee.id)}}" class="tag is-success is-light">
+                            <span class="icon">
+                                <i class="mdi mdi-square-edit-outline"></i>
+                            </span>
+                        수정
+                    </a>
+
+                    <a href="{{url_for('admin.employee', id=employee.id)}}" class="tag is-warning is-light">
+                            <span class="icon">
+                                 <i class="mdi mdi-trash-can-outline"></i>
+                            </span>
+                        퇴사
+                    </a>
+
+
+                    <a href="{{url_for('admin.employee', id=employee.id)}}" class="tag is-danger is-light">
+                            <span class="icon">
+                                 <i class="mdi mdi-trash-can-outline"></i>
+                            </span>
+                        삭제
+                    </a>
+                </div>
+            </td>
+
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+<!-- route) 에서 user_list외에 [pagination]객체도 던져줘야한다-->
+<nav class="pagination is-small" role="navigation" aria-label="pagination">
+    {% if pagination.has_prev %}
+    <a href="{{ url_for('admin.employee') }}?page={{ pagination.prev_num }}" class="pagination-previous"
+       title="This is the first page">Previous</a>
+    {% endif %}
+    {% if pagination.has_next %}
+    <a href="{{ url_for('admin.employee') }}?page={{ pagination.next_num }}" class="pagination-next">Next page</a>
+    {% endif %}
+
+    <ul class="pagination-list">
+        {% for page in pagination.iter_pages() %}
+        {% if page %}
+        {% if page != pagination.page %}
+        <li>
+            <a href="{{ url_for('admin.employee') }}?page={{ page }}" class="pagination-link" aria-label="Page 1"
+               aria-current="page">{{ page }}</a>
+        </li>
+        {% else %}
+        <li>
+            <a class="pagination-link is-current" aria-label="Page 1" aria-current="page">{{ page }}</a>
+        </li>
+        {% endif %}
+        {% else %}
+        <span class=pagination-ellipsis>&hellip;</span>
+        {% endif %}
+        {% endfor %}
+
+    </ul>
+</nav>
+
+{% endblock table_content %}
+{% endblock member %}
+
+{% block vue_script %}{% endblock vue_script %}
