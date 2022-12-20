@@ -92,3 +92,7 @@ class InviteBaseModel(Base):
         # https://stackoverflow.com/questions/51451768/sqlalchemy-querying-with-datetime-columns-to-filter-by-month-day-year
         #### 나느 date로만 비교시 func.date( DateTime필드 )  vs  int (date.month)로 비교했었다.
         return cls.create_on >= datetime.datetime.now() - datetime.timedelta(days=cls._INVITE_EXPIRE_DAYS)
+
+    @property
+    def remain_timedelta(self):
+        return self.expire_datetime - datetime.datetime.now()

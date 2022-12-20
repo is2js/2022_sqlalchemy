@@ -31,15 +31,15 @@
 
     <!-- 아래쪽 table의 처리에 대한 flash 메세지를 위쪽에서   -->
     {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            {% for category, message in messages %}
-            <b-message type="{{category}}">
-                <ul class=flashes>
-                    <li class="{{category}}">{{ message }}</li>
-                </ul>
-            </b-message>
-            {% endfor %}
-        {% endif %}
+    {% if messages %}
+    {% for category, message in messages %}
+    <b-message type="{{category}}">
+        <ul class=flashes>
+            <li class="{{category}}">{{ message }}</li>
+        </ul>
+    </b-message>
+    {% endfor %}
+    {% endif %}
     {% endwith %}
 
     <!-- my) form validation errors -->
@@ -120,14 +120,27 @@
 
                 {% if g.user.is_chiefstaff %}
                 <div class="tags">
-                    <a href="{{url_for('admin.employee_invite', user_id=user.id)}}" class="tag is-info is-light">
+
+                    <!--                       @click="isComponentModalActive = true; formProps['user_id'] = {{user.id}}"-->
+
+                    <!-- 모달클릭처리 참고 -->
+                    <!-- https://stackoverflow.com/questions/58963250/how-to-pass-selected-id-to-modal-in-vue-js -->
+                    <!-- <a href="{{url_for('admin.employee_invite', user_id=user.id)}}"-->
+                    <a href="javascript:;"
+                       class="tag is-info is-light"
+                       @click="isRoleModalActive = true; user_id = {{user.id}}"
+                    >
                             <span class="icon">
                                  <i class="mdi mdi-graph-outline"></i>
                             </span>
                         직원 초대
                     </a>
 
-                    <a href="{{url_for('admin.employee_add', user_id=user.id)}}" class="tag is-warning is-light">
+
+                    <a href="{{url_for('admin.employee_add', user_id=user.id)}}"
+                       class="tag is-warning is-light"
+
+                    >
                             <span class="icon">
                                  <i class="mdi mdi-graph-outline"></i>
                             </span>
@@ -187,7 +200,64 @@
     </ul>
 </nav>
 
+
+<!-- v-model에 data 변수를 인식하여 자동으로 모달을 띄워주는 코드-->
+<b-modal
+        v-model="isRoleModalActive"
+        has-modal-card
+        trap-focus
+        aria-role="dialog"
+        aria-label="Role Select Modal"
+        aria-modal
+        >
+
+    <form action="{{url_for('admin.employee_invite')}}" method="post">
+        <div class="modal-card is-" style="width: auto">
+            <header class="modal-card-head">
+                <p class="modal-card-title is-size-5">
+                    직원 초대
+                </p>
+                <button
+                        type="button"
+                        class="delete"
+                        @click="isRoleModalActive = false; user_id = null;"/>
+            </header>
+            <section class="modal-card-body">
+                <!-- INPUT1: HIDEEN 모달클릭시 v-bind변수에 담아놨던 변수로, form에 포함될 변수로서 id를 반영 -->
+                <input type="hidden" name="user_id" :value="user_id">
+
+                <!-- INPUT2:  -->
+                <b-field label="역할 선택">
+                    <!-- option이 아니라 상위 b-select에  name=도 같이붙으며  form으로 간다 -->
+                    <b-select
+                            name="role_id"
+                            placeholder="직위 선택"
+                            rounded required
+                    >
+                        {% for role in role_list %}
+                        <option value="{{role.id}}" selected>{{role.name}}</option>
+                        {% endfor %}
+                    </b-select>
+                </b-field>
+
+            </section>
+            <footer class="modal-card-foot">
+                <!-- b-button들을 넣으면 1개 이후 사라지는 버그 => a태그 + input(submit) 조합으로 변경-->
+                <a class="button is-primary is-light mr-2"
+                   @click="isRoleModalActive = false; user_id = null;"
+                >
+                    닫기
+                </a>
+                <input type="submit"
+                       class="button is-primary"
+                       value="초대" >
+            </footer>
+        </div>
+    </form>
+</b-modal>
+
 {% endblock table_content %}
 {% endblock member %}
 
+<!--부모의 admin/index.html에선 채웠지만, 자식은 안쓰는 경우 블락을 다시 채워야한다-->
 {% block vue_script %}{% endblock vue_script %}

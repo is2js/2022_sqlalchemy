@@ -20,7 +20,7 @@ from src.infra.tutorial3.auth.users import SexType, Roles, Role, Employee, Emplo
 from src.main.forms import CategoryForm
 from src.main.forms.admin.forms import PostForm, TagForm, CreateUserForm, BannerForm, SettingForm
 from src.main.forms.auth.forms import EmployeeForm, UserInfoForm
-from src.main.utils import login_required, admin_required, role_required
+from src.main.utils import login_required, admin_required, role_required, redirect_url
 from src.main.utils import upload_file_path, delete_uploaded_file, delete_files_in_img_tag
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
@@ -630,7 +630,6 @@ def tag_delete(id):
 
 @admin_bp.route('/user')
 @login_required
-@role_required(allowed_roles=[Roles.STAFF])
 def user():
     page = request.args.get('page', 1, type=int)
 
@@ -644,10 +643,21 @@ def user():
 
     pagination = paginate(stmt, page=page, per_page=10)
     user_list = pagination.items
-    # print(user_list)
+
+    #### 직원초대시 modal에 띄울 role_list를 건네주기
+    with DBConnectionHandler() as db:
+        role_list = db.session.scalars(
+            select(Role)
+            .where(Role.is_(Roles.STAFF)) # 상수 STAFF이상이면서
+            .where(Role.is_under(g.user.role)) # Role객체의 permissions가 현재 직원의 Roles보다는 적게
+        ).all()
+
+    # print(role_list) # [<Role 'STAFF'>, <Role 'DOCTOR'>, <Role 'CHIEFSTAFF'>, <Role 'EXECUTIVE'>]
 
     return render_template('admin/user.html',
-                           user_list=user_list, pagination=pagination)
+                           user_list=user_list, pagination=pagination,
+                           role_list=role_list
+                           )
 
 
 @admin_bp.route('/user/add', methods=['GET', 'POST'])
@@ -1023,62 +1033,121 @@ def employee_add(user_id):
                            )
 
 
-@admin_bp.route('/invite/add/<int:user_id>', methods=['GET', 'POST'])
+# @admin_bp.route('/invite/employee/<int:user_id>', methods=['GET', 'POST'])
+# @login_required
+# @role_required(allowed_roles=[Roles.CHIEFSTAFF])
+# def employee_invite(user_id):
+#     print(request.form)
+#     if request.method == "POST":
+#         print("post>>>", request.form.get('role_id'), request.form.get('user_id'))
+#     #### 초대 존재 여부는
+#     # 1) 현재 초대Type(상위 주제entity)에 대해서만 검색해야한다,(초대 Type이 다르면 또 보낼 수 있음)
+#     # 2) *응답(수락/거절)되서 삭제된 것외에 만료된 것을 제외하고 검색해야한다.(만료되면 또 보낼 수 있음)
+#     # 3) 검색시에는, 보내는사람과 받는사람을 필터링하면 된다. 관계테이블이므로, 관계객체.has()/any() - 데이터존재검사 + 추가조건을 건다
+#     with DBConnectionHandler() as db:
+#         inviter = g.user
+#         invitee = db.session.get(User, user_id)
+#         # 존재여부 확인 -> 연결된 타테이블 확인은  select 주체,  where 주체.관계객체.any[존재조건]( 관계객체.필드 == [추가조건])
+#         # - 주체가 Many(Invite)면, has()로 exitst절을 만든다.
+#         # - 데이터 존재유무는 select절에 주체entity를 fun.count()에 씌워서 db.session.scalar()로 count를 가져올 수 있찌만, 우리는 T/F만 잇으면 되므로
+#         # or
+#         # - select exists()문은 subquery로서만 활용되며,
+#         #   - extist().where() 후 .select()를 붙여서 -> scalars( ).one() -> .scalar()로 가져오면 T/F가 반환된다.
+#         stmt = (
+#             ### 관계칼럼으로 검사하기 전에, EmployeeInvite를 주entity로 만들어줄 걸어줄 조건 or 없다면 select_from()으로 잡아주기
+#             # exists()
+#             # .where(Invite.type == InviteType.직원_초대)
+#             exists()
+#             .select_from(EmployeeInvite)  # exists()조건들을 WHERE에 담을 주 entity(left)
+#             .where(EmployeeInvite.inviter.has(User.id == inviter.id))
+#             .where(EmployeeInvite.invitee.has(User.id == invitee.id))
+#             # e
+#             .where(EmployeeInvite.is_not_expired)
+#
+#             .select()
+#         )
+#         # print(stmt)
+#         # SELECT EXISTS (SELECT *
+#         # FROM invites
+#         # WHERE invites.type = :type_1 AND (EXISTS (SELECT 1
+#         # FROM users
+#         # WHERE users.id = invites.inviter_id AND users.id = :id_1)) AND (EXISTS (SELECT 1
+#         # FROM users
+#         # WHERE users.id = invites.invitee_id AND users.id = :id_2))) AS anon_1
+#         is_invite_exists = db.session.scalar(stmt)
+#         # print(is_invite_exists)
+#         # True
+#
+#         if is_invite_exists:
+#             flash(f"{invitee.username}에게 이미 직원초대를 보냈습니다.", category="is-danger")
+#         else:
+#             role_staff = db.session.scalars(select(Role).where(Role.name == 'STAFF')).first()
+#
+#             invite = EmployeeInvite(
+#                 inviter=inviter,
+#                 invitee=invitee,
+#                 role=role_staff,
+#             )
+#
+#             db.session.add(invite)
+#             db.session.commit()
+#
+#             flash(f"{invitee.username}에게 직원초대({role_staff.name})를 보냈습니다.", category='is-success')
+#
+#     return redirect(url_for('admin.user'))
+@admin_bp.route('/invite/employee/', methods=['POST'])
 @login_required
 @role_required(allowed_roles=[Roles.CHIEFSTAFF])
-def employee_invite(user_id):
+def employee_invite():
+    # request.path /admin/invite/employee/
+    # request.referrer http://localhost:5000/admin/user
+    # => 요청을 보낸 곳의 url을 처리하고 난 뒤 -> redirect 해주기 위한 메서드 개발
+
+
+    # print(request.form)
+    # print(request.form.args.to_dict()) # post에선 못씀.
+    role_id = request.form.get('role_id', type=int)
+    user_id = request.form.get('user_id', default=None, type=int)
+    # print("post>>>", role_id, user_id)
+
+
     #### 초대 존재 여부는
     # 1) 현재 초대Type(상위 주제entity)에 대해서만 검색해야한다,(초대 Type이 다르면 또 보낼 수 있음)
     # 2) *응답(수락/거절)되서 삭제된 것외에 만료된 것을 제외하고 검색해야한다.(만료되면 또 보낼 수 있음)
     # 3) 검색시에는, 보내는사람과 받는사람을 필터링하면 된다. 관계테이블이므로, 관계객체.has()/any() - 데이터존재검사 + 추가조건을 건다
+    # 4) 만료되지 않는 것에 대해서만 존재검사를 한다.
+    # 5) *추후 answer안된 것들만 검사한다
     with DBConnectionHandler() as db:
         inviter = g.user
         invitee = db.session.get(User, user_id)
-        # 존재여부 확인 -> 연결된 타테이블 확인은  select 주체,  where 주체.관계객체.any[존재조건]( 관계객체.필드 == [추가조건])
-        # - 주체가 Many(Invite)면, has()로 exitst절을 만든다.
-        # - 데이터 존재유무는 select절에 주체entity를 fun.count()에 씌워서 db.session.scalar()로 count를 가져올 수 있찌만, 우리는 T/F만 잇으면 되므로
-        # or
-        # - select exists()문은 subquery로서만 활용되며,
-        #   - extist().where() 후 .select()를 붙여서 -> scalars( ).one() -> .scalar()로 가져오면 T/F가 반환된다.
+
         stmt = (
-            ### 관계칼럼으로 검사하기 전에, EmployeeInvite를 주entity로 만들어줄 걸어줄 조건 or 없다면 select_from()으로 잡아주기
-            # exists()
-            # .where(Invite.type == InviteType.직원_초대)
+
             exists()
-            .select_from(EmployeeInvite) # exists()조건들을 WHERE에 담을 주 entity(left)
+            .select_from(EmployeeInvite)  # exists()조건들을 WHERE에 담을 주 entity(left)
             .where(EmployeeInvite.inviter.has(User.id == inviter.id))
             .where(EmployeeInvite.invitee.has(User.id == invitee.id))
-            # e
             .where(EmployeeInvite.is_not_expired)
-
             .select()
         )
-        # print(stmt)
-        # SELECT EXISTS (SELECT *
-        # FROM invites
-        # WHERE invites.type = :type_1 AND (EXISTS (SELECT 1
-        # FROM users
-        # WHERE users.id = invites.inviter_id AND users.id = :id_1)) AND (EXISTS (SELECT 1
-        # FROM users
-        # WHERE users.id = invites.invitee_id AND users.id = :id_2))) AS anon_1
+
         is_invite_exists = db.session.scalar(stmt)
-        # print(is_invite_exists)
-        # True
 
         if is_invite_exists:
             flash(f"{invitee.username}에게 이미 직원초대를 보냈습니다.", category="is-danger")
         else:
-            role_staff = db.session.scalars(select(Role).where(Role.name == 'STAFF')).first()
+            role = db.session.scalars(select(Role).where(Role.id == role_id)).first()
 
             invite = EmployeeInvite(
                 inviter=inviter,
                 invitee=invitee,
-                role=role_staff,
+                role=role,
             )
 
             db.session.add(invite)
             db.session.commit()
 
-            flash(f"{invitee.username}에게 직원초대({role_staff.name})를 보냈습니다.", category='is-success')
+            flash(f"{invitee.username}에게 직원초대({role.name})를 보냈습니다.", category='is-success')
 
-    return redirect(url_for('admin.user'))
+    # return redirect(url_for('admin.user'))
+    return redirect(redirect_url())

@@ -1,50 +1,58 @@
 {% if invite_list %}
-    {% for invite in invite_list %}
-    <article class="media">
-        <figure class="media-left">
-            <p class="image is-64x64">
-                <img style="height: 64px;width: 100%;"
-                     src="
+{% for invite in invite_list %}
+<article class="media" id="{{loop.index}}">
+    <figure class="media-left">
+        <p class="image is-64x64">
+            <img style="height: 64px;width: 100%;"
+                 src="
                              {% if invite.inviter.avatar %}
                              {{url_for('download_file', filename=invite.inviter.avatar)}}
                              {% else %}
                              {{url_for('static', filename='/img/user/default_avatar.svg')}}
                              {% endif %}
                             "
-                >
+            >
+        </p>
+    </figure>
+    <div class="media-content">
+<!--        <div class="content">-->
+        <div class="content">
+<!--            <p>-->
+            <p class="mb-0 is-size-6">
+                <!-- 관리자급은, name을 기입안하고 바로 role을 부여받았을 수 있다. => or로 deafult name주기 -->
+                <strong>{{ invite.inviter.employee.name or '이름없음' }}</strong>님의
+                <span class="has-text-primary-dark">직원초대({{invite.role.name}})</span>
+                가 도착했습니다.
+
+                <span class="has-text-grey-light is-size-6">
+                    <span class="icon"><i class="mdi mdi-clipboard-text-clock-outline"></i></span>
+                    {{invite.create_on | feed_datetime}}
+                </span>
             </p>
-        </figure>
-        <div class="media-content">
-            <div class="content">
-                <p>
-                    <!-- 관리자급은, name을 기입안하고 바로 role을 부여받았을 수 있다. => or로 deafult name주기 -->
-                    <strong>{{ invite.inviter.employee.name or '관리자급' }}</strong>
-                    <small>님의 <span class="is-size-7 button is-primary is-light">직원초대({{invite.role.name}})</span>가 도착했습니다.
-                        {{invite.create_on | feed_datetime}}</small>
-                </p>
+        </div>
+        <nav class="level is-mobile">
+            <div class="level-left is-size-7">
+                <a class="level-item button is-primary is-small">
+                    <span style="margin-right: 1px;" class="icon"><i class="mdi mdi-check"></i></span>
+                    수락
+                </a>
+                <a class="level-item button is-primary is-light is-small">
+                    <span style="margin-right: 1px;" class="icon"><i class="mdi mdi-close"></i></span>
+                    거절
+                </a>
+                <a class="level-item button is-light is-small has-text-dark">
+                    <span style="margin-right: 1px;" class="icon"><i class="mdi mdi-timer"></i></span>
+                    연기({{ invite.remain_timedelta | format_timedelta }})
+                </a>
+
             </div>
-            <nav class="level is-mobile">
-                <div class="level-left tags ">
-                    <a class="level-item ">
-                        <span class="icon is-small"><i class="fas fa-reply"></i></span>
-                        수락
-                    </a>
-                    <a class="level-item">
-                        <span class="icon is-small"><i class="fas fa-retweet"></i></span>
-                        거절
-                    </a>
-                    <a class="level-item">
-                        <span class="icon is-small"><i class="fas fa-heart"></i></span>
-                        연기(만료일: {{ invite.expire_datetime | format_datetime }})
-                    </a>
-                </div>
-            </nav>
-        </div>
-        <div class="media-right">
-            <button class="delete"></button>
-        </div>
-    </article>
-    {% endfor %}
+        </nav>
+    </div>
+<!--    <div class="media-right">-->
+<!--        <button class="delete"></button>-->
+<!--    </div>-->
+</article>
+{% endfor %}
 {% else %}
 받은 초대가 없습니다.
 {% endif %}

@@ -403,12 +403,12 @@ class Role(BaseModel):
 
     # https://stackoverflow.com/questions/71912085/hybrid-expressions-in-sqlalchemy-with-arguments
     @hybrid_method
-    def is_less_than(self, standard_role):
-        return self.permissions < standard_role.permissions
+    def is_less_than(self, role):
+        return self.permissions < role.permissions
 
     @is_less_than.expression
-    def is_less_than(cls, standard_role):
-        return cls.permissions < standard_role.permissions
+    def is_under(cls, role):
+        return cls.permissions < role.permissions
 
     @classmethod
     def get_by_id(cls, id):

@@ -268,7 +268,7 @@ class EmployeeForm(UserInfoForm):
             #### 직원전환시 USER는 옵션에서 제외해야한다. -> 나보다는 낮지만,  STAFF이상으로 -> where. Role.is_STAFF 추가
             roles_under_current_user = db.session.scalars(
                 select(Role)
-                .where(Role.is_less_than(current_user.role))
+                .where(Role.is_under(current_user.role))
                 .where(Role.is_(Roles.STAFF))
             ).all()
             self.role_id.choices = [(role.id, role.name) for role in roles_under_current_user]

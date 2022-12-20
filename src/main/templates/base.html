@@ -46,6 +46,9 @@
         !important
         ;
         }
+        .modal-background {
+            opacity: 0.4;
+        }
     </style>
     {% block extra_head_style %}{% endblock extra_head_style %}
 </head>
@@ -63,9 +66,9 @@
                         <b-navbar-item>
                             <figure class="image  py-0 m-0" style="height: 32px; width: 128px;">
 
-                            <img class="" style="min-height: 32px; width: 100%;"
-                                src="{{ url_for('download_file', filename=settings.logo) }}"
-                                 alt="{{settings.site_name}}">
+                                <img class="" style="min-height: 32px; width: 100%;"
+                                     src="{{ url_for('download_file', filename=settings.logo) }}"
+                                     alt="{{settings.site_name}}">
                             </figure>
                         </b-navbar-item>
                     </template>
@@ -292,10 +295,54 @@
 <script src="{{url_for('static', filename='js/vue.js')}}"></script>
 <script src="{{url_for('static', filename='js/buefy.min.js')}}"></script>
 {% block extra_foot_script %}{% endblock extra_foot_script %}
+{% block vue_init_script %}
 <script>
+    let ModalFormTest = {
+        props: ['role_id'],
+        template: `
+            <form action="">
+                <div class="modal-card is-" style="width: auto">
+                    <header class="modal-card-head">
+                        <p class="modal-card-title">직원 초대</p>
+                        <button
+                            type="button"
+                            class="delete"
+                            @click="$emit('close')"/>
+                    </header>
+                    <section class="modal-card-body">
+
+                        <b-field label="역할 선택">
+                            <b-select rounded required>
+                                {% for role in role_list %}
+                                <option :value="{{role.id}}">{{role.name}}</option>
+                                {% endfor %}
+                            </b-select>
+                        </b-field>
+                    </section>
+                    <footer class="modal-card-foot">
+                        <b-button
+                            label="닫기"
+                            @click="$emit('close')" />
+                        <b-button
+                            label="초대"
+                            type="is-primary" />
+                    </footer>
+                </div>
+            </form>
+        `
+    }
     var app = new Vue({
         el: '#app',
         delimiters: ['{$', '$}'],  // jinja와 같이 쓸 vue 변수
+        components: {
+            // user.html에서 modal때문에 동적 주입하지만,
+            // (1) base에서 미리 변수가 없으면 안들어감
+            // (2) 변수가 아니다보니, 변수를 미리 선언해도, 초기화가 안되서 base에서 에러가남
+            // (3) components로 정해놨으면, b-modal 내부 <소문자-소문자-소문자>형태로 태그를 사용해야한다.
+            // (4) form마다 다 base에 넣어줄 순 없느 노릇이니, vue초기화를 블락을 만들어보자.
+            ModalFormTest,
+
+        },
         data: {
             // file: {}, // admin/banner_form에서 b-upload에 쓰이는 변수
             // carousels: [], // main/index에서 b-carousel-item에 test
@@ -315,6 +362,14 @@
             activeTab: 0,
             activeAnchor: 0,
             className: '',
+            //user.html에서 componnent modal용으로 쓰는 변수들
+            isComponentModalActive: false,
+            formProps: {
+                role_id: '',
+            },
+            //user.html 일반 modal로 변경하여 필요한 변수
+            isRoleModalActive: false,
+            user_id: null,
         },
         watch: {
             // admin/banner_form , auth/userinfo_form 에서 쓰는 b-upload v-model변수
@@ -385,10 +440,11 @@
             },
             anchorClicked(e, index) {
                 // console.log(e, index)
+                this.activeAnchor = index;
+                // 자신클릭시, active만 활성화시킨 뒤, tab활성화 + tab클릭만 한다.
                 this.activeTab = index;
                 this.tabClicked(index);
 
-                this.activeAnchor = index;
 
                 // const ul = e.currentTarget; // FYI
                 // const a = e.target;
@@ -402,9 +458,10 @@
             getActiveClass(current_index) {
 
                 return {
-                    'is-active' : this.activeAnchor === current_index
+                    'is-active': this.activeAnchor === current_index
                 }
-            }
+            },
+
         },
         filters:
             {
@@ -424,6 +481,8 @@
         }
     })
 </script>
+{% endblock vue_init_script %}
+
 {% block vue_script %}{% endblock vue_script %}
 </body>
 </html>

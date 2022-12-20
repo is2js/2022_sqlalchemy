@@ -224,7 +224,7 @@ class CreateUserForm(FlaskForm):
             #### [ROLE2] 입력받은 현재유저의 role보다 낮은 것을 준다.
             # roles_under_current_user = db.session.scalars(
             #     select(Role)
-            #     .where(Role.is_less_than(current_user.role))
+            #     .where(Role.is_under(current_user.role))
                 # .where(Role.permissions < current_user.role.permissions)
             # ).all()
 

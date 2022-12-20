@@ -252,24 +252,23 @@ def userinfo():
             'key': 1,
             'label': '내 정보',
             'url': url_for('auth.userinfo_subpages', sub_path='userinfo_main'),
-            'icon': 'account-outline',
             'tabItemId': 'userinfo_main',
+            'icon': 'account-outline',
         },
         {
             'key': 2,
             'label': '받은 초대',
             'url': url_for('auth.userinfo_subpages', sub_path='userinfo_invitee'),
-            'icon': 'account-outline',
             'tabItemId': 'userinfo_invitee',
+            'icon': 'account-outline',
         },
     ]
 
-    # print(f'auth/{tab_list[-1]["tabItemId"]}.html')
+    init_html = userinfo_subpages(sub_path=tab_list[0].get('tabItemId'))
     return render_template('auth/userinfo.html',
                            tab_list=tab_list,
                            # init_html=render_template('auth/userinfo_main.html'),
-                           # init_html=render_template(f'auth/{tab_list[0]["tabItemId"]}.html'),
-                           init_html=userinfo_subpages(sub_path=tab_list[0].get('tabItemId')),
+                           init_html=init_html,
                            )
 
 
@@ -398,6 +397,7 @@ def userinfo_subpages(sub_path):
             data['invite_list'] = db.session.scalars(stmt).all()
             for x in data['invite_list']:
                 print(x.is_not_expired)
+
             # print(data['invite_list'])
             # print(data['invite_list'][1])
             # print(data['invite_list'][1].inviter.employee)
@@ -409,7 +409,8 @@ def userinfo_subpages(sub_path):
 
             # print(data['invite_list'][1].inviter.employee.__dict__)
 
-    # return
+    if sub_path == 'userinfo_invitee':
+        data['invite_list'] = EmployeeInvite.get_by_user(g.user)
     return render_template(f'auth/{sub_path}.html', **data)
 
 

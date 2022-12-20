@@ -5,7 +5,7 @@
 <template>
     <aside class="menu">
         <p class="menu-label">
-            User 설정
+            My page
         </p>
 <!--        <ul class="menu-list">-->
             <!--        <li><a class="{% if  '/auth/' == request.path %}is-active{% endif %}"-->
@@ -35,7 +35,6 @@
                     {$ tab.label $}
                 </a>
             </li>
-
         </ul>
     </aside>
 </template>
@@ -77,9 +76,12 @@
                 :icon="tab.icon"
                 :id="tab.tabItemId"
         >
+
+
         {% if init_html %}
             {{init_html |safe}}
         {% endif %}
+
         </b-tab-item>
     </b-tabs>
     {% endblock tab_content %}
