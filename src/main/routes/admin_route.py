@@ -1127,7 +1127,8 @@ def employee_invite():
             .select_from(EmployeeInvite)  # exists()조건들을 WHERE에 담을 주 entity(left)
             .where(EmployeeInvite.inviter.has(User.id == inviter.id))
             .where(EmployeeInvite.invitee.has(User.id == invitee.id))
-            .where(EmployeeInvite.is_not_expired)
+            # .where(EmployeeInvite.is_not_expired)
+            .where(EmployeeInvite.is_valid)
             .select()
         )
 

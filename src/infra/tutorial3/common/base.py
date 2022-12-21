@@ -2,7 +2,7 @@ import datetime
 import uuid
 
 from flask import url_for
-from sqlalchemy import Column, DateTime, BigInteger, Integer, ForeignKey, Boolean, String, func
+from sqlalchemy import Column, DateTime, BigInteger, Integer, ForeignKey, Boolean, String, func, and_
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import declared_attr
 
@@ -77,6 +77,10 @@ class InviteBaseModel(Base):
     def expire_datetime(self):
         return self.create_on + datetime.timedelta(days=self._INVITE_EXPIRE_DAYS)
 
+    @property
+    def remain_timedelta(self):
+        return self.expire_datetime - datetime.datetime.now()
+
     @hybrid_property
     def is_not_expired(self) -> bool:
         return datetime.datetime.now() <= self.expire_datetime
@@ -93,6 +97,21 @@ class InviteBaseModel(Base):
         #### 나느 date로만 비교시 func.date( DateTime필드 )  vs  int (date.month)로 비교했었다.
         return cls.create_on >= datetime.datetime.now() - datetime.timedelta(days=cls._INVITE_EXPIRE_DAYS)
 
-    @property
-    def remain_timedelta(self):
-        return self.expire_datetime - datetime.datetime.now()
+    @hybrid_property
+    def is_not_answered(self) -> bool:
+        return not self.is_answered
+
+    @is_not_answered.expression
+    def is_not_answered(cls):
+        # return not cls.is_answered
+        return cls.is_answered == False
+
+    @hybrid_property
+    def is_valid(self) -> bool:
+        return self.is_not_expired and self.is_not_answered
+
+    @is_valid.expression
+    def is_valid(cls):
+        return and_(cls.is_not_expired, cls.is_not_answered)
+
+

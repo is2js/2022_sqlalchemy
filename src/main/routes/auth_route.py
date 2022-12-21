@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, request, flash, redirect, url_for, session, g
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from src.infra.config.connection import DBConnectionHandler
 from src.infra.tutorial3 import User, EmployeeInvite, Role, Employee
@@ -334,7 +334,8 @@ def userinfo_subpages(sub_path):
 
                 .where(EmployeeInvite.invitee == g.user)
             # => join이 붙으면, 보다 늦게 일어난다. => 주체entity로 생각하지말고, join된 통합table(no releationship필드) 생각한다
-                .where(EmployeeInvite.is_not_expired)
+            #     .where(EmployeeInvite.is_not_expired)
+                .where(EmployeeInvite.is_valid)
                 # .add_columns(Invite, Employee.name)
 
                 #  [] 님의 가 도착했습니다. 21시간 전
@@ -481,11 +482,27 @@ def employee_invite_accept(id):
         invite.is_answered = True
         invite.is_accepted = True
 
+
+
         with DBConnectionHandler() as db:
             db.session.add(invitee_user)
             db.session.add(employee)
             #### invite 처리####
             db.session.add(invite)
+
+            #### 수락한 초대를 제외한, 나에게 보낸 [다른 직원초대들 일괄 거절 + 응답] 처리
+            stmt = (
+                update(EmployeeInvite)
+                .where(EmployeeInvite.id != id)  # 현재 초대를 제외한
+                # .where(EmployeeInvite.is_not_expired)  # 아직 유효한 것들 중
+                .where(EmployeeInvite.is_valid)  # 아직 유효한 것들 중
+                .where(EmployeeInvite.invitee == invitee_user)  # 나에게 보낸 직원초대들
+                .values({EmployeeInvite.is_accepted: False, EmployeeInvite.is_answered: True})
+            )
+            # print(stmt)
+            # UPDATE employee_invites SET is_answered=:is_answered, is_accepted=:is_accepted WHERE employee_invites.id != :id_1 AND employee_invites.create_on >= :create_on_1 AND :param_1 = employee_invites.invitee_id
+
+            db.session.execute(stmt)
             db.session.commit()
             flash("직원 전환 성공")
 

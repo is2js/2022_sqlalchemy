@@ -607,8 +607,15 @@ class EmployeeInvite(InviteBaseModel):
             stmt = (
                 select(cls)
                 .where(cls.invitee == user)
-                .where(cls.is_not_expired)
+                # .where(cls.is_not_expired)
+                .where(cls.is_valid)
             )
+            # print(stmt)
+            # SELECT employee_invites.is_answered, employee_invites.is_accepted, employee_invites.create_on, employee_invites.key, employee_invites.id, employee_invites.inviter_id, employee_invites.invitee_id, employee_invites.role_id
+            # FROM employee_invites
+            # WHERE :param_1 = employee_invites.invitee_id
+            # AND employee_invites.create_on >= :create_on_1
+            # AND employee_invites.is_answered = false
 
             invite_list = db.session.scalars(stmt).all()
         return invite_list
