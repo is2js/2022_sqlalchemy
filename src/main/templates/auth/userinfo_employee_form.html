@@ -1,12 +1,12 @@
-{% extends 'admin/employee.html' %}
+{% extends 'base_form.html' %}
 
-{% block button %}{% endblock button %}
+{%- block column_size -%} 9 {%- endblock column_size -%}
+
+{% block form_title %} 직원 전환 {% endblock form_title %}
 
 
-{% block table_content %}
-<!-- UserInfoForm -->
-<!-- form 추가 시작 -->
-<form action="" method="post" class="mt-4" enctype="multipart/form-data">
+{% block form %}
+<form action="" method="post" class="column mt-4" enctype="multipart/form-data">
     {{ form.csrf_token }}
     <!-- 바깥 columns 에 is-multine을 줘야 칼럼이 넘어가면 다음줄로 내린다-->
     <div class="columns is-mobile is-multiline"
@@ -39,7 +39,8 @@
         <div class="column is-narrow is-7 has-text-centered">
             <div style="padding-top: 1.5rem;">
                 <!-- 버튼 가운데정렬은, flex가 되는 b-field태그의 class로 주면 된다. -->
-                <b-field class="file is-primary is-justify-content-center" :class="{'has-name': !!img_file}">
+                <b-field class="file is-primary is-justify-content-center"
+                         :class="{'has-name': !!img_file}">
                     <b-upload
                             class="file-label" rounded
                             v-model="img_file"
@@ -69,7 +70,7 @@
         <div class="column">
             <!-- email -->
             <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
-                <div class="column is-2 is-align-items-center is-flex">
+                <div class="column is-3 is-align-items-center is-flex">
                     <span class=" has-text-grey-light">{{form.email.label(class='label')}}</span>
                 </div>
                 <div class="column is-5">
@@ -82,7 +83,7 @@
 
             <!-- sex -->
             <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
-                <div class="column is-2 is-align-items-center is-flex">
+                <div class="column is-3 is-align-items-center is-flex">
                     <span class=" has-text-grey-light">{{form.sex.label(class='label')}}</span>
                 </div>
                 <div class="column is-narrow">
@@ -98,26 +99,26 @@
 
             <!-- 전화번호  -->
             <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
-                <div class="column is-2 is-align-items-center is-flex ">
+                <div class="column is-3 is-align-items-center is-flex ">
                     <span class=" has-text-grey-light">{{form.phone.label(class='label')}}</span>
                 </div>
-<!--                <div class="column">-->
+                <!--                <div class="column">-->
                 <div class="column is-4">
                     <!-- descript이 달린 경우, column에 사이즈를 주지말고, 세부요소에 column + is-   p태그에 column + py-0을 주자-->
                     <span class="has-text-black-ter">{{ form.phone(class='input') }}</span>
-<!--                    <span class="has-text-black-ter column is-4">{{ form.phone(class='input') }}</span>-->
-<!--                    <p class="help has-text-primary-dark column py-0">-->
-<!--                        {{ form.phone.description }}-->
-<!--                    </p>-->
+                    <!--                    <span class="has-text-black-ter column is-4">{{ form.phone(class='input') }}</span>-->
+                    <!--                    <p class="help has-text-primary-dark column py-0">-->
+                    <!--                        {{ form.phone.description }}-->
+                    <!--                    </p>-->
                 </div>
 
             </div>
             <!-- 주소   -->
             <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
-                <div class="column is-2 is-align-items-center is-flex">
+                <div class="column is-3 is-align-items-center is-flex">
                     <span class=" has-text-grey-light">{{ form.address.label(class='label')}}</span>
                 </div>
-                <div class="column is-10 ">
+                <div class="column ">
                     <span class=" has-text-black-ter">{{ form.address(class='input') }}</span>
                 </div>
             </div>
@@ -133,7 +134,7 @@
         <div class="column">
             <!-- name -->
             <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
-                <div class="column is-2 is-align-items-center is-flex">
+                <div class="column is-3 is-align-items-center is-flex">
                     <span class=" has-text-grey-light">{{form.name.label(class='label')}}</span>
                 </div>
                 <div class="column is-3">
@@ -143,7 +144,7 @@
 
             <!-- sub_name(영어이름) -->
             <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
-                <div class="column is-2 is-align-items-center is-flex">
+                <div class="column is-3 is-align-items-center is-flex">
                     <span class=" has-text-grey-light">{{form.sub_name.label(class='label')}}</span>
                 </div>
                 <div class="column is-4">
@@ -153,22 +154,22 @@
 
             <!-- 주민번호   -->
             <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
-                <div class="column is-2 is-align-items-center is-flex ">
+                <div class="column is-3 is-align-items-center is-flex ">
                     <span class=" has-text-grey-light">{{form.birth.label(class='label')}}</span>
                 </div>
                 <div class="column is-5">
-<!--                <div class="column">-->
+                    <!--                <div class="column">-->
                     <span class="has-text-black-ter">{{ form.birth(class='input') }}</span>
-<!--                    <span class="has-text-black-ter column is-5">{{ form.birth(class='input') }}</span>-->
-<!--                    <p class="help has-text-primary-dark column py-0">-->
-<!--                        {{ form.birth.description }}-->
-<!--                    </p>-->
+                    <!--                    <span class="has-text-black-ter column is-5">{{ form.birth(class='input') }}</span>-->
+                    <!--                    <p class="help has-text-primary-dark column py-0">-->
+                    <!--                        {{ form.birth.description }}-->
+                    <!--                    </p>-->
                 </div>
             </div>
 
             <!-- 직위  -->
             <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
-                <div class="column is-2 is-align-items-center is-flex">
+                <div class="column is-3 is-align-items-center is-flex">
                     <span class=" has-text-grey-light">{{form.role_id.label(class='label')}}</span>
                 </div>
                 <div class="column is-4">
@@ -178,9 +179,9 @@
                 </div>
             </div>
 
-              <!-- 입사일 -->
+            <!-- 입사일 -->
             <div class="columns">
-                <div class="column is-2">
+                <div class="column is-3">
                     <p>{{ form.join_date.label(class='label')}}</p>
                 </div>
                 <div class="column is-4 ">
@@ -194,14 +195,13 @@
                             </b-datepicker>
                         </b-field>
                         <!-- datefield는 외부에서 값을 받을 땐, 자기고유 format yyyy-m-d 형식의  자기고유타입 string만 받더라. -->
-                        {{form.join_date(class='input', type='hidden',  **{'v-model':'stringDate'})}}
+                        {{form.join_date(class='input', type='hidden', **{'v-model':'stringDate'})}}
                     </div>
                 </div>
             </div>
 
         </div>
     </div>
-
 
 
     <div class="columns is-mobile is-centered my-3">
@@ -216,10 +216,8 @@
                    class="button is-primary">
         </div>
     </div>
-
 </form>
-{% endblock table_content %}
-
+{% endblock form %}
 
 
 {% block vue_script %}

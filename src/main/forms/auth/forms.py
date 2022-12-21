@@ -233,7 +233,10 @@ class EmployeeForm(UserInfoForm):
     )
 
     # def __init__(self, current_user, employee=None, *args, **kwargs):
-    def __init__(self, user, current_user, employee=None, *args, **kwargs):
+    def __init__(self, user,
+                 employer=None, role=None, # 직원전환시 상사객체 OR 직원초대시, role객체 =>  role을 선택할 수 있거나 role을 미리 채운다
+                 employee=None, # 수정을 위한 미리생성된 user의 employee객체
+                 *args, **kwargs):
 
         self.employee = employee
         if self.employee:
@@ -263,15 +266,26 @@ class EmployeeForm(UserInfoForm):
         self.address.validators = [DataRequired("주소를 입력해주세요!")]
         self.phone.validators = [DataRequired("휴대폰 번호를 입력해주세요!")]
 
-        # 직원전환 상사 [current_user]로 부여할 수 잇는 role을 채운다.
-        with DBConnectionHandler() as db:
-            #### 직원전환시 USER는 옵션에서 제외해야한다. -> 나보다는 낮지만,  STAFF이상으로 -> where. Role.is_STAFF 추가
-            roles_under_current_user = db.session.scalars(
-                select(Role)
-                .where(Role.is_under(current_user.role))
-                .where(Role.is_(Roles.STAFF))
-            ).all()
-            self.role_id.choices = [(role.id, role.name) for role in roles_under_current_user]
+        # 1) employer=는 직접 [직원전환]버튼을 누른 상태로서, role을 해당 employer 범위안에서 결정한다
+        if employer:
+            # 직원전환 상사 [current_user]로 부여할 수 잇는 role을 채운다.
+            with DBConnectionHandler() as db:
+                #### 직원전환시 USER는 옵션에서 제외해야한다. -> 나보다는 낮지만,  STAFF이상으로 -> where. Role.is_STAFF 추가
+                roles_under_current_user = db.session.scalars(
+                    select(Role)
+                    .where(Role.is_under(employer.role))
+                    .where(Role.is_(Roles.STAFF))
+                ).all()
+                self.role_id.choices = [(role.id, role.name) for role in roles_under_current_user]
+        # 2) role=은 [직원초대]를 보낼 때 EmployeeInvite에 담긴 role_id => 해당role 1개만 지정되며 수정불가능하게 비활성화한다.
+        if role:
+            #### select는 필드의 값을 미리 채울 때, .data가 아니라 .choices에 tuple1개 list를 1개만 넘기면 된다.
+            # cf) view에서는 subfield.data, subfield.label로 쓰임
+            self.role_id.choices = [(role.id, role.name)]
+            # role의 choie를 1개만 배정해놓고, 더이상 수정 불가능하게 막아주자.
+            self.role_id.render_kw = dict(disabled=True)
+            # choice만 주면, 기존user정보로 필드의.data가 채워진 상태로, 보이기만  choices1개만 보여지게 된다.
+            self.role_id.data = role.id
 
     def validate_birth(self, field):
         if self.employee:  # 수정시 자신의 제외하고 데이터 중복 검사

@@ -2,9 +2,10 @@ from flask import Blueprint, render_template, request, flash, redirect, url_for,
 from sqlalchemy import select
 
 from src.infra.config.connection import DBConnectionHandler
-from src.infra.tutorial3 import User, EmployeeInvite
+from src.infra.tutorial3 import User, EmployeeInvite, Role, Employee
 from src.main.forms.auth import LoginForm, RegisterForm, UserInfoForm
-from src.main.utils import upload_file_path, delete_uploaded_file
+from src.main.forms.auth.forms import EmployeeForm
+from src.main.utils import upload_file_path, delete_uploaded_file, redirect_url
 from src.main.utils.decorators import login_required
 
 auth_bp = Blueprint("auth", __name__, url_prefix='/auth')
@@ -395,8 +396,8 @@ def userinfo_subpages(sub_path):
 
             # data['invite_list'] = db.session.execute(stmt).all()
             data['invite_list'] = db.session.scalars(stmt).all()
-            for x in data['invite_list']:
-                print(x.is_not_expired)
+            # for x in data['invite_list']:
+            #     print(x.is_not_expired)
 
             # print(data['invite_list'])
             # print(data['invite_list'][1])
@@ -410,14 +411,14 @@ def userinfo_subpages(sub_path):
             # print(data['invite_list'][1].inviter.employee.__dict__)
 
     if sub_path == 'userinfo_invitee':
-        data['invite_list'] = EmployeeInvite.get_by_user(g.user)
+        data['invite_list'] = EmployeeInvite.get_by_invitee(g.user)
     return render_template(f'auth/{sub_path}.html', **data)
 
 
 @auth_bp.route('/invite/invitee/')
 @login_required
 def invite_invitee():
-    invite_list = EmployeeInvite.get_by_user(g.user)
+    invite_list = EmployeeInvite.get_by_invitee(g.user)
 
     return render_template('auth/userinfo_invitee.html', invite_list=invite_list)
 
@@ -428,3 +429,67 @@ def invite_invitee():
 #     # user_id = session.get('user_id')
 #     # User.ping_by_id(user_id)
 #     pass
+
+
+@auth_bp.route('/invite/employee/accept/<int:id>/', methods=['GET', 'POST'])
+@login_required
+def employee_invite_accept(id):
+    with DBConnectionHandler() as db:
+        invite = db.session.get(EmployeeInvite, id)
+        # 1) 수락했으면, [해당 invite]에서 invitee와, role을 가져와 수정한다
+        #  => 모든 정보가 입력되면 is_answered된 상태 & is_accepted 처리까지 해줘야한다.
+        # invite.is_answered = True
+        # invite.is_accepted = True
+        # db.session.add(invite)
+
+        # 2) 수락했으면, invitee인 [User]의 기본정보를 위해  user객체를 구해온다
+        invitee_user = db.session.get(User, invite.invitee_id)
+        # 3) 수락했으면, invter 정보 대신 role_id로 해당 [Role]을 배정해줘야한다
+        role = db.session.get(Role, invite.role_id)
+
+        form = EmployeeForm(invitee_user, role=role)
+
+    if form.validate_on_submit():
+        #### user ####
+        user_info = {
+            'email': form.email.data,
+            'sex': form.sex.data,
+            'phone': form.phone.data,
+            'address': form.address.data,
+            'role_id': form.role_id.data,
+        }
+        invitee_user.update(user_info)
+        f = form.avatar.data
+        if f != invitee_user.avatar:
+            avatar_path, filename = upload_file_path(directory_name='avatar', file=f)
+            f.save(avatar_path)
+            delete_uploaded_file(directory_and_filename=invitee_user.avatar)
+            invitee_user.avatar = f'avatar/{filename}'
+
+        #### employee ####
+        # - role은 employee에  있진 않다. 부모격인 user객체에 들어가있음.
+        employee = Employee(
+            user=invitee_user,
+            name=form.name.data,
+            sub_name=form.sub_name.data,
+            birth=form.birth.data,
+            join_date=form.join_date.data,
+            job_status=form.job_status.data,
+        )
+
+        #### invite ####
+        invite.is_answered = True
+        invite.is_accepted = True
+
+        with DBConnectionHandler() as db:
+            db.session.add(invitee_user)
+            db.session.add(employee)
+            #### invite 처리####
+            db.session.add(invite)
+            db.session.commit()
+            flash("직원 전환 성공")
+
+        return redirect(url_for('auth.userinfo'))
+
+    return render_template('auth/userinfo_employee_form.html',
+                           form=form)

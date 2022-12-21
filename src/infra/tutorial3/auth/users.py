@@ -602,7 +602,7 @@ class EmployeeInvite(InviteBaseModel):
         return '<EmployeeInvite %r=>%r >' % (self.inviter_id, self.invitee_id)
 
     @classmethod
-    def get_by_user(cls, user):
+    def get_by_invitee(cls, user):
         with DBConnectionHandler() as db:
             stmt = (
                 select(cls)

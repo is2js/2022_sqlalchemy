@@ -32,7 +32,9 @@
         </div>
         <nav class="level is-mobile">
             <div class="level-left is-size-7">
-                <a class="level-item button is-primary is-small">
+                <a class="level-item button is-primary is-small"
+                   href="{{url_for('auth.employee_invite_accept', id=invite.id)}}"
+                >
                     <span style="margin-right: 1px;" class="icon"><i class="mdi mdi-check"></i></span>
                     수락
                 </a>

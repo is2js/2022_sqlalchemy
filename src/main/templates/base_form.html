@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+
+{% block hero %} {% endblock hero %}
+
+{% block main %}
+<div class="box is-radiusless m-6">
+    <div class="columns is-centered">
+        <div class="column is-{%- block column_size -%}  10  {%- endblock column_size -%}-fullhd">
+
+            <div class="title has-text-centered">
+                {% block form_title %}
+
+                {% endblock form_title %}
+            </div>
+
+            <!-- form validation -->
+            {% if form and form.errors %}
+            <b-message type="is-danger">
+                <ul class="errors">
+                    {% for error, v in form.errors.items() %}
+                    <li>{{ error }}：{{ v[0] }}</li>
+                    {% endfor %}
+                </ul>
+            </b-message>
+            {% endif %}
+
+
+            {% block form %}
+
+            {% endblock form %}
+
+        </div>
+    </div>
+</div>
+{% endblock main %}

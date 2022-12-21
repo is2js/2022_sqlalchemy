@@ -983,7 +983,7 @@ def employee():
 @role_required(allowed_roles=[Roles.CHIEFSTAFF])
 def employee_add(user_id):
     user = User.get_by_id(user_id)
-    form = EmployeeForm(user, g.user)
+    form = EmployeeForm(user, employer=g.user)
 
     if form.validate_on_submit():
         # User정보와 Employee정보를 따로 분리해서 각각 처리한다.
@@ -1151,3 +1151,5 @@ def employee_invite():
 
     # return redirect(url_for('admin.user'))
     return redirect(redirect_url())
+
+
