@@ -234,8 +234,8 @@ class User(BaseModel):
             user = db.session.get(cls, id)
             return user
 
-    def update(self, kwargs):
-        for k, v in kwargs.items():
+    def update(self, info_dict):
+        for k, v in info_dict.items():
             setattr(self, k, v)
 
     def __repr__(self):
@@ -403,10 +403,10 @@ class Role(BaseModel):
 
     # https://stackoverflow.com/questions/71912085/hybrid-expressions-in-sqlalchemy-with-arguments
     @hybrid_method
-    def is_less_than(self, role):
+    def is_under(self, role):
         return self.permissions < role.permissions
 
-    @is_less_than.expression
+    @is_under.expression
     def is_under(cls, role):
         return cls.permissions < role.permissions
 
@@ -571,6 +571,20 @@ class Employee(BaseModel):
     def __repr__(self):
         return '<Employee %r>' % self.id
 
+    def to_dict(self):
+        d = super().to_dict()
+        del d['add_date'] # base공통칼럼을 제외해야 keyword가 안겹친다
+        del d['pub_date']
+        del d['user'] # 관계객체는 굳이 필요없다.
+        del d['id']
+        return d
+
+    def update(self, info_dict):
+        for k, v in info_dict.items():
+            setattr(self, k, v)
+
+
+
 
 # class InviteType(enum.IntEnum):
 #     직원_초대 = 0
@@ -619,3 +633,5 @@ class EmployeeInvite(InviteBaseModel):
 
             invite_list = db.session.scalars(stmt).all()
         return invite_list
+
+

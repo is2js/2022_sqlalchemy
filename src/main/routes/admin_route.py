@@ -648,8 +648,8 @@ def user():
     with DBConnectionHandler() as db:
         role_list = db.session.scalars(
             select(Role)
-            .where(Role.is_(Roles.STAFF)) # 상수 STAFF이상이면서
-            .where(Role.is_under(g.user.role)) # Role객체의 permissions가 현재 직원의 Roles보다는 적게
+            .where(Role.is_(Roles.STAFF))  # 상수 STAFF이상이면서
+            .where(Role.is_under(g.user.role))  # Role객체의 permissions가 현재 직원의 Roles보다는 적게
         ).all()
 
     # print(role_list) # [<Role 'STAFF'>, <Role 'DOCTOR'>, <Role 'CHIEFSTAFF'>, <Role 'EXECUTIVE'>]
@@ -1103,13 +1103,11 @@ def employee_invite():
     # request.referrer http://localhost:5000/admin/user
     # => 요청을 보낸 곳의 url을 처리하고 난 뒤 -> redirect 해주기 위한 메서드 개발
 
-
     # print(request.form)
     # print(request.form.args.to_dict()) # post에선 못씀.
     role_id = request.form.get('role_id', type=int)
     user_id = request.form.get('user_id', default=None, type=int)
     # print("post>>>", role_id, user_id)
-
 
     #### 초대 존재 여부는
     # 1) 현재 초대Type(상위 주제entity)에 대해서만 검색해야한다,(초대 Type이 다르면 또 보낼 수 있음)
@@ -1154,3 +1152,68 @@ def employee_invite():
     return redirect(redirect_url())
 
 
+@admin_bp.route('/employee/edit/<int:id>', methods=['GET', 'POST'])
+@login_required
+@role_required(allowed_roles=[Roles.CHIEFSTAFF])
+def employee_edit(id):
+    # 1) user기본정보는, employee 1:1 subquery로서 바로 찾을 수 있기 때문에 조회는 생략한다.
+    # employee화면에서는, employee id를 보내주기 때문에 user_id와 별개로 id로 찾는다.
+    with DBConnectionHandler() as db:
+        employee = db.session.get(Employee, id)
+    # 2) employeeForm이 수정form일땐, role선택여부를 위해 g.user가 고용주로 들어가며
+    #   기본정보인 user정보를 채우기 위해, user도 들어간다.
+
+    #### 직원관련 수정 등은, role구성이 자신이하로만 구성되므로, 조건을 확인하여, 아니면 돌려보내보자
+    if not employee.user.role.is_under(g.user.role):
+        flash('자신보다 아래 직위의 직원만 수정할 수 있습니다.', category='is-danger')
+        return redirect(redirect_url())
+
+    # 항상 수정form을 만드는 user / employform의 수정form인 employee= / role이 1개가 아니라, g.user이하의 role을 만드는 employer=
+    form = EmployeeForm(employee.user, employee=employee, employer=g.user)
+
+    if form.validate_on_submit():
+        #### user ####
+        user_info = {
+            'email': form.email.data,
+            'sex': form.sex.data,
+            'phone': form.phone.data,
+            'address': form.address.data,
+
+            'role_id': form.role_id.data,
+        }
+        user = employee.user
+        user.update(user_info)
+
+        f = form.avatar.data
+        if f != user.avatar:
+            avatar_path, filename = upload_file_path(directory_name='avatar', file=f)
+            f.save(avatar_path)
+            delete_uploaded_file(directory_and_filename=user.avatar)
+            user.avatar = f'avatar/{filename}'
+
+        #### employee ####
+        employee_info = {
+            'name': form.name.data,
+            'sub_name': form.sub_name.data,
+            'birth': form.birth.data,
+            'join_date': form.join_date.data,
+            'job_status': form.job_status.data,
+            #### 수정된 user객체를 넣어준다
+            'user': user,
+            #### 생성시에 없었던, job_status와, resign_date를 넣어준다
+            # 'job_status': form.job_status.data,
+            # 'resign_date': form.resign_date.data,
+        }
+        employee.update(employee_info)
+
+        with DBConnectionHandler() as db:
+            db.session.add(employee)
+            db.session.commit()
+            print(employee.user.role_id)
+            flash("직원 수정 성공", category='is-success')
+
+        return redirect(url_for('admin.employee'))
+
+    return render_template('admin/employee_form.html',
+                           form=form
+                           )

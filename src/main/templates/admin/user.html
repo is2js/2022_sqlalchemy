@@ -118,7 +118,6 @@
                 <!-- user보기 버튼은 staff도 가능하도록 -->
                 <!-- view 버튼 넣기 -->
 
-                {% if g.user.is_chiefstaff %}
                 <div class="tags">
 
                     <!--                       @click="isComponentModalActive = true; formProps['user_id'] = {{user.id}}"-->
@@ -126,6 +125,13 @@
                     <!-- 모달클릭처리 참고 -->
                     <!-- https://stackoverflow.com/questions/58963250/how-to-pass-selected-id-to-modal-in-vue-js -->
                     <!-- <a href="{{url_for('admin.employee_invite', user_id=user.id)}}"-->
+                    <a href="{{url_for('admin.user_edit', id=user.id)}}" class="tag is-success is-light">
+                            <span class="icon">
+                                <i class="mdi mdi-square-edit-outline"></i>
+                            </span>
+                        수정
+                    </a>
+                {% if g.user.is_chiefstaff %}
                     <a href="javascript:;"
                        class="tag is-info is-light"
                        @click="isRoleModalActive = true; user_id = {{user.id}}"
@@ -147,12 +153,6 @@
                         직원 전환
                     </a>
 
-                    <a href="{{url_for('admin.user_edit', id=user.id)}}" class="tag is-success is-light">
-                            <span class="icon">
-                                <i class="mdi mdi-square-edit-outline"></i>
-                            </span>
-                        수정
-                    </a>
 
                     <a href="{{url_for('admin.user_delete', id=user.id)}}" class="tag is-danger is-light">
                             <span class="icon">

@@ -2,7 +2,7 @@ import datetime
 import uuid
 
 from flask import url_for
-from sqlalchemy import Column, DateTime, BigInteger, Integer, ForeignKey, Boolean, String, func, and_
+from sqlalchemy import Column, DateTime, BigInteger, Integer, ForeignKey, Boolean, String, func, and_, inspect
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import declared_attr
 
@@ -15,6 +15,13 @@ class BaseModel(Base):
 
     add_date = Column(DateTime, nullable=False, default=datetime.datetime.now)
     pub_date = Column(DateTime, nullable=False, default=datetime.datetime.now, onupdate=datetime.datetime.now)
+
+    def to_dict(self):
+        return {c: getattr(self, c) for c in inspect(self).attrs.keys()}
+
+    @staticmethod
+    def to_dict_list(l):
+        return [m.to_dict() for m in l]
 
 
 class InviteBaseModel(Base):

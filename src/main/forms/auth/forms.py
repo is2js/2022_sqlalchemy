@@ -138,7 +138,8 @@ class UserInfoForm(FlaskForm):
         self.user = user
 
         if self.user:
-            super().__init__(**self.user.__dict__)
+            # super().__init__(**self.user.__dict__)
+            super().__init__(**self.user.__dict__, **kwargs)
         else:
             super().__init__(*args, **kwargs)
 
@@ -239,9 +240,18 @@ class EmployeeForm(UserInfoForm):
                  *args, **kwargs):
 
         self.employee = employee
+        self.employer = employer
+        self.role = role
         if self.employee:
-            # super().__init__(**self.employee.__dict__)
-            super().__init__(user, **self.employee.__dict__)
+            # super().__init__(user, **self.employee.__dict__) => error
+            ## 1) employee를 **kwargs로 보내주면, employee내부 user필드가 또 있어서, 겹치게 된다.
+            # => user를 따로 보내주는 대신, employee내부.user를 부모form사용하도록 user보내주는 것을 막음.
+            ## 2) 또한, 부모의 user속 '_sa_instance_state'와, employee속 '_sa_instance_state'도 겹치게 된다.
+            # print(self.employee.serialize())
+            # {'add_date': datetime.datetime(2022, 12, 21, 21, 50, 11, 114650), 'pub_date': datetime.datetime(2022, 12, 21, 21, 50, 11, 114650), 'id': 12, 'user_id': 37, 'name': '투자자', 'sub_name': '투자자', 'birth': '2010233349192', 'join_date': datetime.da
+            # te(2022, 12, 21), 'job_status': <JobStatusType.재직: 1>, 'resign_date': None, 'user': User[id=37]}
+            # print(self.employee.serialize())
+            super().__init__(user, **self.employee.to_dict())
         else:
             # super().__init__(*args, **kwargs)
             ## 상속한 부모 form UserInfoForm는 무조건 수정상태로 쓰니, user를 넣어준다.
@@ -267,18 +277,22 @@ class EmployeeForm(UserInfoForm):
         self.phone.validators = [DataRequired("휴대폰 번호를 입력해주세요!")]
 
         # 1) employer=는 직접 [직원전환]버튼을 누른 상태로서, role을 해당 employer 범위안에서 결정한다
-        if employer:
+        if self.employer:
             # 직원전환 상사 [current_user]로 부여할 수 잇는 role을 채운다.
             with DBConnectionHandler() as db:
                 #### 직원전환시 USER는 옵션에서 제외해야한다. -> 나보다는 낮지만,  STAFF이상으로 -> where. Role.is_STAFF 추가
-                roles_under_current_user = db.session.scalars(
+                roles_under_employee = db.session.scalars(
                     select(Role)
-                    .where(Role.is_under(employer.role))
+                    .where(Role.is_under(self.employer.role))
                     .where(Role.is_(Roles.STAFF))
                 ).all()
-                self.role_id.choices = [(role.id, role.name) for role in roles_under_current_user]
+                self.role_id.choices = [(role.id, role.name) for role in roles_under_employee]
+                #### 자신이 들고있는 role은 기본값으로 줘놔야한다. 안그러면 select의 첫 값으로 잡힌다
+                # self.role_id.data = user.role_id
+                # self.role_id.name = user.role.name
+
         # 2) role=은 [직원초대]를 보낼 때 EmployeeInvite에 담긴 role_id => 해당role 1개만 지정되며 수정불가능하게 비활성화한다.
-        if role:
+        elif self.role:
             #### select는 필드의 값을 미리 채울 때, .data가 아니라 .choices에 tuple1개 list를 1개만 넘기면 된다.
             # cf) view에서는 subfield.data, subfield.label로 쓰임
             self.role_id.choices = [(role.id, role.name)]

@@ -12,28 +12,28 @@
     </div>
 
     {% block button %}
-    <div class="is-pulled-right">
-        <a href="{{url_for('admin.employee')}}" class="button is-primary is-light">
-            <span class="icon"><i class="mdi mdi-plus-thick"></i></span>
-            <span>직원 추가</span>
-        </a>
-    </div>
+<!--    <div class="is-pulled-right">-->
+<!--        <a href="{{url_for('admin.employee')}}" class="button is-primary is-light">-->
+<!--            <span class="icon"><i class="mdi mdi-plus-thick"></i></span>-->
+<!--            <span>직원 추가</span>-->
+<!--        </a>-->
+<!--    </div>-->
 
     {% endblock button %}
     <div class="is-clearfix"></div>
     <div class="dropdown-divider"></div>
 
     <!-- 아래쪽 table의 처리에 대한 flash 메세지를 위쪽에서   -->
-    {% with messages = get_flashed_messages() %}
-    <b-message type="is-success">
-        {% if messages %}
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    {% for category, message in messages %}
+    <b-message type="{{category}}">
         <ul class=flashes>
-            {% for message in messages %}
-            <li>{{ message }}</li>
-            {% endfor %}
+            <li class="{{category}}">{{ message }}</li>
         </ul>
-        {% endif %}
     </b-message>
+    {% endfor %}
+    {% endif %}
     {% endwith %}
 
     <!-- form validation -->
@@ -115,10 +115,10 @@
             <td><span class="is-size-7">{{employee.years_from_join_date}}년차({{ employee.working_days}})</span></td>
             <td><span class="is-size-7">{{ employee.job_status.name }}</span></td>
 
-            <!--  User수정/삭제 버튼은 Chief부터 -->
             <td>
                 <div class="tags">
-                    <a href="{{url_for('admin.employee', id=employee.id)}}" class="tag is-success is-light">
+                    <!-- 수정은 g.user의 role미만이 choices로 구성되므로, 자신보다 낮을때만 수정되게 해야한다. -->
+                    <a href="{{url_for('admin.employee_edit', id=employee.id)}}" class="tag is-success is-light">
                             <span class="icon">
                                 <i class="mdi mdi-square-edit-outline"></i>
                             </span>
@@ -129,7 +129,7 @@
                             <span class="icon">
                                  <i class="mdi mdi-trash-can-outline"></i>
                             </span>
-                        퇴사
+                        재직상태변경
                     </a>
 
 
