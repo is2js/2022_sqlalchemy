@@ -41,16 +41,16 @@
 {% block member %}
 <template>
     <!-- flash message -->
-    {% with messages = get_flashed_messages() %}
-    <b-message type="is-success">
-        {% if messages %}
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    {% for category, message in messages %}
+    <b-message type="{{category}}">
         <ul class=flashes>
-            {% for message in messages %}
-            <li>{{ message }}</li>
-            {% endfor %}
+            <li class="{{category}}">{{ message }}</li>
         </ul>
-        {% endif %}
     </b-message>
+    {% endfor %}
+    {% endif %}
     {% endwith %}
 
     <!-- form validation -->

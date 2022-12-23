@@ -69,9 +69,10 @@ def create_db(truncate: bool = False, drop_table: bool = False):
 
 
 # https://stackoverflow.com/questions/30840129/parsing-datetime-in-python-json-loads
+# date와 time까지도 https://stackoverflow.com/questions/12122007/python-json-encoder-to-support-datetime
 class MyJSONEncoder(json.JSONEncoder):
     def default(self, obj):
-        if isinstance(obj, (datetime.datetime,)):
+        if isinstance(obj, (datetime.datetime, datetime.date, datetime.time)):
             return {"val": obj.isoformat(), "_spec_type": "datetime"}
         elif isinstance(obj, (decimal.Decimal,)):
             return {"val": str(obj), "_spec_type": "decimal"}

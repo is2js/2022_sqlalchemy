@@ -37,7 +37,7 @@ if __name__ == '__main__':
 
     #### 필드추가 전 1) 필드 추가전 먼저 dump   ( 테이블은 미리 추가하면 안된다!!!!!! )
     # dump_sqlalchemy() # User last_seen, ping_by_id() # Employee entity 추가전
-    # dump_sqlalchemy('users')
+    # dump_sqlalchemy('employees')
     # 저장>>> ./backup_2022-12-14_193544.json
 
     #### 필드추가 전 2) nullable 필드 code 추가 (테이블추가 아님!!!!!!!!!)
@@ -46,9 +46,10 @@ if __name__ == '__main__':
 
     #### 필드추가 전 3) 필드를 nullable로 생성된를 drop_table=True로 테이블 생성 -> bulk insert
     # create_database(truncate=False, drop_table=True, load_fake_data=False)
-    # bulk_insert_from_json('./backup_2022-12-16_003308.json')
+    # bulk_insert_from_json('./backup_2022-12-23_132512.json')
+    ####  OR  테이블 1개만 수동 삭제 =>  drop_table=False로 생성 + 특정테이블 insert
     # create_database(truncate=False, drop_table=False, load_fake_data=False)
-    # bulk_insert_from_json('./backup_2022-12-16_003308.json', table_name='users')
+    # bulk_insert_from_json('./backup_2022-12-23_134339.json', table_name='employees')
 
 
     #### 필드추가 전 4) nullable 필드 수동 채우기 or flask shell에서 코드로 채우기
@@ -77,7 +78,7 @@ if __name__ == '__main__':
     #### 필드추가 전 7) 테이블 code 추가
 
     #### 필드추가 전 8) 테이블 추가는 drop_table = False상태로 생성
-    create_database(truncate=False, drop_table=False, load_fake_data=False)
+    # create_database(truncate=False, drop_table=False, load_fake_data=False)
 
 
 

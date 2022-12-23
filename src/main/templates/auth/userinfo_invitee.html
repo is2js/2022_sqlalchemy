@@ -15,9 +15,9 @@
         </p>
     </figure>
     <div class="media-content">
-<!--        <div class="content">-->
+        <!--        <div class="content">-->
         <div class="content">
-<!--            <p>-->
+            <!--            <p>-->
             <p class="mb-0 is-size-6">
                 <!-- 관리자급은, name을 기입안하고 바로 role을 부여받았을 수 있다. => or로 deafult name주기 -->
                 <strong>{{ invite.inviter.employee.name or '이름없음' }}</strong>님의
@@ -38,21 +38,40 @@
                     <span style="margin-right: 1px;" class="icon"><i class="mdi mdi-check"></i></span>
                     수락
                 </a>
-                <a class="level-item button is-primary is-light is-small">
-                    <span style="margin-right: 1px;" class="icon"><i class="mdi mdi-close"></i></span>
-                    거절
-                </a>
-                <a class="level-item button is-light is-small has-text-dark">
-                    <span style="margin-right: 1px;" class="icon"><i class="mdi mdi-timer"></i></span>
-                    연기({{ invite.remain_timedelta | format_timedelta }})
-                </a>
+                <!-- 거절과 연기는 only form - post로 요청하여 redirect받기 -->
+                <form action="{{url_for('auth.employee_invite_reject', id= invite.id) }}"
+                      method="post"
+                      @submit.prevent="submitForm"
+                      class="mr-3"
+                >
+                    <button type="submit"
+                            class="level-item button is-primary is-light is-small"
+                            :disabled="isLoading"
+                    >
+                        <span style="margin-right: 1px;" class="icon"><i class="mdi mdi-close"></i></span>
+                        거절
+                    </button>
+                </form>
+
+                <form action="{{url_for('auth.employee_invite_postpone', id= invite.id) }}"
+                      method="post"
+                      @submit.prevent="submitForm"
+                >
+                    <button type="submit"
+                            class="level-item button is-light is-small has-text-dark"
+                            :disabled="isLoading"
+                    >
+                        <span style="margin-right: 1px;" class="icon"><i class="mdi mdi-timer"></i></span>
+                        연기({{ invite.remain_timedelta | format_timedelta }})
+                    </button>
+                </form>
 
             </div>
         </nav>
     </div>
-<!--    <div class="media-right">-->
-<!--        <button class="delete"></button>-->
-<!--    </div>-->
+    <!--    <div class="media-right">-->
+    <!--        <button class="delete"></button>-->
+    <!--    </div>-->
 </article>
 {% endfor %}
 {% else %}

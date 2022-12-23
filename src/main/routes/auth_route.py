@@ -1,5 +1,7 @@
+import datetime
+
 from flask import Blueprint, render_template, request, flash, redirect, url_for, session, g
-from sqlalchemy import select, update
+from sqlalchemy import select, update, delete
 
 from src.infra.config.connection import DBConnectionHandler
 from src.infra.tutorial3 import User, EmployeeInvite, Role, Employee
@@ -333,8 +335,8 @@ def userinfo_subpages(sub_path):
                 # lazy load operation of attribute 'employee' cannot proceed
 
                 .where(EmployeeInvite.invitee == g.user)
-            # => join이 붙으면, 보다 늦게 일어난다. => 주체entity로 생각하지말고, join된 통합table(no releationship필드) 생각한다
-            #     .where(EmployeeInvite.is_not_expired)
+                # => join이 붙으면, 보다 늦게 일어난다. => 주체entity로 생각하지말고, join된 통합table(no releationship필드) 생각한다
+                #     .where(EmployeeInvite.is_not_expired)
                 .where(EmployeeInvite.is_valid)
                 # .add_columns(Invite, Employee.name)
 
@@ -423,6 +425,7 @@ def invite_invitee():
 
     return render_template('auth/userinfo_invitee.html', invite_list=invite_list)
 
+
 # 최근방문시간 -> model ping메서드 -> auth route에서 before_app_request에 로그인시 메서드호출하면서 수정하도록 변경
 # 방문할 때마다 최근 방문시간을 갱신한다.
 # @auth_bp.before_app_request
@@ -451,44 +454,92 @@ def employee_invite_accept(id):
         form = EmployeeForm(invitee_user, role=role)
 
     if form.validate_on_submit():
-        #### user ####
-        user_info = {
-            'email': form.email.data,
-            'sex': form.sex.data,
-            'phone': form.phone.data,
-            'address': form.address.data,
-            'role_id': form.role_id.data,
-        }
-        invitee_user.update(user_info)
-        f = form.avatar.data
-        if f != invitee_user.avatar:
-            avatar_path, filename = upload_file_path(directory_name='avatar', file=f)
-            f.save(avatar_path)
-            delete_uploaded_file(directory_and_filename=invitee_user.avatar)
-            invitee_user.avatar = f'avatar/{filename}'
-
-        #### employee ####
-        # - role은 employee에  있진 않다. 부모격인 user객체에 들어가있음.
-        employee = Employee(
-            user=invitee_user,
-            name=form.name.data,
-            sub_name=form.sub_name.data,
-            birth=form.birth.data,
-            join_date=form.join_date.data,
-            job_status=form.job_status.data,
-        )
-
-        #### invite ####
-        invite.is_answered = True
-        invite.is_accepted = True
-
-
+        is_re_join = False
+        #### Employ정보를 생성하기 전에, 퇴사후 재입사인 경우 user:emp 1:1관계를 유지하기 위해
+        #### => 기존  employee정보를 검색해서 있으면 삭제해준다
+        with DBConnectionHandler() as db:
+            # 1) invite id -> invite -> invitee_id 값 찾기
+            user_id_scalar = (
+                select(EmployeeInvite.invitee_id)
+                .where(EmployeeInvite.id == id)
+            ).scalar_subquery()
+            # 2) invite_id값과 user_id가 일치하는 Employee데이터 조회하기
+            stmt = (
+                select(Employee)
+                .where(Employee.user_id ==
+                       user_id_scalar
+                       )
+            )
+            # SELECT employees.add_date, employees.pub_date, employees.id, employees.user_id, employees.name, employees.sub_name, employees.birth, employees.join_date, employees.job_status, employees.resign_date
+            # FROM employees
+            # WHERE employees.user_id = (SELECT employee_invites.invitee_id AS user_id
+            #                               FROM employee_invites
+            #                               WHERE employee_invites.id = :id_1)
+            prev_employee = db.session.scalars(
+                stmt
+            ).first()
+            # print(stmt)
+            # print(prev_employee)
+            if prev_employee:
+                # print("기존 입사정보가 있어서, 삭제하고 재입사 처리합니다.")
+                is_re_join = True
+                db.session.delete(prev_employee)
+                db.session.commit()
+            else:
+                # print("기존 입사정보 없이, 신규입사입니다.")
+                pass
 
         with DBConnectionHandler() as db:
+            invite = db.session.get(EmployeeInvite, id)
+            invitee_user = db.session.get(User, invite.invitee_id)
+            #### user ####
+            user_info = {
+                'email': form.email.data,
+                'sex': form.sex.data,
+                'phone': form.phone.data,
+                'address': form.address.data,
+                'role_id': form.role_id.data,
+            }
+            invitee_user.update(user_info)
+            f = form.avatar.data
+            if f != invitee_user.avatar:
+                avatar_path, filename = upload_file_path(directory_name='avatar', file=f)
+                f.save(avatar_path)
+                delete_uploaded_file(directory_and_filename=invitee_user.avatar)
+                invitee_user.avatar = f'avatar/{filename}'
+
+            #### employee ####
+            # - role은 employee에  있진 않다. 부모격인 user객체에 들어가있음.
+            employee = Employee(
+                user=invitee_user,
+                name=form.name.data,
+                sub_name=form.sub_name.data,
+                birth=form.birth.data,
+                join_date=form.join_date.data,
+                job_status=form.job_status.data,
+            )
+
+            # Employee검사에서 재입사면, nullable인 reference 비고필드를 채워준다.
+            if is_re_join:
+                employee.reference = '재입사'
+            else:
+                employee.reference = '신규입사'
+
+            #### invite ####
+            invite.is_answered = True
+            invite.is_accepted = True
+
+            db.session.add(invite)
+
             db.session.add(invitee_user)
             db.session.add(employee)
             #### invite 처리####
-            db.session.add(invite)
+            db.session.commit()
+
+        #### 나머지 초대들 삭제처리하기
+        with DBConnectionHandler() as db:
+            invite1 = db.session.get(EmployeeInvite, id)
+            invitee_user1 = db.session.get(User, invite1.invitee_id)
 
             #### 수락한 초대를 제외한, 나에게 보낸 [다른 직원초대들 일괄 거절 + 응답] 처리
             stmt = (
@@ -496,7 +547,7 @@ def employee_invite_accept(id):
                 .where(EmployeeInvite.id != id)  # 현재 초대를 제외한
                 # .where(EmployeeInvite.is_not_expired)  # 아직 유효한 것들 중
                 .where(EmployeeInvite.is_valid)  # 아직 유효한 것들 중
-                .where(EmployeeInvite.invitee == invitee_user)  # 나에게 보낸 직원초대들
+                .where(EmployeeInvite.invitee == invitee_user1)  # 나에게 보낸 직원초대들
                 .values({EmployeeInvite.is_accepted: False, EmployeeInvite.is_answered: True})
             )
             # print(stmt)
@@ -510,3 +561,36 @@ def employee_invite_accept(id):
 
     return render_template('auth/userinfo_employee_form.html',
                            form=form)
+
+
+@auth_bp.route('/invite/employee/reject/<int:id>/', methods=['POST'])
+@login_required
+def employee_invite_reject(id):
+    with DBConnectionHandler() as db:
+        invite = db.session.get(EmployeeInvite, id)
+
+        invite.is_answered = True
+        invite.is_accepted = False
+
+        db.session.add(invite)
+        db.session.commit()
+
+        flash("초대를 거절했습니다.", category='is-danger')
+
+        return redirect(redirect_url())
+
+
+@auth_bp.route('/invite/employee/postpone/<int:id>/', methods=['POST'])
+@login_required
+def employee_invite_postpone(id):
+    with DBConnectionHandler() as db:
+        invite = db.session.get(EmployeeInvite, id)
+
+        invite.create_on = invite.create_on + datetime.timedelta(days=EmployeeInvite._INVITE_EXPIRE_DAYS)
+
+        db.session.add(invite)
+        db.session.commit()
+
+        flash(f"초대를 {EmployeeInvite._INVITE_EXPIRE_DAYS}일 연기했습니다.", category='is-info')
+
+        return redirect(redirect_url())

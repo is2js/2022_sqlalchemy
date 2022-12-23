@@ -16,7 +16,7 @@ from src.config import project_config
 from src.infra.commons import paginate
 from src.infra.config.connection import DBConnectionHandler
 from src.infra.tutorial3 import Category, Post, Tag, User, Banner, posttags, Setting
-from src.infra.tutorial3.auth.users import SexType, Roles, Role, Employee, EmployeeInvite
+from src.infra.tutorial3.auth.users import SexType, Roles, Role, Employee, EmployeeInvite, JobStatusType
 from src.main.forms import CategoryForm
 from src.main.forms.admin.forms import PostForm, TagForm, CreateUserForm, BannerForm, SettingForm
 from src.main.forms.auth.forms import EmployeeForm, UserInfoForm
@@ -967,15 +967,22 @@ def employee():
     #### employee정보를 기준으로 직원관리를 표시하려면 User에서 골라내는게 아니라, Employee중에서 골라야한다.
     #### - Employee도 대기상태 or 퇴사상태 데이터가 있기 때문에, 필터링을 한번 해야한다
     stmt = select(Employee) \
-        .where(Employee.is_active) \
         .order_by(Employee.join_date.desc())
+        # .where(Employee.is_active) \
 
     pagination = paginate(stmt, page=page, per_page=10)
     employee_list = pagination.items
 
+    #### 재직상태변경을 modal 속 select option 추가로 내려보내기
+    job_status_list = JobStatusType.choices()
+    # print(job_status_list)
+    # [(1, '재직'), (2, '휴직'), (3, '퇴사')]
+
     return render_template('admin/employee.html',
                            employee_list=employee_list,
-                           pagination=pagination)
+                           pagination=pagination,
+                           job_status_list=job_status_list
+                           )
 
 
 @admin_bp.route('/employee/add/<int:user_id>', methods=['GET', 'POST'])
@@ -1209,7 +1216,7 @@ def employee_edit(id):
         with DBConnectionHandler() as db:
             db.session.add(employee)
             db.session.commit()
-            print(employee.user.role_id)
+            # print(employee.user.role_id)
             flash("직원 수정 성공", category='is-success')
 
         return redirect(url_for('admin.employee'))
@@ -1217,3 +1224,34 @@ def employee_edit(id):
     return render_template('admin/employee_form.html',
                            form=form
                            )
+
+
+@admin_bp.route('/employee/job_status', methods=['POST'])
+@login_required
+@role_required(allowed_roles=[Roles.CHIEFSTAFF])
+def employee_job_status_change():
+    employee_id = request.form.get('employee_id', type=int)
+    job_status = request.form.get('job_status', type=int)
+
+    with DBConnectionHandler() as db:
+        employee = db.session.get(Employee, employee_id)
+
+        if not employee.user.role.is_under(g.user.role):
+            flash('자신보다 아래 직위의 직원만 수정할 수 있습니다.', category='is-danger')
+            return redirect(redirect_url())
+
+        employee.job_status = job_status
+        if job_status == JobStatusType.퇴사:
+            # print("퇴사처리시 resign_date가 찍히게 된다.")
+            employee.resign_date = date.today()
+            # 퇴사처리시 role을 user로 다시 바꿔, 직원정보는 남아있되, role이 user라서 접근은 못하게 한다
+            role = db.session.scalars(
+                select(Role)
+                .where(Role.default == True)
+            ).first()
+            employee.user.role = role
+
+        db.session.add(employee)
+        db.session.commit()
+
+    return redirect(redirect_url())

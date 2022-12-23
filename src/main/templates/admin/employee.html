@@ -12,12 +12,12 @@
     </div>
 
     {% block button %}
-<!--    <div class="is-pulled-right">-->
-<!--        <a href="{{url_for('admin.employee')}}" class="button is-primary is-light">-->
-<!--            <span class="icon"><i class="mdi mdi-plus-thick"></i></span>-->
-<!--            <span>직원 추가</span>-->
-<!--        </a>-->
-<!--    </div>-->
+    <!--    <div class="is-pulled-right">-->
+    <!--        <a href="{{url_for('admin.employee')}}" class="button is-primary is-light">-->
+    <!--            <span class="icon"><i class="mdi mdi-plus-thick"></i></span>-->
+    <!--            <span>직원 추가</span>-->
+    <!--        </a>-->
+    <!--    </div>-->
 
     {% endblock button %}
     <div class="is-clearfix"></div>
@@ -68,6 +68,7 @@
             <th>연차</th>
             <th>상태</th>
             <!-- 작업 수정삭제에  + (4)퇴사버튼 추가 -->
+            <th>비고</th>
             <th>작업</th>
         </tr>
         </thead>
@@ -107,13 +108,26 @@
                     is-info
                     {% endif %}
                      is-light">
-                        {{ employee.user.role.name }}
+                        {{ employee.user.role.name}}
                     </span>
                 </div>
             </td>
 
             <td><span class="is-size-7">{{employee.years_from_join_date}}년차({{ employee.working_days}})</span></td>
-            <td><span class="is-size-7">{{ employee.job_status.name }}</span></td>
+            <td><span class="is-size-7">
+                {% if employee.job_status.name == '대기' %}
+                <span class="tag is-info">{{ employee.job_status.name }}</span>
+                {% elif employee.job_status.name == '재직' %}
+                <span class="tag is-success">{{ employee.job_status.name }}</span>
+                {% elif employee.job_status.name == '휴직' %}
+                <span class="tag is-warning">{{ employee.job_status.name }}</span>
+                {% elif employee.job_status.name == '퇴사' %}
+                <span class="tag is-danger">{{ employee.job_status.name }}</span>
+                {% else %}
+                {% endif %}
+            </span></td>
+
+            <td>{{ employee.reference }}</td>
 
             <td>
                 <div class="tags">
@@ -125,7 +139,11 @@
                         수정
                     </a>
 
-                    <a href="{{url_for('admin.employee', id=employee.id)}}" class="tag is-warning is-light">
+                    <!--                    <a href="{{url_for('admin.employee', id=employee.id)}}" -->
+                    <a href="javascript:;"
+                       @click="isJobStatusModalActive = true; employee_id = {{employee.id}}"
+                       class="tag is-warning is-light"
+                    >
                             <span class="icon">
                                  <i class="mdi mdi-trash-can-outline"></i>
                             </span>
@@ -178,6 +196,67 @@
     </ul>
 </nav>
 
+
+<!-- 재직상태변경 모달 -->
+<b-modal
+        v-model="isJobStatusModalActive"
+        has-modal-card
+        trap-focus
+        aria-role="dialog"
+        aria-label="Job Status Select Modal"
+        aria-modal
+>
+    <!--    <form action="{{url_for('admin.employee_job_status_change') }}" -->
+    <form action="{{url_for('admin.employee_job_status_change') }}"
+            method="post"
+            @submit.prevent="submitForm"
+    >
+        <div class="modal-card is-" style="width: auto">
+            <header class="modal-card-head">
+                <p class="modal-card-title is-size-5">
+                    재직상태 변경
+                </p>
+                <button
+                        type="button"
+                        class="delete"
+                        @click="isJobStatusModalActive = false; employee_id = null;"/>
+            </header>
+            <section class="modal-card-body">
+                <!-- INPUT1: HIDEEN 모달클릭시 v-bind변수에 담아놨던 변수로, form에 포함될 변수로서 id를 반영 -->
+                <input type="hidden" name="employee_id" :value="employee_id">
+
+                <!-- INPUT2:  -->
+                <b-field label="재직상태">
+                    <!-- option이 아니라 상위 b-select에  name=도 같이붙으며  form으로 간다 -->
+                    <b-select
+                            name="job_status"
+                            placeholder="선택"
+                            rounded required
+                    >
+                        {% for job_status in job_status_list %}
+                        <option value="{{job_status[0]}}">{{job_status[1]}}</option>
+                        {% endfor %}
+                    </b-select>
+                </b-field>
+
+            </section>
+            <footer class="modal-card-foot">
+                <!-- b-button들을 넣으면 1개 이후 사라지는 버그 => a태그 + input(submit) 조합으로 변경-->
+                <a class="button is-primary is-light mr-2"
+                   @click="isJobStatusModalActive = false; employee_id = null;"
+                >
+                    닫기
+                </a>
+                <input type="submit"
+                       class="button is-primary"
+                       value="완료"
+                       :disabled="isLoading"
+                >
+            </footer>
+        </div>
+
+    </form>
+</b-modal>
 {% endblock table_content %}
 {% endblock member %}
 

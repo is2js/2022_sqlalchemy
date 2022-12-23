@@ -319,7 +319,7 @@ class Role(BaseModel):
 
     # id = Column(Integer, primary_key=True)
     id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
-    name = Column(String(64), unique=True)
+    name = Column(String(64), unique=True, index=True)
     # User 생성시, default객체가 User인지를 컴퓨터는 알길이 없기에
     # 우리가 정해둔 default role을 검색해서, User생성시 배정할 수 있게 한다
     default = Column(Boolean, default=False, index=True)
@@ -413,8 +413,17 @@ class Role(BaseModel):
     @classmethod
     def get_by_id(cls, id):
         with DBConnectionHandler() as db:
-            user = db.session.get(cls, id)
-            return user
+            role = db.session.get(cls, id)
+            return role
+
+    @classmethod
+    def get_by_name(cls, name):
+        with DBConnectionHandler() as db:
+            role = db.session.scalars(
+                select(cls)
+                .where(cls.name == name)
+            ).first()
+            return role
 
     @hybrid_method
     def is_(self, role_enum):
@@ -455,12 +464,16 @@ class Employee(BaseModel):
     sub_name = Column(String(40), nullable=False)
     birth = Column(String(12), nullable=False)
 
-    join_date = Column(Date, nullable=False)
+    # join_date = Column(Date, nullable=False)
+    join_date = Column(Date, nullable=True)
+
 
     # job_status가 User에서 신청한 대기 Employee(role이 아직 User)를 검색해서 대기중인 Employee데이터를 골라낼 수도 있다.
     # - 예약시에는 reserve_status가 대기 중인 것을 골라낼 것이다.
     job_status = Column(IntEnum(JobStatusType), default=JobStatusType.재직, nullable=False, index=True)
     resign_date = Column(Date, nullable=True)
+
+    reference = Column(String(128), nullable=True)
 
     # qrcode, qrcode_img: https://github.com/prameshstha/QueueMsAPI/blob/85dedcce356475ef2b4b149e7e6164d4042ffffb/bookings/models.py#L92
 

@@ -120,11 +120,6 @@
 
                 <div class="tags">
 
-                    <!--                       @click="isComponentModalActive = true; formProps['user_id'] = {{user.id}}"-->
-
-                    <!-- 모달클릭처리 참고 -->
-                    <!-- https://stackoverflow.com/questions/58963250/how-to-pass-selected-id-to-modal-in-vue-js -->
-                    <!-- <a href="{{url_for('admin.employee_invite', user_id=user.id)}}"-->
                     <a href="{{url_for('admin.user_edit', id=user.id)}}" class="tag is-success is-light">
                             <span class="icon">
                                 <i class="mdi mdi-square-edit-outline"></i>
@@ -132,6 +127,9 @@
                         수정
                     </a>
                 {% if g.user.is_chiefstaff %}
+                    <!-- 모달클릭처리 참고 -->
+                    <!-- https://stackoverflow.com/questions/58963250/how-to-pass-selected-id-to-modal-in-vue-js -->
+                    <!-- <a href="{{url_for('admin.employee_invite', user_id=user.id)}}"-->
                     <a href="javascript:;"
                        class="tag is-info is-light"
                        @click="isRoleModalActive = true; user_id = {{user.id}}"
@@ -211,7 +209,11 @@
         aria-modal
         >
 
-    <form action="{{url_for('admin.employee_invite')}}" method="post">
+    <form action="{{url_for('admin.employee_invite')}}"
+          method="post"
+          @submit.prevent="submitForm"
+
+    >
         <div class="modal-card is-" style="width: auto">
             <header class="modal-card-head">
                 <p class="modal-card-title is-size-5">
@@ -250,7 +252,9 @@
                 </a>
                 <input type="submit"
                        class="button is-primary"
-                       value="초대" >
+                       value="초대"
+                       :disabled="isLoading"
+                >
             </footer>
         </div>
     </form>

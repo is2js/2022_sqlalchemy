@@ -301,9 +301,7 @@
     var app = new Vue({
         el: '#app',
         delimiters: ['{$', '$}'],  // jinja와 같이 쓸 vue 변수
-        components: {
-
-        },
+        components: {},
         data: {
             // file: {}, // admin/banner_form에서 b-upload에 쓰이는 변수
             // carousels: [], // main/index에서 b-carousel-item에 test
@@ -327,6 +325,11 @@
             //user.html 일반 modal로 변경하여 필요한 변수
             isRoleModalActive: false,
             user_id: null,
+            //employee.html modal 띄우는 변수
+            isJobStatusModalActive: false,
+            employee_id: null,
+            //employee.html modal 속 제출 처리 변수
+            isLoading: null,
         },
         watch: {
             // admin/banner_form , auth/userinfo_form 에서 쓰는 b-upload v-model변수
@@ -418,6 +421,22 @@
                     'is-active': this.activeAnchor === current_index
                 }
             },
+            //employee.html modal 속 form 제출 처리
+            submitForm(e) {
+                // console.log(e)
+                // e.preventDefault();
+                // 1) 클릭되면 isLoading에 True가 들어가 button이 disable된다
+                this.isLoading = true
+
+                // 2) 다시 도로 제출
+                e.target.submit();
+
+                // 2) 1초후에 false가 되 button 돌아온다
+                setTimeout(() => {
+                    this.isLoading = false
+                }, 1000)
+            },
+
 
         },
         filters:
