@@ -37,7 +37,7 @@
     <div class="column">
         <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
             <div class="column is-2">
-                <span class=" has-text-grey-light">Username</span>
+                <span class="label has-text-primary-dark">Username</span>
             </div>
             <div class="column is-narrow">
                 <span class=" has-text-black-ter">{{ g.user['username'] }}</span>
@@ -46,14 +46,14 @@
 
         <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
             <div class="column is-2">
-                <span class=" has-text-grey-light">이메일</span>
+                <span class="label has-text-primary-dark">이메일</span>
             </div>
             <div class="column is-narrow">
                     <span class=" has-text-black-ter">
                         {% if g.user.email %}
                         {{g.user.email  }}
                         {% else %}
-                        미입력
+                        -
                         {% endif %}
                     </span>
             </div>
@@ -61,14 +61,14 @@
 
         <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
             <div class="column is-2">
-                <span class=" has-text-grey-light">성별</span>
+                <span class=" label has-text-primary-dark">성별</span>
             </div>
             <div class="column is-narrow">
                     <span class=" has-text-black-ter">
                         {% if g.user.sex.value %}
                         {{g.user.sex.name }}
                         {% else %}
-                        미입력
+                        -
                         {% endif %}
                     </span>
             </div>
@@ -78,33 +78,35 @@
 
         <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
             <div class="column is-2">
-                <span class=" has-text-grey-light">주소</span>
+                <span class="label has-text-primary-dark">주소</span>
             </div>
             <div class="column is-narrow">
                     <span class=" has-text-black-ter">
                         {% if g.user.address %}
                         {{g.user.address  }}
                         {% else %}
-                        미입력
+                        -
                         {% endif %}
                     </span>
             </div>
-
         </div>
+
+        <div class="columns is-mobile" style="border-bottom: #ededed solid 1px">
+            <div class="column is-2">
+                <span class="label has-text-primary-dark">휴대폰</span>
+            </div>
+            <div class="column is-narrow">
+                    <span class=" has-text-black-ter">
+                    {% if g.user.phone %}
+                    {{g.user.phone | join_phone }}
+                    {% else %}
+                    -
+                    {% endif %}
+                    </span>
+            </div>
+        </div>
+
+
     </div>
 </div>
 
-<div class="columns" style="padding:1rem 0; ">
-    <div class="column is-2">
-        <p>휴대폰번호</p>
-    </div>
-    <div class="column">
-        <div class="content">
-            {% if g.user.phone %}
-            {{g.user.phone | join_phone }}
-            {% else %}
-            미입력
-            {% endif %}
-        </div>
-    </div>
-</div>

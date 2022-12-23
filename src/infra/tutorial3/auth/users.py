@@ -532,7 +532,7 @@ class Employee(BaseModel):
 
     def birth_to_date(self):
         try:
-            birth_year_int = int("20" if self.birth[6] in ['3', '4'] else '19' + self.birth[:2])
+            birth_year_int = int(("20" if self.birth[6] in ['3', '4'] else '19') + self.birth[:2])
             birth_month_int, birth_day_int = int(self.birth[2:4]), int(self.birth[4:6])
             birth_date = datetime.date(birth_year_int, birth_month_int, birth_day_int)
             return birth_date

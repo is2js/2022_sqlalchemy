@@ -41,9 +41,10 @@ def create_app(config_name):
     CORS(app)
 
     ## 필터 추가
-    from src.main.templates.filters import feed_datetime, join_phone, format_date, format_datetime, format_timedelta
+    from src.main.templates.filters import feed_datetime, join_phone, join_birth, format_date, format_datetime, format_timedelta
     app.jinja_env.filters["feed_datetime"] = feed_datetime
     app.jinja_env.filters["join_phone"] = join_phone
+    app.jinja_env.filters["join_birth"] = join_birth
     app.jinja_env.filters["format_date"] = format_date
     app.jinja_env.filters["format_datetime"] = format_datetime
     app.jinja_env.filters["format_timedelta"] = format_timedelta

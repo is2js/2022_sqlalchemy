@@ -7,32 +7,38 @@
         <p class="menu-label">
             My page
         </p>
-<!--        <ul class="menu-list">-->
-            <!--        <li><a class="{% if  '/auth/' == request.path %}is-active{% endif %}"-->
-            <!--               href="{{ url_for('auth.userinfo') }}">-->
-            <!--            내 정보</a>-->
-            <!--        </li>-->
-            <!--        <li>-->
-            <!--            <a class="{% if  '/auth/invite/invitee' == request.path %}is-active{% endif %}"-->
-            <!--               href="{{ url_for('auth.invite_invitee') }}">받은 초대</a>-->
-            <!--        </li>-->
-
-
-        <ul class="menu-list"
-            v-for="(tab, index) in tab_list"
-            @click="anchorClicked($event, index)"
-        >
+        <ul class="menu-list">
             <li>
-                <a
-                        href="javascript:;"
-                        :key = "index"
-                        class=""
-                        :class="getActiveClass(index)"
-                >
-<!--                        :class="{'is-active': activeAnchor === index}"-->
-                    {$ tab.label $}
+                <a class="{% if request.path in ['/auth/', '/auth/edit/']  %}is-active{% endif %}"
+                   href="{{ url_for('auth.userinfo') }}">
+                    기본정보/초대
                 </a>
             </li>
+            {% if g.user.is_staff %}
+            {% endif %}
+            <li>
+                <a class="{% if  '/employeeinfo' in request.path %}is-active{% endif %}"
+                   href="{{ url_for('auth.employeeinfo') }}">
+                    직원정보
+                </a>
+            </li>
+
+
+            <!--        <ul class="menu-list"-->
+            <!--            v-for="(tab, index) in tab_list"-->
+            <!--            @click="anchorClicked($event, index)"-->
+            <!--        >-->
+            <!--            <li>-->
+            <!--                <a-->
+            <!--                        href="javascript:;"-->
+            <!--                        :key = "index"-->
+            <!--                        class=""-->
+            <!--                        :class="getActiveClass(index)"-->
+            <!--                >-->
+            <!--&lt;!&ndash;                        :class="{'is-active': activeAnchor === index}"&ndash;&gt;-->
+            <!--                    {$ tab.label $}-->
+            <!--                </a>-->
+            <!--            </li>-->
         </ul>
     </aside>
 </template>
@@ -76,9 +82,9 @@
         >
 
 
-        {% if init_html %}
+            {% if init_html %}
             {{init_html |safe}}
-        {% endif %}
+            {% endif %}
 
         </b-tab-item>
     </b-tabs>

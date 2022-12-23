@@ -1,0 +1,90 @@
+{% extends 'auth/userinfo.html' %}
+
+
+{% block tab_content %}
+<div class="is-pulled-left">
+    <h1 class="is-size-4">
+        <span class="icon"><i class="mdi mdi-receipt-outline"></i></span>
+        직원 정보
+    </h1>
+</div>
+{% block button %}
+<div class="is-pulled-right">
+    <a href="{{url_for('auth.employeeinfo_edit')}}" class="button is-primary is-light">
+        <span class="icon"><i class="mdi mdi-account-edit-outline"></i></span>
+        <span>수정</span>
+    </a>
+</div>
+
+{% endblock button %}
+
+<div class="is-clearfix"></div>
+<div class="dropdown-divider"></div>
+
+
+<!-- 직원정보는 g.user로 가져오는게 아니라 backend에서 따로 받는다 -->
+<div class="columns" style="padding:1rem 0; ">
+    <div class="column is-2">
+        <p>직원 정보</p>
+    </div>
+    <div class="column">
+        <div class="columns is-mobile">
+            <div class="column is-2">
+                <span class="label has-text-primary-dark">이름</span>
+            </div>
+            <div class="column is-narrow">
+                <span class=" has-text-black-ter">{{ employee.name }}</span>
+            </div>
+        </div>
+
+        <div class="columns is-mobile">
+            <div class="column is-2">
+                <span class="label has-text-primary-dark">영어 이름</span>
+            </div>
+            <div class="column is-narrow">
+                    <span class=" has-text-black-ter">
+                        {{ employee.sub_name }}
+                    </span>
+            </div>
+        </div>
+
+        <div class="columns is-mobile">
+            <div class="column is-2">
+                <span class="label has-text-primary-dark">생년월일</span>
+            </div>
+            <div class="column is-narrow">
+                    <span class=" has-text-black-ter">
+                        {{employee.birth | join_birth }}
+                    </span>
+            </div>
+
+        </div>
+
+
+        <div class="columns is-mobile">
+            <div class="column is-2">
+                <span class="label has-text-primary-dark">직위</span>
+            </div>
+            <div class="column is-narrow">
+                    <span class=" has-text-black-ter">
+                        {{employee.user.role.name }}
+                    </span>
+            </div>
+        </div>
+
+        <div class="columns is-mobile">
+            <div class="column is-2">
+                <span class="label has-text-primary-dark">입사일</span>
+            </div>
+            <div class="column is-narrow">
+                    <span class=" has-text-black-ter">
+                        {{ employee.join_date | format_date  }}
+                    </span>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock tab_content %}
+
+{% block vue_script %}{% endblock vue_script %}

@@ -319,7 +319,7 @@
             //userinfo.html에서 tab 및 a태그
             tab_list: [],
             activeTab: 0,
-            activeAnchor: 0,
+            // activeAnchor: 0,
             className: '',
 
             //user.html 일반 modal로 변경하여 필요한 변수
@@ -395,26 +395,26 @@
                 });
 
                 // a태그에도 반영해주기 (tab과 다르게 클릭해줄 필요없음.. active표시만 들어가면 됨)
-                this.activeAnchor = index;
+                // this.activeAnchor = index;
 
             },
-            anchorClicked(e, index) {
-                // console.log(e, index)
-                this.activeAnchor = index;
-                // 자신클릭시, active만 활성화시킨 뒤, tab활성화 + tab클릭만 한다.
-                this.activeTab = index;
-                this.tabClicked(index);
-
-
-                // const ul = e.currentTarget; // FYI
-                // const a = e.target;
-                // console.log(ul);
-                // console.log(a);
-                // [a.parentElement.children].forEach(sib => sib.classList.remove('is-active'));
-                // a.classList.add('is-active');
-
-
-            },
+            // anchorClicked(e, index) {
+            //     // console.log(e, index)
+            //     this.activeAnchor = index;
+            //     // 자신클릭시, active만 활성화시킨 뒤, tab활성화 + tab클릭만 한다.
+            //     this.activeTab = index;
+            //     this.tabClicked(index);
+            //
+            //
+            //     // const ul = e.currentTarget; // FYI
+            //     // const a = e.target;
+            //     // console.log(ul);
+            //     // console.log(a);
+            //     // [a.parentElement.children].forEach(sib => sib.classList.remove('is-active'));
+            //     // a.classList.add('is-active');
+            //
+            //
+            // },
             getActiveClass(current_index) {
 
                 return {

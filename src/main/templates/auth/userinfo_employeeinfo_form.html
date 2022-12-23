@@ -1,0 +1,78 @@
+{% extends 'auth/userinfo_employeeinfo.html' %}
+
+
+{% block tab_content %}
+<div class="is-pulled-left">
+    <h1 class="is-size-4">
+        <span class="icon"><i class="mdi mdi-receipt-outline"></i></span>
+        직원 정보 수정
+    </h1>
+</div>
+
+
+{% block button %}
+{% endblock button %}
+
+<div class="is-clearfix"></div>
+<div class="dropdown-divider"></div>
+
+
+<!-- 직원정보는 g.user로 가져오는게 아니라 backend에서 따로 받는다 -->
+<form action="" method="post" class="column mt-4">
+    {{ form.csrf_token }}
+    <div class="columns" style="padding:1rem 0; ">
+        <div class="column is-2">
+            <p>직원 정보</p>
+        </div>
+        <div class="column">
+            <!-- 이름 -->
+            <div class="columns is-mobile">
+                <div class="column is-2">
+                    <span class=" has-text-grey-light">{{form.name.label(class='label')}}</span>
+                </div>
+                <div class="column is-narrow">
+                    <span class=" has-text-black-ter">{{ form.name(class='input') }}</span>
+                </div>
+            </div>
+
+            <!-- 영어이름 -->
+            <div class="columns is-mobile">
+                <div class="column is-2">
+                    <span class=" has-text-grey-light">{{ form.sub_name.label(class='label')}}</span>
+                </div>
+                <div class="column is-narrow">
+                    <span class=" has-text-black-ter">{{ form.sub_name(class='input') }}</span>
+                </div>
+            </div>
+
+            <!-- 주민번호 -->
+            <div class="columns is-mobile">
+                <div class="column is-2">
+                    <span class=" has-text-grey-light">{{ form.birth.label(class='label')}}</span>
+                </div>
+                <div class="column is-narrow">
+                    <span class=" has-text-black-ter">{{ form.birth(class='input')}}</span>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <div class="columns is-mobile is-centered">
+        <div class="column is-narrow">
+            <a href="javascript:history.back()" class="button is-primary is-light mr-2">
+                뒤로가기
+            </a>
+        </div>
+        <div class="column is-narrow">
+            <!--                           style="margin-top: 1.8rem"-->
+            <input type="submit"
+                   value="수정완료"
+                   class="button is-primary"
+            >
+        </div>
+    </div>
+</form>
+{% endblock tab_content %}
+
+{% block vue_script %}{% endblock vue_script %}

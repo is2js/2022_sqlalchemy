@@ -26,16 +26,17 @@ div.box 안쪽으로  block box /endblock을 추가한다-->
                 <!--  aside왼쪽메뉴를 채우는 block( 자식중에 나를 상속해서 다르게 채울 수 있는 block -->
                 {% block menus %}
                 <aside class="menu">
+                    {{request.path}}
                     <p class="menu-label">
                         <span class="icon"><i class="mdi mdi-google-assistant"></i></span>
-                        Dashboard | {{request.path}}
+                        Dashboard |
                     </p>
                     <ul class="menu-list">
                         <li>
                             <a class="{% if request.path == '/admin/' %}is-active{% endif %}"
                                href="{{ url_for('admin.index') }}">
                                 <span class="icon"><i class="mdi mdi-home-variant-outline"></i></span>
-                                Home
+                                DashBoard
                             </a>
                         </li>
                     </ul>
@@ -44,7 +45,7 @@ div.box 안쪽으로  block box /endblock을 추가한다-->
                     {% if g.user.is_executive %}
                     <p class="menu-label">
                         <span class="icon"><i class="mdi mdi-shape-outline"></i></span>
-                        Category
+                        MENU
                     </p>
                     <ul class="menu-list">
                         <!-- 각 entity별 select route/tempalte완성시 마다 걸어주기 -->
@@ -52,7 +53,7 @@ div.box 안쪽으로  block box /endblock을 추가한다-->
                             <a class="{% if 'category' in request.path %}is-active{% endif %}"
                                href="{{ url_for('admin.category') }}">
                                 <span class="icon"><i class="mdi mdi-menu"></i></span>
-                                Category 관리
+                                메뉴관리
                             </a>
                         </li>
                     </ul>
@@ -65,6 +66,14 @@ div.box 안쪽으로  block box /endblock을 추가한다-->
                         Article
                     </p>
                     <ul class="menu-list">
+                        <!-- 각 entity별 select route/tempalte완성시 마다 걸어주기 -->
+                        <li>
+                            <a class="{% if 'category' in request.path %}is-active{% endif %}"
+                               href="{{ url_for('admin.category') }}">
+                                <span class="icon"><i class="mdi mdi-menu"></i></span>
+                                Category 관리
+                            </a>
+                        </li>
                         <li>
                             <a class="{% if 'article' in request.path %}is-active{% endif %}"
                                href="{{ url_for('admin.article') }}">
@@ -79,13 +88,7 @@ div.box 안쪽으로  block box /endblock을 추가한다-->
                                 Tag 관리
                             </a>
                         </li>
-                    </ul>
 
-                    <p class="menu-label">
-                        <span class="icon"><i class="mdi mdi-image-outline"></i></span>
-                        BANNER
-                    </p>
-                    <ul class="menu-list">
                         <li>
                             <a class="{% if 'banner' in request.path %}is-active{% endif %}"
                                href="{{ url_for('admin.banner') }}">
@@ -93,6 +96,14 @@ div.box 안쪽으로  block box /endblock을 추가한다-->
                                 Banner 관리
                             </a>
                         </li>
+
+                    </ul>
+
+                    <p class="menu-label">
+                        <span class="icon"><i class="mdi mdi-image-outline"></i></span>
+                        BANNER
+                    </p>
+                    <ul class="menu-list">
                     </ul>
 
                     <!-- USER -->

@@ -314,3 +314,44 @@ class EmployeeForm(UserInfoForm):
 
         if is_exists:
             raise ValidationError('이미 존재하는 주민등록번호 입니다')
+
+
+class EmployeeInfoForm(FlaskForm):
+    name = StringField('이름', validators=[
+        DataRequired(message="필수 입력"),
+        Length(min=2, max=40, message="최대 2~40글자까지 입력 가능")
+    ])
+
+    sub_name = StringField('영어 이름', validators=[
+        DataRequired(message="필수 입력"),
+        Length(min=2, max=40, message="최대 2~40글자까지 입력 가능")
+    ])
+
+    birth = StringField("주민등록번호", validators=[
+        Regexp("\d{6}[ |-]?\d{6}", message="주민번호는 12자리를 이어서 or 공백 or 하이픈(-)으로 구분해서 입력해주세요"),
+        DataRequired(message="필수 입력")],
+                        filters=(remove_empty_and_hyphen,),
+                        description="123456-123456(하이픈) or  123456 123456(공백) or 123456123456(붙여서)"
+                        )
+
+    def __init__(self, employee=None, *args, **kwargs):
+
+        self.employee = employee
+        if self.employee:
+            super().__init__(*args, **self.employee.__dict__,  **kwargs)
+        else:
+            super().__init__(*args, **kwargs)
+
+    def validate_birth(self, field):
+        if self.employee:  # 수정시 자신의 제외하고 데이터 중복 검사
+            condition = and_(Employee.id != self.employee.id, Employee.birth == field.data)
+        else:  # 생성시 자신의 데이터를 중복검사
+            condition = Employee.birth == field.data
+
+        with DBConnectionHandler() as db:
+            is_exists = db.session.scalars(
+                exists().where(condition).select()
+            ).one()
+
+        if is_exists:
+            raise ValidationError('이미 존재하는 주민등록번호 입니다')

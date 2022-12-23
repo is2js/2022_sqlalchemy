@@ -6,7 +6,7 @@ from sqlalchemy import select, update, delete
 from src.infra.config.connection import DBConnectionHandler
 from src.infra.tutorial3 import User, EmployeeInvite, Role, Employee
 from src.main.forms.auth import LoginForm, RegisterForm, UserInfoForm
-from src.main.forms.auth.forms import EmployeeForm
+from src.main.forms.auth.forms import EmployeeForm, EmployeeInfoForm
 from src.main.utils import upload_file_path, delete_uploaded_file, redirect_url
 from src.main.utils.decorators import login_required
 
@@ -253,7 +253,7 @@ def userinfo():
     tab_list = [
         {
             'key': 1,
-            'label': '내 정보',
+            'label': '기본 정보',
             'url': url_for('auth.userinfo_subpages', sub_path='userinfo_main'),
             'tabItemId': 'userinfo_main',
             'icon': 'account-outline',
@@ -263,7 +263,7 @@ def userinfo():
             'label': '받은 초대',
             'url': url_for('auth.userinfo_subpages', sub_path='userinfo_invitee'),
             'tabItemId': 'userinfo_invitee',
-            'icon': 'account-outline',
+            'icon': 'email-outline',
         },
     ]
 
@@ -559,7 +559,7 @@ def employee_invite_accept(id):
 
         return redirect(url_for('auth.userinfo'))
 
-    return render_template('auth/userinfo_employee_form.html',
+    return render_template('auth/employee_invite_accept_form.html',
                            form=form)
 
 
@@ -594,3 +594,55 @@ def employee_invite_postpone(id):
         flash(f"초대를 {EmployeeInvite._INVITE_EXPIRE_DAYS}일 연기했습니다.", category='is-info')
 
         return redirect(redirect_url())
+
+
+@auth_bp.route('/employeeinfo/')
+@login_required
+def employeeinfo():
+    with DBConnectionHandler() as db:
+        stmt = (
+            select(Employee)
+            .where(Employee.user_id == g.user.id)
+        )
+
+        employee = db.session.scalars(stmt).first()
+    return render_template('auth/userinfo_employeeinfo.html',
+                           employee=employee
+                           )
+
+
+@auth_bp.route('/employeeinfo/edit/', methods=['GET', 'POST'])
+@login_required
+def employeeinfo_edit():
+    with DBConnectionHandler() as db:
+        stmt = (
+            select(Employee)
+            .where(Employee.user_id == g.user.id)
+        )
+
+        employee = db.session.scalars(stmt).first()
+
+
+        form = EmployeeInfoForm(employee=employee)
+
+    if form.validate_on_submit():
+        with DBConnectionHandler() as db:
+            stmt = (
+                select(Employee)
+                .where(Employee.user_id == g.user.id)
+            )
+
+            employee = db.session.scalars(stmt).first()
+            employee.name = form.name.data
+            employee.sub_name = form.sub_name.data
+            employee.birth = form.birth.data
+
+            db.session.add(employee)
+            db.session.commit()
+
+            flash('직원 정보 수정 성공', category='is-success')
+
+
+
+    return render_template('auth/userinfo_employeeinfo_form.html',
+                           form=form)
