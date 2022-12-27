@@ -2,6 +2,7 @@ import datetime
 
 from flask import Blueprint, render_template, request, flash, redirect, url_for, session, g
 from sqlalchemy import select, update, delete
+from sqlalchemy.orm import contains_eager
 
 from src.infra.config.connection import DBConnectionHandler
 from src.infra.tutorial3 import User, EmployeeInvite, Role, Employee
@@ -600,12 +601,19 @@ def employee_invite_postpone(id):
 @login_required
 def employeeinfo():
     with DBConnectionHandler() as db:
+
         stmt = (
             select(Employee)
             .where(Employee.user_id == g.user.id)
         )
 
+        # jinja2.exceptions.UndefinedError: 'None' has no attribute 'user'
+        #### user정보가 없는 employee가 있다? 일단 admin으로 접속하면, 기본user정보가 없다?
+
         employee = db.session.scalars(stmt).first()
+        print(g.user.id)
+        print(employee.user_id)
+        print(employee)
     return render_template('auth/userinfo_employeeinfo.html',
                            employee=employee
                            )

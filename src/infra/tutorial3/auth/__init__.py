@@ -1,1 +1,4 @@
-from .users import User, Role, Permission, Roles, Employee, EmployeeInvite
+from .users import (
+    User, Role, Permission, Roles, Employee, EmployeeInvite,
+    JobStatusType
+)

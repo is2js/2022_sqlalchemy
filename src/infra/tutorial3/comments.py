@@ -13,6 +13,7 @@ from src.infra.config.connection import DBConnectionHandler
 #### 부모인 경우(자식을 가지는 경우) 삭제 금지 case
 # https://stackoverflow.com/questions/55968951/sqlalchemy-fk-ondelete-does-not-restrict
 
+
 class Comment(Base):
     __tablename__ = 'comments'
     _N = 6
@@ -72,7 +73,6 @@ class Comment(Base):
     ##     2) 1부터 몇번째 구간인지  -  1    -> 0번째부터 몇번째 구간인지 == 0부터 몇번째 depth인지
     # def level(self):
     #     return len(self.path) // self._N - 1
-
     ## 21.
     @hybrid_property
     def level(self):

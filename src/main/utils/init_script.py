@@ -1,4 +1,6 @@
 #  flask createsuperuser
+
+
 import click
 from flask import Flask
 from sqlalchemy import select
@@ -6,8 +8,9 @@ from sqlalchemy.exc import IntegrityError
 
 from src.config import project_config
 from src.infra.config.connection import DBConnectionHandler
-# from src.infra.tutorial3 import User, Role
+
 from create_database_tutorial3 import *
+# from src.infra.tutorial3 import User, Role
 
 
 # app객체를 받아 초기화해주는 메서드
@@ -15,25 +18,39 @@ def init_script(app: Flask):
     # app -> terminal용 flask adminuser생성command를 method형태로 추가
     #     -> terminal용 [flask 메서드명]으로 사용하기 때문에 소문자이어서 지정
     # click -> flask 명령어 사용시 옵션으로 받을 값을 지정
-    @app.cli.command()
+    @app.cli.command("create_admin")
     @click.option("--username", prompt=True, help="사용할 username을 입력!")
     @click.option("--password", prompt=True, hide_input=True, confirmation_prompt=True, help="사용할 password를 입력!")
-    def createadminuser(username, password):
+    def create_adminn_user(username, password):
         click.echo('관리자 계정을 생성합니다.')
         with DBConnectionHandler() as db:
             # user = User(username=username, password=generate_password_hash(password), is_super_user=True)
             # user = User(username=username, password=password, is_super_user=True)
             try:
                 role_admin = db.session.scalars(select(Role).where(Role.name == 'ADMINISTRATOR')).first()
-                user = User(username=username, password=password, email=project_config.ADMIN_EMAIL, role=role_admin)
-                db.session.add(user)
+
+                user_admin = User(username=username, password=password, email=project_config.ADMIN_EMAIL,
+                                  role=role_admin)
+                db.session.add(user_admin)
+
+                #### 관리자도 직원정보를 가져야하므로 생성
+                # print(user_admin.id)  # add만 해도 id가 부여된다.? => 안된다.
+                db.session.flush()
+                #### commit()을 하든 flush()를 하던 한번 갔다와야지 id부여된다.
+
+                employee_admin = Employee(user_id=user_admin.id, name='관리자', sub_name='Administrator',
+                                          birth='9910101918111',
+                                          join_date=datetime.date.today(), job_status=JobStatusType.재직,
+                                          reference='관리자 계정')
+
+                db.session.add(employee_admin)
                 db.session.commit()
 
                 click.echo(f'관리자 계정 [{username}]이 성공적으로 생성되었습니다.')
             except IntegrityError:
                 db.session.rollback()
 
-                click.echo(f'Warning) Username[{username}]  or Email[{project_config.ADMIN_EMAIL}]이 이미 존재합니다.')
+                click.echo(f'Warning) Username[{username}]  or Email[{project_config.ADMIN_EMAIL}]이 생성에 실패했습니다.(이미 존재 하는 정보)')
 
             except:
                 db.session.rollback()
@@ -53,7 +70,6 @@ def init_script(app: Flask):
         except:
             click.echo(f'Warning) 알수없는 이유로 Role 데이터 생성에 실패했습니다.')
 
-
     #### create_db도 미리 만들어놓기
     @app.cli.command()
     @click.option("--truncate", prompt=True, default=False)
@@ -62,7 +78,7 @@ def init_script(app: Flask):
     def createdb(truncate, drop_table, load_fake_data):
 
         create_database(
-            truncate= True if truncate in ['y', 'yes'] else truncate,
+            truncate=True if truncate in ['y', 'yes'] else truncate,
             drop_table=True if drop_table in ['y', 'yes'] else drop_table,
             load_fake_data=True if load_fake_data in ['y', 'yes'] else load_fake_data
         )
