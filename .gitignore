@@ -1,5 +1,8 @@
 .env
 venv
 .idea
+
 *.db
+tutorial3-dev.db
+
 logs

@@ -82,6 +82,39 @@ if __name__ == '__main__':
 
 
 
+    ######## department, employeedepartment 설정
+    # create_database(truncate=False, drop_table=False, load_fake_data=False)
+    # 조직도 참고: https://www.medical.or.kr/suwon/contentsInfo.do?brd_mgrno=0&menu_no=717
+    # 병원장 / 실장 / 원무과, 간호과, 원장단 /
+
+    #### (1) 부서 생성
+    병원장_부서 = Department(name='병원장', leader_id=20)
+    최상위_경영단_부서 = Department(name='경영단', leader_id=20)
+    # session.add(병원장)
+    # A. 생성시 add로 하지말고 .save()로
+    병원장_부서.save() # 부모가 없어 level==0인 부서는 나를 포함하여 0개로서 sort 순서가 정해집니다 / id대신 sort로 채운 path: 000
+    최상위_경영단_부서.save()
+
+    이사회_부서 = Department(name='이사회', parent=최상위_경영단_부서)
+    이사회_부서.save()
+    이사회_부서2 = Department(name='이사회2', parent=최상위_경영단_부서)
+    이사회_부서2.save()
+    # A. 생성시 .save()안에  commit하지 않은 객체를 self exitst로 중복검사 해야할 듯. -> 안하면 DB의 .name unique제약만 걸림.
+
+
+    Department(name='행정과', parent=병원장_부서).save()
+    Department(name='원무과', parent=병원장_부서).save()
+    진료부장_부서 = Department(name='진료부장', parent=병원장_부서).save()
+
+    Department(name='약제과', parent=진료부장_부서).save()
+    Department(name='간호과', parent=진료부장_부서).save()
+    Department(name='진료각과', parent=진료부장_부서).save()
+
+
+
+
+
+
 
 
 

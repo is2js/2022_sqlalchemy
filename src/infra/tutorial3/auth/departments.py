@@ -5,9 +5,9 @@ import uuid
 from dateutil.relativedelta import relativedelta
 from flask import url_for, g
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, select, case, and_, exists, func, DateTime, \
-    BigInteger, update, Date, ForeignKeyConstraint
+    BigInteger, update, Date, ForeignKeyConstraint, Text, or_
 from sqlalchemy.ext.hybrid import hybrid_property, hybrid_method
-from sqlalchemy.orm import relationship, backref
+from sqlalchemy.orm import relationship, backref, with_parent, aliased
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from src.config import project_config
@@ -19,6 +19,9 @@ from src.infra.tutorial3.common.int_enum import IntEnum
 
 class Department(BaseModel):
     __tablename__ = 'departments'
+
+    _N = 3
+
     id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
     # name = Column(String(50), nullable=False, comment="부서 이름")
     # 9. + index, unique까지
@@ -47,12 +50,13 @@ class Department(BaseModel):
     #### User-Department는 직원들 부서정보고.. 여긴 따로 팀생성시 팀장정보라서.. 따로 관리되는지 확인하기
     # => my) 신설은 admin이 할 수 있지만, 팀장을 지정해놓기
     #### user를 employee로 바꾸기
-    leader_id = Column(Integer, ForeignKey('employees.id'))
+    leader_id = Column(Integer, ForeignKey('employees.id'), nullable=True)
     # => 대박) 팀장입장에서 Many인 Department관계의 fk를, Many속에 정의한 One의 fk로 []안에 직접 지정할 수 있다.
     #    one에 대한 관계속성을 joined로 하여 부서.leader(User객체)를 바로 뽑아볼 수 있게 한다
-    leader = relationship("Employee", backref="managed_department", foreign_keys=[leader_id], lazy='joined')
+    # #### nullable한 관계필드를 joined를 주면, 없는데도 가져와서 None.필드를 호출하여 에러가 난다
+    leader = relationship("Employee", backref="managed_department", foreign_keys=[leader_id])  # lazy='joined')
 
-    status = Column(Boolean, comment='부서 사용 상태(0 미사용, 1사용)', default = 1)
+    status = Column(Boolean, comment='부서 사용 상태(0 미사용, 1사용)', default=1)
     #### sort는 save시 path처럼 동적으로 채우기
     # path -> level 처럼, save시 동적으로 현재레벨 조회해서 자동으로 맨 마지막 +1로 채워야할 듯?
     sort = Column(Integer, comment="부서 순서")  # 1 #  .order_by(Department.sort).all()
@@ -69,12 +73,100 @@ class Department(BaseModel):
     # -> code는 정렬시 전체 기준에 들어간다 => sort가 있으면 무쓸모?? sort가 바뀌면 sort기준으로 가야하므로..
     # code = Column(String(24))
     # root = Column(Boolean, default=False)  # parent_id가 None이면 root에 True넣어주고, 그외는 False로 기본 생성
+    # menu
+    path = Column(Text, index=True)  # 동적으로 채울거라 nullabe=True로 일단 주고, add후 다른데이터를 보고 채운다다
 
+    def __repr__(self):
+        info: str = f"{self.__class__.__name__}" \
+                    f"[id={self.id!r}," \
+                    f" title={self.name!r}," \
+                    f" parent_id={self.parent_id!r}]" \
+            # f" level={self.level!r}]" # path를 채우기 전에 출력했더니 level써서 에러가 남.
+        return info
+
+    def exists(self):
+        with DBConnectionHandler() as db:
+            department = db.session.scalars(select(Department).where(Department.name == self.name)).first()
+            return department # 객체 or None
+
+    def save(self):
+        obj_or_none = self.exists()
+        if obj_or_none:
+            print(f"{self.name}는 이미 존재하는 부서입니다.")
+            return obj_or_none
+
+        with DBConnectionHandler() as db:
+            db.session.add(self)
+            db.session.flush()
+
+            # 부모가 있으면 부모의 부모의 path에 + 생성아이디로 path를 만들어, 변경전 최초 순서?
+            # my) 현재 동급레벨의 갯수로 -> sort를 동적으로 채우고, id로 path를 채우는 대신, sort번호로 path를 채우면 될 것 같다?
+            # my) # 6 부모가 있으면 where에 with_parent에 올려, 갯수를 센다
+            if self.parent:
+                # session.scalar(select(func.count()).select_from(User))
+                # session.scalar(select(func.count(User.id)))
+                # stmt = (
+                #     select(func.count())
+                #     .select_from(User)
+                #     .filter(User.name.like('j%'))
+                # )
+                # (session.execute(stmt).scalar())
+                sort_count = db.session.scalar(
+                    (
+                        select(func.count(Department.id))
+                        .select_from(Department)
+                        # .where(with_parent(self.parent))
+                        # TypeError: with_parent() missing 1 required positional argument: 'prop'
+                        .where(with_parent(self.parent, Department.children))
+                    )
+                )
+                # print(stmt)
+                # SELECT count(departments.id) AS count_1
+                # FROM departments
+                # WHERE :param_1 = departments.parent_id
+                print(f'부모를 가졌으며, 해당부모의 자식수는 flush한 나를 포함하여 {sort_count}개로 sort가 정해집니다', sep=' / ')
+
+                # parentEntity = aliased(Department)
+                # print(db.session.scalars(
+                #     select(Department)
+                #     .where(with_parent(self.parent, parentEntity.children))
+                # ).all())
+                # [Department[id=3, title='이사회', category=Department[id=2, title='경영단', category=None,,, Department[id=4, title='이사회2', category=Department[id=2, title='경영단', category=None,,]
+                #### with_parent를 하니,
+            else:
+                #### path를 채우기도 전에 먼저 level을 쓸 순 없다.
+                #### => 최상위를 가려내기 위해, sort -> path -> level을 채우기 전에, 먼저 level로 필터링 해야한다
+                # sort_count = db.session.scalar(select(func.count(Department.id)).where(Department.level == 0))
+                #### => 사실상 최상위 필터링은 parent_id, parent = None으로 찾아야한다.
+                sort_count = db.session.scalar(select(func.count(Department.id)).where(Department.parent_id.is_(None)))
+                print(f'부모가 없어 level==0인 부서는 flush한 나를 포함하여 {sort_count}개로서 sort가 정해집니다', sep=' / ')
+            self.sort = sort_count
+
+            prefix = self.parent.path if self.parent else ''
+            # self.path = prefix + f"{self.id:0{self._N}d}"
+            self.path = prefix + f"{self.sort:0{self._N}d}"
+            print(f'id대신 sort(이전갯수+1,1부터)로 채운 path: {self.path}')
+
+            # 26. category는 path로 대체할 수 있으니 삭제한다?
+            #    endpoint도 같이 삭제하고 template_name으로 대체한다.
+
+            db.session.commit()
+
+            return self
+
+    @hybrid_property
+    def level(self):
+        return len(self.path) // self._N - 1
+
+    @level.expression
+    def level(cls):
+        # 0 division 가능성이 있으면 = (cls.path / case([(cls._N == 0, null())], else_=cls.colC), /는 지원되나 //는 지원안됨. func.round()써던지 해야할 듯.?
+        return func.length(cls.path) / cls._N - 1
 
 
 # 2.
 class EmployeeDepartment(BaseModel):
-    __tablename__ = 'user_departments'
+    __tablename__ = 'employee_departments'
     # __table_args__ = (ForeignKeyConstraint(['user_id'], ['users.id'], name='users_tag_maps_department_id_fk'),)
 
     id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
