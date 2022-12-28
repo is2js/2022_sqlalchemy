@@ -495,11 +495,11 @@ class Employee(BaseModel):
             if roles == Roles.USER:
                 stmt = stmt.where(cls.user.has(~User.is_staff))
             elif roles == Roles.STAFF:
-                stmt = stmt.where(cls.user.has(User.is_staff))
+                stmt = stmt.where(cls.user.has(User.is_staff)).where(cls.user.has(~User.is_chiefstaff))
             elif roles == Roles.CHIEFSTAFF:
-                stmt = stmt.where(cls.user.has(User.is_chiefstaff))
+                stmt = stmt.where(cls.user.has(User.is_chiefstaff)) .where(cls.user.has(~User.is_executive))
             elif roles == Roles.EXECUTIVE:
-                stmt = stmt.where(cls.user.has(User.is_executive))
+                stmt = stmt.where(cls.user.has(User.is_executive)).where(cls.user.has(~User.is_administrator))
             elif roles == Roles.ADMINISTRATOR:
                 stmt = stmt.where(cls.user.has(User.is_administrator))
             else:
