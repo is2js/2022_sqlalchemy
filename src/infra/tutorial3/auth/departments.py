@@ -13,14 +13,76 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from src.config import project_config
 from src.infra.config.base import Base
 from src.infra.config.connection import DBConnectionHandler
+from src.infra.tutorial3.auth import Role, Roles
+from src.infra.tutorial3.auth import User, Employee
 from src.infra.tutorial3.common.base import BaseModel, InviteBaseModel
 from src.infra.tutorial3.common.int_enum import IntEnum
 
 
-class Department(BaseModel):
-    __tablename__ = 'departments'
+class DepartmentType(enum.IntEnum):
+    부장 = 0  # 부서명 ex> 병원장, 진료부장, 간호부 => 끝에 장이 없으면 [부서명 + 장]
+    실 = 1  # 실원, 실장 ex> 탕제실, 홍보실, 기획관리실, 정보전산실,
+    팀 = 2  # 팀원, 팀장 ex> 총무팀
+    과 = 3  # 팀원, 과장 ex> 원무과, 행정과
 
+    치료실 = 4  # 치료사, 실장
+    원장단 = 5  # 원장, 대표원장
+    진료과 = 6  # 원장, 과장
+    의료센터 = 7  # 원장, 센터장
+
+    연구소 = 8  # 연구원, 연구원장
+    센터 = 9  # 센터원, 센터장
+
+    위원회 = 10  # 위원, 위원장
+
+    # form을 위한 choices에는, 선택권한을 안준다? -> 0을 value로 잡아서 제외시킴
+    @classmethod
+    def choices(cls):
+        return [(choice.value, choice.name) for choice in cls]
+
+    def find_position(self, is_leader, dep_name):
+        # 1) 부/장부서 => ~장, ~부장
+        if self == DepartmentType.부장:
+            if is_leader:
+                return dep_name + ('' if dep_name.endswith('장') else '장')  # 장으로 끝나지 않는 간호부 => 간호부 + 장이 되게 한다
+            else:
+                raise ValueError('부/장 부서는 팀원 없이, 리더 1명만 입력해야합니다.')
+        # 2) 실 => 실장 - 실원
+        elif self == DepartmentType.실:
+            return '실장' if is_leader else '실원'
+        # 3) 팀 => 팀장 - 실원
+        elif self == DepartmentType.팀:
+            return '팀장' if is_leader else '팀원'
+        # 4) 과 => 과장 - 팀원
+        elif self == DepartmentType.과:
+            return '과장' if is_leader else '팀원'
+        # 5) 치료실 => 실장 - 치료사
+        elif self == DepartmentType.치료실:
+            return '실장' if is_leader else '치료사'
+        # 6) 원장단 => 대표원장 - 원장
+        elif self == DepartmentType.원장단:
+            return '대표원장' if is_leader else '원장'
+        # 7) 진료과 => 과장 - 원장
+        elif self == DepartmentType.진료과:
+            return '과장' if is_leader else '원장'
+        # 8) 의료센터 => 센터장 - 원장
+        elif self == DepartmentType.의료센터:
+            return '센터장' if is_leader else '원장'
+        # 9) 연구소 => 연구소장 - 연구원
+        elif self == DepartmentType.연구소:
+            return '연구소장' if is_leader else '연구원'
+        # 10) 센터 => 센터장 - 센터원
+        elif self == DepartmentType.센터:
+            return '센터장' if is_leader else '센터원'
+        # 11) 위원회 => 위원장 - 위원
+        elif self == DepartmentType.위원:
+            return '위원장' if is_leader else '위원'
+
+
+class Department(BaseModel):
     _N = 3
+
+    __tablename__ = 'departments'
 
     id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
     # name = Column(String(50), nullable=False, comment="부서 이름")
@@ -49,17 +111,19 @@ class Department(BaseModel):
     # 8. leader를 user에서 가져와서, 특정user에 의해 부서가 신설된다?
     #### User-Department는 직원들 부서정보고.. 여긴 따로 팀생성시 팀장정보라서.. 따로 관리되는지 확인하기
     # => my) 신설은 admin이 할 수 있지만, 팀장을 지정해놓기
+
     #### user를 employee로 바꾸기
-    leader_id = Column(Integer, ForeignKey('employees.id'), nullable=True)
+    # leader_id = Column(Integer, ForeignKey('employees.id'), nullable=True)
     # => 대박) 팀장입장에서 Many인 Department관계의 fk를, Many속에 정의한 One의 fk로 []안에 직접 지정할 수 있다.
     #    one에 대한 관계속성을 joined로 하여 부서.leader(User객체)를 바로 뽑아볼 수 있게 한다
     # #### nullable한 관계필드를 joined를 주면, 없는데도 가져와서 None.필드를 호출하여 에러가 난다
-    leader = relationship("Employee", backref="managed_department", foreign_keys=[leader_id])  # lazy='joined')
+    # leader = relationship("Employee", backref="managed_department", foreign_keys=[leader_id])  # lazy='joined')
+    #### => leader정보를 따로 Department에 배정하지말고, EmployeeDepartment에 is_leader를 개설해서 그쪽에서 처리하게 한다.
 
     status = Column(Boolean, comment='부서 사용 상태(0 미사용, 1사용)', default=1)
     #### sort는 save시 path처럼 동적으로 채우기
     # path -> level 처럼, save시 동적으로 현재레벨 조회해서 자동으로 맨 마지막 +1로 채워야할 듯?
-    sort = Column(Integer, comment="부서 순서")  # 1 #  .order_by(Department.sort).all()
+    sort = Column(Integer, comment="부서 순서", nullable=True)  # 1 #  .order_by(Department.sort).all()
 
     # 2. 부서 생성시 조건에 따라 -> 사람이 지정한다 (원랜 계산으로도 나온다?)
     #### level, code, root를  => 동적생성 path로 바꾸기
@@ -74,7 +138,10 @@ class Department(BaseModel):
     # code = Column(String(24))
     # root = Column(Boolean, default=False)  # parent_id가 None이면 root에 True넣어주고, 그외는 False로 기본 생성
     # menu
-    path = Column(Text, index=True)  # 동적으로 채울거라 nullabe=True로 일단 주고, add후 다른데이터를 보고 채운다다
+    path = Column(Text, index=True, nullable=True)  # 동적으로 채울거라 nullabe=True로 일단 주고, add후 다른데이터를 보고 채운다다
+
+    #### EmployeeDepartment에 position을 남기기 위한, Type
+    type = Column(IntEnum(DepartmentType), default=DepartmentType.팀, nullable=False, index=True)
 
     def __repr__(self):
         info: str = f"{self.__class__.__name__}" \
@@ -87,68 +154,48 @@ class Department(BaseModel):
     def exists(self):
         with DBConnectionHandler() as db:
             department = db.session.scalars(select(Department).where(Department.name == self.name)).first()
-            return department # 객체 or None
+            return department  # 객체 or None
 
     def save(self):
-        obj_or_none = self.exists()
-        if obj_or_none:
-            print(f"{self.name}는 이미 존재하는 부서입니다.")
-            return obj_or_none
+        department_or_none = self.exists()
+        if department_or_none:
+            # print(f"{self.name}는 이미 존재하는 부서입니다.")
+            return department_or_none
 
         with DBConnectionHandler() as db:
             db.session.add(self)
-            db.session.flush()
+            #### 더이상 path구성에 id를 사용하지 않으므로, flush()나 commit()을 미리 할 필요없이 => add만 해도, 자신이 포함된다.
+            # db.session.flush()
 
             # 부모가 있으면 부모의 부모의 path에 + 생성아이디로 path를 만들어, 변경전 최초 순서?
             # my) 현재 동급레벨의 갯수로 -> sort를 동적으로 채우고, id로 path를 채우는 대신, sort번호로 path를 채우면 될 것 같다?
             # my) # 6 부모가 있으면 where에 with_parent에 올려, 갯수를 센다
             if self.parent:
-                # session.scalar(select(func.count()).select_from(User))
-                # session.scalar(select(func.count(User.id)))
-                # stmt = (
-                #     select(func.count())
-                #     .select_from(User)
-                #     .filter(User.name.like('j%'))
-                # )
-                # (session.execute(stmt).scalar())
                 sort_count = db.session.scalar(
                     (
                         select(func.count(Department.id))
                         .select_from(Department)
-                        # .where(with_parent(self.parent))
-                        # TypeError: with_parent() missing 1 required positional argument: 'prop'
                         .where(with_parent(self.parent, Department.children))
+                        # .where(with_parent(self.parent)) # TypeError: with_parent() missing 1 required positional argument: 'prop'
                     )
                 )
                 # print(stmt)
                 # SELECT count(departments.id) AS count_1
                 # FROM departments
                 # WHERE :param_1 = departments.parent_id
-                print(f'부모를 가졌으며, 해당부모의 자식수는 flush한 나를 포함하여 {sort_count}개로 sort가 정해집니다', sep=' / ')
+                # print(f'부모를 가졌으며, 해당부모의 자식수는 flush한 나를 포함하여 {sort_count}개로 sort가 정해집니다', sep=' / ')
 
-                # parentEntity = aliased(Department)
-                # print(db.session.scalars(
-                #     select(Department)
-                #     .where(with_parent(self.parent, parentEntity.children))
-                # ).all())
-                # [Department[id=3, title='이사회', category=Department[id=2, title='경영단', category=None,,, Department[id=4, title='이사회2', category=Department[id=2, title='경영단', category=None,,]
-                #### with_parent를 하니,
             else:
                 #### path를 채우기도 전에 먼저 level을 쓸 순 없다.
                 #### => 최상위를 가려내기 위해, sort -> path -> level을 채우기 전에, 먼저 level로 필터링 해야한다
                 # sort_count = db.session.scalar(select(func.count(Department.id)).where(Department.level == 0))
                 #### => 사실상 최상위 필터링은 parent_id, parent = None으로 찾아야한다.
                 sort_count = db.session.scalar(select(func.count(Department.id)).where(Department.parent_id.is_(None)))
-                print(f'부모가 없어 level==0인 부서는 flush한 나를 포함하여 {sort_count}개로서 sort가 정해집니다', sep=' / ')
+                # print(f'부모가 없어 level==0인 부서는 flush한 나를 포함하여 {sort_count}개로서 sort가 정해집니다', sep=' / ')
             self.sort = sort_count
 
             prefix = self.parent.path if self.parent else ''
-            # self.path = prefix + f"{self.id:0{self._N}d}"
             self.path = prefix + f"{self.sort:0{self._N}d}"
-            print(f'id대신 sort(이전갯수+1,1부터)로 채운 path: {self.path}')
-
-            # 26. category는 path로 대체할 수 있으니 삭제한다?
-            #    endpoint도 같이 삭제하고 template_name으로 대체한다.
 
             db.session.commit()
 
@@ -180,9 +227,87 @@ class EmployeeDepartment(BaseModel):
     employee_id = Column(Integer, ForeignKey('employees.id'), nullable=False, index=True)
     department_id = Column(Integer, ForeignKey('departments.id'), nullable=False, index=True)
 
+    # new
+    employee = relationship("Employee", backref="employee_department", foreign_keys=[employee_id],
+                            # lazy='joined', # fk가 nullable하지 않으므로, joined를 줘도 된다.
+                            )
+
+    department = relationship("Department", backref="employee_department", foreign_keys=[department_id],
+                              # lazy='joined', # fk가 nullable하지 않으므로, joined를 줘도 된다.
+                              )
+
     # 2. 고용일과 퇴직일은 없을 수 있다?! (퇴직일만 nullable=True인듯)
-    employment_date = Column(Date, nullable=True)
+    employment_date = Column(Date, nullable=False, comment='입사일과 다른, 부임일')
     dismissal_date = Column(Date, nullable=True)
+
+    # new 입사당시에 position을 Department.type에 따라 동적입력 -> 칼럼 nullable=True 필수 + .save()로 저장
+    position = Column(String(50), nullable=True, comment="부서Type에 따른 직무")
+    # new 입사당시에 is_leader인지를 받아서, 그것에 따른 position이 입력되게 해준다. => Department의 leader는 삭제하자.
+    #### => 팀장, 팀원 모두가 부임정보에 나와있게 된다.
+    is_leader = Column(Boolean, nullable=False, default=False)
+
+    #### (1) 같은부서에 대해서만 존재 여부 확인 -> 다른 부서에는 또 부임할 수 있다.
+    def exists_same_department(self):
+        with DBConnectionHandler() as db:
+            # Employee는 자신의 필수정보(name)으로만 중복검사햇으나
+            # 여기서는 fk_id or fk관계객체를 이용해서 검사해야한다? => 둘중에 뭐가 들어올지 모르면서, add/flush하진 않을 것 같은데..
+            #### 여기선 flush로 db에 갖다올 일이 없으니, 해당객체의 입력상황을 if 관계객체 else fk_id 로 나눠서 id를 뽑아서 검사하자
+            dep_id = self.department.id if self.department else self.department_id
+            emp_id = self.employee.id if self.employee else self.employee_id
+
+            emp_dep = db.session.scalars(
+                select(EmployeeDepartment) \
+                    .where(EmployeeDepartment.dismissal_date.is_(None))  # 아직 끝나지 않은 부임정보에 대해
+                    .where(EmployeeDepartment.employee_id == emp_id)  # 해당직원의 정보가
+                    .where(EmployeeDepartment.department_id == dep_id)  # 해당부서에 부임정보가 이미 존재하는지
+            ).first()
+            return emp_dep  # 객체 or None
+
+    #### (2) is_leader로 지원했는데, 팀장이 이미 차 있는지 여부
+    def exists_already_leader(self):
+        with DBConnectionHandler() as db:
+            dep_id = self.department.id if self.department else self.department_id
+            is_already_leader = db.session.scalars(
+                select(EmployeeDepartment) \
+                    .where(EmployeeDepartment.dismissal_date.is_(None)) # 퇴직정보가 아닌 것 중
+                .where(EmployeeDepartment.department_id == dep_id) # 해당부서 정보 중
+                .where(EmployeeDepartment.is_leader == True) # 팀장이 이미 있는지
+            ).first()
+            return is_already_leader
+
+
+
+    def save(self):
+        #### (1) 퇴직정보제외하고 & 해당 지원부서에 대해서 & 해당직원이 이미 존재하는지 여부 확인 -> 다른 부서에는 또 부임할 수 있다.
+        emp_dep_or_none = self.exists_same_department()
+        if emp_dep_or_none:
+            print('이미 부임된 부서입니다.')
+            return emp_dep_or_none
+
+        #### (2) is_leader로 지원했는데, 팀장이 이미 차 있는지 여부
+        #### 조건에 is_leadear가 True여야한다.
+        if self.is_leader and self.exists_already_leader():
+            print('해당부서에 이미 부서장이 존재합니다.')
+            return None
+
+
+        with DBConnectionHandler() as db:
+            #### flush나 commit을 하지 않으면 => fk_id 입력 vs fk관계객체입력이 따로 논다.
+            #### => 한번 갔다오면, 관계객체 입력 <-> fk_id 입력이 동일시되며, fk_id입력으로도 내부에서 관계객체를 쓸 수 있게 된다.
+            #### => 즉 외부에서 department_id=로 입력해도, 내부에서 self.department객체를 쓸 수 있게 된다.
+            db.session.add(self)
+            db.session.flush() # fk_id 입력과 fk관계객체입력 둘중에 뭘 해도 관계객체를 사용할 수 있게 DB한번 갔다오기
+
+            self.position = self.department.type.find_position(is_leader=self.is_leader,
+                                                               dep_name=self.department.name)  # joined를 삭제하면 fk만 넣어줘도 이게 돌아갈까?
+
+            #### 한번만 session에 add해놓으면, 또 add할 필요는 없다.
+            # db.session.add(self)
+            db.session.commit()
+
+        return self
+
+
 
 # 3.
 # users_and_departments = db.Table(

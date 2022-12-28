@@ -13,6 +13,7 @@ from sqlalchemy.dialects import postgresql, mysql, oracle
 from sqlalchemy.orm import aliased, relationship, with_parent, selectinload, lazyload
 
 from create_database_tutorial3 import *
+from src.infra.tutorial3.auth.departments import DepartmentType
 from src.infra.tutorial3.notices import BannerType
 
 if __name__ == '__main__':
@@ -83,36 +84,66 @@ if __name__ == '__main__':
 
 
     ######## department, employeedepartment 설정
-    # create_database(truncate=False, drop_table=False, load_fake_data=False)
-    # 조직도 참고: https://www.medical.or.kr/suwon/contentsInfo.do?brd_mgrno=0&menu_no=717
-    # 병원장 / 실장 / 원무과, 간호과, 원장단 /
-
+    create_database(truncate=False, drop_table=False, load_fake_data=False)
+    # 조직도 참고: http://m.soldamclinic.com/page/page114
+    # 병원장 / 진료부 + 간호부 + 행정부 /
+    #         진료부 - 한방진료실 / 양방진료실 / 물리치료실 / 탕전실
+    #         간호부 - 외래 / 병동 / 고객지원 / 서비스센터
+    #         행정부 - 원무팀 / 총무팀
     #### (1) 부서 생성
-    병원장_부서 = Department(name='병원장', leader_id=20)
-    최상위_경영단_부서 = Department(name='경영단', leader_id=20)
-    # session.add(병원장)
-    # A. 생성시 add로 하지말고 .save()로
-    병원장_부서.save() # 부모가 없어 level==0인 부서는 나를 포함하여 0개로서 sort 순서가 정해집니다 / id대신 sort로 채운 path: 000
-    최상위_경영단_부서.save()
+    staffs = Employee.get_by_user_role(Roles.STAFF)
+    chiefstaffs = Employee.get_by_user_role(Roles.CHIEFSTAFF)
+    executives = Employee.get_by_user_role(Roles.EXECUTIVE)
 
-    이사회_부서 = Department(name='이사회', parent=최상위_경영단_부서)
-    이사회_부서.save()
-    이사회_부서2 = Department(name='이사회2', parent=최상위_경영단_부서)
-    이사회_부서2.save()
-    # A. 생성시 .save()안에  commit하지 않은 객체를 self exitst로 중복검사 해야할 듯. -> 안하면 DB의 .name unique제약만 걸림.
+    병원장 = Department(name='병원장', type=DepartmentType.부장).save()
 
+    진료부 = Department(name='진료부', type=DepartmentType.부장, parent=병원장).save()
+    간호부 = Department(name='간호부', type=DepartmentType.부장, parent=병원장).save()
+    행정부 = Department(name='행정부', type=DepartmentType.부장, parent=병원장).save()
 
-    Department(name='행정과', parent=병원장_부서).save()
-    Department(name='원무과', parent=병원장_부서).save()
-    진료부장_부서 = Department(name='진료부장', parent=병원장_부서).save()
-
-    Department(name='약제과', parent=진료부장_부서).save()
-    Department(name='간호과', parent=진료부장_부서).save()
-    Department(name='진료각과', parent=진료부장_부서).save()
+    #### 진료부 하위 부서 - 팀장없이
+    한방진료실 = Department(name='한방진료실', type=DepartmentType.원장단, parent=진료부).save()
+    탕전실 = Department(name='탕전실', type=DepartmentType.실, parent=진료부).save()
+    #### 간호부 하위 부서 - 팀장없이
+    외래 = Department(name='외래', type=DepartmentType.치료실, parent=간호부).save()
+    병동 = Department(name='병동', type=DepartmentType.치료실, parent=간호부).save()
+    #### 행정부 하위 부서 - 팀장없이
+    원무 = Department(name='원무', type=DepartmentType.팀, parent=행정부).save()
+    총무 = Department(name='총무', type=DepartmentType.팀, parent=행정부).save()
 
 
+    #### (2) 부서에 부임
+    #### => 한 사람은 (다른)여러부서에 [user의 role과 상관없이 오로지 팀원으로만] 입사한다 & 팀장은 부서정보에서 수정해서 넣어줄 것이다.
+    ####   + 부서 추가 가입시, 다른 부서에만 가입가능하므로, add시에는 [같은부서인지에 대한 exists]는 필요하다.
+    병원장_취임 = EmployeeDepartment(
+        department=병원장,
+        employee=executives[0],
+        employment_date=datetime.date.today(),
+        is_leader=True
+    ).save()
+
+    #### 동적으로 객체를 이용하는데, joined도 안해준 상태에서 관계객체 대신, fk_id를 직접 넣어준다면 작동할까?
+    대표원장_취임 = EmployeeDepartment(
+        department_id=한방진료실.id, # 내부에서 flush해서, self.department.type을 쓰므로, id를 입력해줘도 된다.
+        employee=chiefstaffs[0],
+        employment_date=datetime.date.today(),
+        is_leader=True
+    ).save()
+
+    부원장_취임 = EmployeeDepartment(
+        department_id=한방진료실.id,
+        employee=staffs[0],
+        employment_date=datetime.date.today(),
+        # is_leader=True
+    ).save()
 
 
+    대표원장_추가로_취임 = EmployeeDepartment(
+        department=한방진료실,
+        employee=chiefstaffs[1], # 추가로 다른사람을 부임시키면 -> 부서장 이미 있다고 든다.
+        employment_date=datetime.date.today(),
+        is_leader=True # 이미 is_leader가 있는 부서인데
+    ).save()
 
 
 

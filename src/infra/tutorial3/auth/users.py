@@ -62,11 +62,14 @@ class User(BaseModel):
     ## - user입장에선 정보성 role을 fk로 가졌다가, role entity에서 정보를 가져오는 것이지미나
     ## - role입장에선 1:m이다. 1user는 1role,  1role은 여러유저들에게 사용
     role_id = Column(Integer, ForeignKey('roles.id'), nullable=False)
+    #### role에 정의했던 관계속성 옮김
+    role = relationship('Role', backref=backref('users', lazy='dynamic'), lazy='subquery')
 
     ## 직원(M)에 대해 1로서 relationship
     #### User(invite.inviter)로부터 직원(1:1)의 1로서 바로 접근가능하게 subquery+uselist=False
-    employee = relationship('Employee', backref=backref('user', lazy='subquery'), lazy='subquery', uselist=False)
     # employee = relationship('Employee', backref=backref('user', lazy='subquery'), uselist=False)# lazy='subquery')
+    # employee = relationship('Employee', backref=backref('user', lazy='subquery'), lazy='subquery', uselist=False)
+    #### => 관계속성을 Employee로 옮겨 Employee.관계속성을 stmt에 쓸 수있게 한다
 
     ## invite에 user_id 2개 추가에 대한 2개의 one으로서 relationship
     # -> 같은 테이블 2개에 대한 relaionship은 brackref만 다르게 주지말고,
@@ -328,7 +331,8 @@ class Role(BaseModel):
     permissions = Column(Integer)
 
     # 여러 사용자가 같은 Role을 가질 수 있다.
-    users = relationship('User', backref=backref('role', lazy='subquery'), lazy='dynamic')
+    # users = relationship('User', backref=backref('role', lazy='subquery'), lazy='dynamic')
+    #### => User쪽으로 관계속성 옮기기 for stmt 연결
 
     employee_invites = relationship('EmployeeInvite', backref=backref('role', lazy='subquery'), lazy='dynamic')
 
@@ -458,6 +462,9 @@ class Employee(BaseModel):
     id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
     # 연결고리이자, user로부터 -> employee의 정보를 찾을 때, 검색조건이 될 수 있다.
     user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    #### Many쪽에 backref가 아닌 관계속성을 직접 정의해야, => Many.one.any()를 stmt에 쓸 수 있다.
+    # User에서 정의했던 관계속성 옮김 =>  employee = relationship('Employee', backref=backref('user', lazy='subquery'), lazy='subquery', uselist=False)
+    user = relationship('User', backref=backref('employee', lazy='subquery'), lazy='subquery', uselist=False)
     # 부서
 
     name = Column(String(40), nullable=False)
@@ -476,6 +483,39 @@ class Employee(BaseModel):
     reference = Column(String(128), nullable=True)
 
     # qrcode, qrcode_img: https://github.com/prameshstha/QueueMsAPI/blob/85dedcce356475ef2b4b149e7e6164d4042ffffb/bookings/models.py#L92
+
+    @classmethod
+    def get_by_user_role(cls, roles: Roles):
+        with DBConnectionHandler() as db:
+            stmt = (
+                select(cls)
+                .where(cls.is_active)
+            )
+
+            if roles == Roles.USER:
+                stmt = stmt.where(cls.user.has(~User.is_staff))
+            elif roles == Roles.STAFF:
+                stmt = stmt.where(cls.user.has(User.is_staff))
+            elif roles == Roles.CHIEFSTAFF:
+                stmt = stmt.where(cls.user.has(User.is_chiefstaff))
+            elif roles == Roles.EXECUTIVE:
+                stmt = stmt.where(cls.user.has(User.is_executive))
+            elif roles == Roles.ADMINISTRATOR:
+                stmt = stmt.where(cls.user.has(User.is_administrator))
+            else:
+                raise ValueError('잘못된 Roles를 입력했습니다.')
+
+            # print(stmt)
+            # SELECT employees.add_date, employees.pub_date, employees.id, employees.user_id, employees.name, employees.sub_name, employees.birth, employees.join_date, employees.job_status, employees.resign_date, employees.reference
+            # FROM employees
+            # WHERE (employees.job_status NOT IN (__[POSTCOMPILE_job_status_1])) AND (EXISTS (SELECT 1
+            # FROM users
+            # WHERE users.id = employees.user_id AND (EXISTS (SELECT 1
+            # FROM roles
+            # WHERE roles.id = users.role_id AND roles.permissions >= :permissions_1))))
+            # User[id=16]
+
+            return db.session.scalars(stmt).all()
 
     ## employee도 대기/퇴사상태가 잇어서 구분하기 위함
     @hybrid_property
