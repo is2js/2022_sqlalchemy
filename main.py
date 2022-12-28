@@ -94,6 +94,9 @@ if __name__ == '__main__':
     staffs = Employee.get_by_user_role(Roles.STAFF)
     chiefstaffs = Employee.get_by_user_role(Roles.CHIEFSTAFF)
     executives = Employee.get_by_user_role(Roles.EXECUTIVE)
+    # [<Employee 2>, <Employee 4>, <Employee 5>, <Employee 13>, <Employee 16>, <Employee 18>, <Employee 19>]
+    # [<Employee 11>, <Employee 12>, <Employee 15>]
+    # [<Employee 8>, <Employee 10>]
 
     병원장 = Department(name='병원장', type=DepartmentType.부장).save()
 
@@ -138,13 +141,19 @@ if __name__ == '__main__':
     ).save()
 
 
-    대표원장_추가로_취임 = EmployeeDepartment(
+    대표원장_추가로_취임시_안됨 = EmployeeDepartment(
         department=한방진료실,
         employee=chiefstaffs[1], # 추가로 다른사람을 부임시키면 -> 부서장 이미 있다고 든다.
         employment_date=datetime.date.today(),
         is_leader=True # 이미 is_leader가 있는 부서인데
     ).save()
 
+    부장급_부서에_1명_초과가입시_안됨 = EmployeeDepartment(
+        department=병원장,
+        employee=chiefstaffs[0],
+        employment_date=datetime.date.today(),
+        # is_leader=True # 부서장이든 말든 부장급부서는 1명이 이미 존재하면 -> 1명만 부임가능 부서라고 뜬다.
+    ).save()
 
 
 

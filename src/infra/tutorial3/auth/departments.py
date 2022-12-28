@@ -159,7 +159,7 @@ class Department(BaseModel):
     def save(self):
         department_or_none = self.exists()
         if department_or_none:
-            # print(f"{self.name}는 이미 존재하는 부서입니다.")
+            print(f"{self.name}는 이미 존재하는 부서입니다.")
             return department_or_none
 
         with DBConnectionHandler() as db:
@@ -261,42 +261,68 @@ class EmployeeDepartment(BaseModel):
                     .where(EmployeeDepartment.employee_id == emp_id)  # 해당직원의 정보가
                     .where(EmployeeDepartment.department_id == dep_id)  # 해당부서에 부임정보가 이미 존재하는지
             ).first()
+
             return emp_dep  # 객체 or None
 
     #### (2) is_leader로 지원했는데, 팀장이 이미 차 있는지 여부
     def exists_already_leader(self):
         with DBConnectionHandler() as db:
             dep_id = self.department.id if self.department else self.department_id
-            is_already_leader = db.session.scalars(
+            already_leader = db.session.scalars(
                 select(EmployeeDepartment) \
-                    .where(EmployeeDepartment.dismissal_date.is_(None)) # 퇴직정보가 아닌 것 중
-                .where(EmployeeDepartment.department_id == dep_id) # 해당부서 정보 중
-                .where(EmployeeDepartment.is_leader == True) # 팀장이 이미 있는지
+                    .where(EmployeeDepartment.dismissal_date.is_(None))  # 퇴직정보가 아닌 것 중
+                    .where(EmployeeDepartment.department_id == dep_id)  # 해당부서 정보 중
+                    .where(EmployeeDepartment.is_leader == True)  # 팀장이 이미 있는지
             ).first()
-            return is_already_leader
 
+            return already_leader
 
+    #### (3) 부/장급 부서는 only 1명만 등록가능하고, is_leader가 체크안되어있더라도, 체크해줘야한다
+    def is_full_in_one_person_department(self):
+        with DBConnectionHandler() as db:
+            if self.department:
+                dep_type = self.department.type
+            else:
+                # department_id로 입력된 경우
+                dep_type = db.session.scalars(
+                    select(Department)
+                    .where(Department.id == self.department_id)
+                ).first().type
+
+            if dep_type != DepartmentType.부장:
+                return False
+            # (부/장급 부서인 경우) => 미리 데이터가 나오면 탈락
+            is_full = db.session.scalars(
+                select(EmployeeDepartment)
+                .where(EmployeeDepartment.dismissal_date.is_(None))
+                .where(
+                    EmployeeDepartment.department_id == (self.department.id if self.department else self.department_id))
+            ).first()
+            return is_full
 
     def save(self):
         #### (1) 퇴직정보제외하고 & 해당 지원부서에 대해서 & 해당직원이 이미 존재하는지 여부 확인 -> 다른 부서에는 또 부임할 수 있다.
         emp_dep_or_none = self.exists_same_department()
         if emp_dep_or_none:
-            print('이미 부임된 부서입니다.')
-            return emp_dep_or_none
+            print('이미 부임된 부서입니다. >>> ')
+            return None
 
-        #### (2) is_leader로 지원했는데, 팀장이 이미 차 있는지 여부
-        #### 조건에 is_leadear가 True여야한다.
+        #### (2) is_leader로 지원했는데, 팀장이 이미 차 있는지 여부 (exits호출 조건으로서 if is_leadear가 True여야한다.)
         if self.is_leader and self.exists_already_leader():
             print('해당부서에 이미 부서장이 존재합니다.')
             return None
 
+        #### (3) 부/장급 부서는 only 1명만 등록가능하고, is_leader가 체크안되어있더라도, 체크해줘야한다
+        if self.is_full_in_one_person_department():
+            print('1명만 부임가능한 부서로서 이미 할당된 부/장급 부서입니다.')
+            return None
 
         with DBConnectionHandler() as db:
             #### flush나 commit을 하지 않으면 => fk_id 입력 vs fk관계객체입력이 따로 논다.
             #### => 한번 갔다오면, 관계객체 입력 <-> fk_id 입력이 동일시되며, fk_id입력으로도 내부에서 관계객체를 쓸 수 있게 된다.
             #### => 즉 외부에서 department_id=로 입력해도, 내부에서 self.department객체를 쓸 수 있게 된다.
             db.session.add(self)
-            db.session.flush() # fk_id 입력과 fk관계객체입력 둘중에 뭘 해도 관계객체를 사용할 수 있게 DB한번 갔다오기
+            db.session.flush()  # fk_id 입력과 fk관계객체입력 둘중에 뭘 해도 관계객체를 사용할 수 있게 DB한번 갔다오기
 
             self.position = self.department.type.find_position(is_leader=self.is_leader,
                                                                dep_name=self.department.name)  # joined를 삭제하면 fk만 넣어줘도 이게 돌아갈까?
@@ -306,8 +332,6 @@ class EmployeeDepartment(BaseModel):
             db.session.commit()
 
         return self
-
-
 
 # 3.
 # users_and_departments = db.Table(
