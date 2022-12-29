@@ -1255,3 +1255,10 @@ def employee_job_status_change():
         db.session.commit()
 
     return redirect(redirect_url())
+
+@admin_bp.route('/department/', methods=['GET', 'POST'])
+@login_required
+def add_employee_in_department():
+    print(g.user.get_departments())
+
+    return ""

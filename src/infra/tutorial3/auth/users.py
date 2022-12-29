@@ -13,6 +13,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from src.config import project_config
 from src.infra.config.base import Base
 from src.infra.config.connection import DBConnectionHandler
+from .departments import EmployeeDepartment, Department
 from src.infra.tutorial3.common.base import BaseModel, InviteBaseModel
 from src.infra.tutorial3.common.int_enum import IntEnum
 
@@ -246,6 +247,37 @@ class User(BaseModel):
                     f"[id={self.id!r}]"
         return info
 
+    def get_departments(self, as_leader=False, min_level=False):
+        with DBConnectionHandler() as db:
+            # 부서정보 -> Employee -> User 관계필터링
+            subq_stmt = (
+                select(EmployeeDepartment.department_id)
+                .where(EmployeeDepartment.dismissal_date.is_(None))
+                .where(EmployeeDepartment.employee.has(Employee.user == self))
+            )
+            # 부서 중에 내가 팀장인 부서정보만
+            if as_leader:
+                subq_stmt = subq_stmt.where(EmployeeDepartment.is_leader == 1)
+
+            dep_ids = (
+                subq_stmt
+            ).scalar_subquery()
+
+            # 내가 (팀장으로) 소속중인 부서 추출
+            stmt = (
+                select(Department)
+                .where(Department.id.in_(dep_ids))
+            )
+
+            # 내가 (팀장으로) 소속중인 부서 중에 가장 높은 부서 (level 낮은 부서) 필터링 -> 여러개 or [] 일 수 있음.
+            if min_level:
+                min_level = (
+                    select(func.min(Department.level))
+                ).scalar_subquery()
+
+                stmt = stmt.where(Department.level == min_level)
+            return db.session.scalars(stmt).all()
+
 
 class Permission(enum.IntEnum):
     FOLLOW = 1
@@ -474,7 +506,6 @@ class Employee(BaseModel):
     # join_date = Column(Date, nullable=False)
     join_date = Column(Date, nullable=True)
 
-
     # job_status가 User에서 신청한 대기 Employee(role이 아직 User)를 검색해서 대기중인 Employee데이터를 골라낼 수도 있다.
     # - 예약시에는 reserve_status가 대기 중인 것을 골라낼 것이다.
     job_status = Column(IntEnum(JobStatusType), default=JobStatusType.재직, nullable=False, index=True)
@@ -497,7 +528,7 @@ class Employee(BaseModel):
             elif roles == Roles.STAFF:
                 stmt = stmt.where(cls.user.has(User.is_staff)).where(cls.user.has(~User.is_chiefstaff))
             elif roles == Roles.CHIEFSTAFF:
-                stmt = stmt.where(cls.user.has(User.is_chiefstaff)) .where(cls.user.has(~User.is_executive))
+                stmt = stmt.where(cls.user.has(User.is_chiefstaff)).where(cls.user.has(~User.is_executive))
             elif roles == Roles.EXECUTIVE:
                 stmt = stmt.where(cls.user.has(User.is_executive)).where(cls.user.has(~User.is_administrator))
             elif roles == Roles.ADMINISTRATOR:
@@ -626,17 +657,15 @@ class Employee(BaseModel):
 
     def to_dict(self):
         d = super().to_dict()
-        del d['add_date'] # base공통칼럼을 제외해야 keyword가 안겹친다
+        del d['add_date']  # base공통칼럼을 제외해야 keyword가 안겹친다
         del d['pub_date']
-        del d['user'] # 관계객체는 굳이 필요없다.
+        del d['user']  # 관계객체는 굳이 필요없다.
         del d['id']
         return d
 
     def update(self, info_dict):
         for k, v in info_dict.items():
             setattr(self, k, v)
-
-
 
 
 # class InviteType(enum.IntEnum):
@@ -686,5 +715,3 @@ class EmployeeInvite(InviteBaseModel):
 
             invite_list = db.session.scalars(stmt).all()
         return invite_list
-
-

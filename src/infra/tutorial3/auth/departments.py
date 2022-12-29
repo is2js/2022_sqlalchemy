@@ -13,8 +13,6 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from src.config import project_config
 from src.infra.config.base import Base
 from src.infra.config.connection import DBConnectionHandler
-from src.infra.tutorial3.auth import Role, Roles
-from src.infra.tutorial3.auth import User, Employee
 from src.infra.tutorial3.common.base import BaseModel, InviteBaseModel
 from src.infra.tutorial3.common.int_enum import IntEnum
 
@@ -138,16 +136,18 @@ class Department(BaseModel):
     # code = Column(String(24))
     # root = Column(Boolean, default=False)  # parent_id가 None이면 root에 True넣어주고, 그외는 False로 기본 생성
     # menu
-    path = Column(Text, index=True, nullable=True)  # 동적으로 채울거라 nullabe=True로 일단 주고, add후 다른데이터를 보고 채운다다
+    path = Column(Text, index=True, nullable=True)  # 동적으로 채울거라 nullabe=True로 일단 주고, add후 다른데이터를 보고 채운다다 => 자식검색시 path.like(자신apth)로 하니 index 필수
 
     #### EmployeeDepartment에 position을 남기기 위한, Type
     type = Column(IntEnum(DepartmentType), default=DepartmentType.팀, nullable=False, index=True)
 
     def __repr__(self):
         info: str = f"{self.__class__.__name__}" \
-                    f"[id={self.id!r}," \
+                    f"(id={self.id!r}," \
                     f" title={self.name!r}," \
-                    f" parent_id={self.parent_id!r}]" \
+                    f" parent_id={self.parent_id!r})" \
+                    f" sort={self.sort!r})" \
+                    f" path={self.path!r}," \
             # f" level={self.level!r}]" # path를 채우기 전에 출력했더니 level써서 에러가 남.
         return info
 
@@ -210,6 +210,54 @@ class Department(BaseModel):
         # 0 division 가능성이 있으면 = (cls.path / case([(cls._N == 0, null())], else_=cls.colC), /는 지원되나 //는 지원안됨. func.round()써던지 해야할 듯.?
         return func.length(cls.path) / cls._N - 1
 
+    @classmethod
+    def get_by_name(cls, name: str):
+        with DBConnectionHandler() as db:
+            dep = db.session.scalars(
+                select(Department)
+                .where(Department.status == 1)
+                .where(Department.name == name)
+            ).first()
+            return dep
+
+    @classmethod
+    def get_all(cls):
+        with DBConnectionHandler() as db:
+            dep = db.session.scalars(
+                select(cls)
+                .where(cls.status == 1)
+                .order_by(cls.path)
+            ).all()
+            return dep
+
+    @classmethod
+    def change_sort_by_id(cls, id_a, id_b):
+        with DBConnectionHandler() as db:
+            dep_a = db.session.get(cls, id_a)  # get으로 찾앗으면 이미 add된 상태라서 commit만 하면 바뀐다? => execute때문에 자동 커밋 되는 듯.
+            dep_b = db.session.get(cls, id_b)
+
+            dep_a.sort, dep_b.sort = dep_b.sort, dep_a.sort
+
+            # path는 기존path로 필터링해야하니 변수로 만들어놓는다.
+            a_prefix = dep_a.parent.path if dep_a.parent else ''  # 부모는 안바뀌고
+            new_a_path = a_prefix + f"{dep_a.sort:0{cls._N}d}"  # 자신은 바뀐sort로 바뀐apth를 만든다
+
+            b_prefix = dep_b.parent.path if dep_b.parent else ''
+            new_b_path = b_prefix + f"{dep_b.sort:0{cls._N}d}"
+
+            #### 각각 update를 떼리면, 뒤에것의 바뀐path로 검색시  바뀐a들이 걸려버린다.
+            #### => 업뎃하기 전에 둘다 미리 select해놓고, 이후 update한다.
+            a_and_subs = db.session.scalars(select(cls).where(cls.path.like(dep_a.path + '%'))).all()
+            b_and_subs = db.session.scalars(select(cls).where(cls.path.like(dep_b.path + '%'))).all()
+
+            for a_or_sub in a_and_subs:
+                a_or_sub.path = new_a_path + a_or_sub.path[len(new_a_path):]
+
+            for b_or_sub in b_and_subs:
+                b_or_sub.path = new_b_path + b_or_sub.path[len(new_b_path):]
+
+            db.session.commit()
+
 
 # 2.
 class EmployeeDepartment(BaseModel):
@@ -228,11 +276,11 @@ class EmployeeDepartment(BaseModel):
     department_id = Column(Integer, ForeignKey('departments.id'), nullable=False, index=True)
 
     # new
-    employee = relationship("Employee", backref="employee_department", foreign_keys=[employee_id],
+    employee = relationship("Employee", backref="employee_departments", foreign_keys=[employee_id],
                             # lazy='joined', # fk가 nullable하지 않으므로, joined를 줘도 된다.
                             )
 
-    department = relationship("Department", backref="employee_department", foreign_keys=[department_id],
+    department = relationship("Department", backref="employee_departments", foreign_keys=[department_id],
                               # lazy='joined', # fk가 nullable하지 않으므로, joined를 줘도 된다.
                               )
 
@@ -245,6 +293,14 @@ class EmployeeDepartment(BaseModel):
     # new 입사당시에 is_leader인지를 받아서, 그것에 따른 position이 입력되게 해준다. => Department의 leader는 삭제하자.
     #### => 팀장, 팀원 모두가 부임정보에 나와있게 된다.
     is_leader = Column(Boolean, nullable=False, default=False)
+
+    def __repr__(self):
+        info: str = f"{self.__class__.__name__}" \
+                    f"[id={self.id!r}," \
+                    f" title={self.employee.name!r}," \
+                    f" parent_id={self.department.name!r}]" \
+            # f" level={self.level!r}]" # path를 채우기 전에 출력했더니 level써서 에러가 남.
+        return info
 
     #### (1) 같은부서에 대해서만 존재 여부 확인 -> 다른 부서에는 또 부임할 수 있다.
     def exists_same_department(self):
@@ -305,7 +361,7 @@ class EmployeeDepartment(BaseModel):
         emp_dep_or_none = self.exists_same_department()
         if emp_dep_or_none:
             print('이미 부임된 부서입니다. >>> ')
-            return None
+            return emp_dep_or_none
 
         #### (2) is_leader로 지원했는데, 팀장이 이미 차 있는지 여부 (exits호출 조건으로서 if is_leadear가 True여야한다.)
         if self.is_leader and self.exists_already_leader():
@@ -317,6 +373,8 @@ class EmployeeDepartment(BaseModel):
             print('1명만 부임가능한 부서로서 이미 할당된 부/장급 부서입니다.')
             return None
 
+
+
         with DBConnectionHandler() as db:
             #### flush나 commit을 하지 않으면 => fk_id 입력 vs fk관계객체입력이 따로 논다.
             #### => 한번 갔다오면, 관계객체 입력 <-> fk_id 입력이 동일시되며, fk_id입력으로도 내부에서 관계객체를 쓸 수 있게 된다.
@@ -326,6 +384,10 @@ class EmployeeDepartment(BaseModel):
 
             self.position = self.department.type.find_position(is_leader=self.is_leader,
                                                                dep_name=self.department.name)  # joined를 삭제하면 fk만 넣어줘도 이게 돌아갈까?
+
+            #### 부장급 부서의 취임이라면, is_leader를 무조건 True로 넣어준다.
+            if self.department.type == DepartmentType.부장:
+                self.is_leader = True
 
             #### 한번만 session에 add해놓으면, 또 add할 필요는 없다.
             # db.session.add(self)
