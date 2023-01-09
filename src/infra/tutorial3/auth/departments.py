@@ -81,6 +81,7 @@ class Department(BaseModel):
     _N = 3
 
     __tablename__ = 'departments'
+    # __table_args__ = {'extend_existing': True}
 
     id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
     # name = Column(String(50), nullable=False, comment="부서 이름")
@@ -93,7 +94,7 @@ class Department(BaseModel):
     children = relationship('Department', backref=backref(
         'parent', remote_side=[id], lazy='subquery',
         cascade='all',  # 7
-    ))
+    ), order_by='Department.path')
     # 8 # children + joined backref parent 대신, parent를 정의해줄 수 도 있다.
     # parent = db.relationship('Department', remote_side=[id],  backref="subdepartment")
 
@@ -145,9 +146,9 @@ class Department(BaseModel):
         info: str = f"{self.__class__.__name__}" \
                     f"(id={self.id!r}," \
                     f" title={self.name!r}," \
-                    f" parent_id={self.parent_id!r})" \
-                    f" sort={self.sort!r})" \
-                    f" path={self.path!r}," \
+                    f" parent_id={self.parent_id!r}," \
+                    f" sort={self.sort!r}," \
+                    f" path={self.path!r})" \
             # f" level={self.level!r}]" # path를 채우기 전에 출력했더니 level써서 에러가 남.
         return info
 
@@ -190,7 +191,9 @@ class Department(BaseModel):
                 #### => 최상위를 가려내기 위해, sort -> path -> level을 채우기 전에, 먼저 level로 필터링 해야한다
                 # sort_count = db.session.scalar(select(func.count(Department.id)).where(Department.level == 0))
                 #### => 사실상 최상위 필터링은 parent_id, parent = None으로 찾아야한다.
-                sort_count = db.session.scalar(select(func.count(Department.id)).where(Department.parent_id.is_(None)))
+                sort_count = db.session.scalar(
+                    select(func.count(Department.id)).where(Department.parent_id.is_(None))
+                )
                 # print(f'부모가 없어 level==0인 부서는 flush한 나를 포함하여 {sort_count}개로서 sort가 정해집니다', sep=' / ')
             self.sort = sort_count
 
@@ -236,6 +239,10 @@ class Department(BaseModel):
             dep_a = db.session.get(cls, id_a)  # get으로 찾앗으면 이미 add된 상태라서 commit만 하면 바뀐다? => execute때문에 자동 커밋 되는 듯.
             dep_b = db.session.get(cls, id_b)
 
+            #### 같은 레벨 내의 sort 교환이어햐만 한다 => 아닐시 에러 추가
+            if dep_a.leve != dep_b.level:
+                raise ValueError('같은 level의 부서만 순서변경이 가능합니다.')
+
             dep_a.sort, dep_b.sort = dep_b.sort, dep_a.sort
 
             # path는 기존path로 필터링해야하니 변수로 만들어놓는다.
@@ -258,10 +265,22 @@ class Department(BaseModel):
 
             db.session.commit()
 
+    def get_children(self):
+        with DBConnectionHandler() as db:
+            stmt = (
+                select(Department)
+                .where(with_parent(self, Department.children))
+                # 나의 자식들이 나오는데, 같은 level의 부서들이 나오므로 -> 정렬은 path순으로 하자.
+                .order_by(Department.path)
+            )
+            return db.session.scalars(stmt).all()
+
 
 # 2.
 class EmployeeDepartment(BaseModel):
     __tablename__ = 'employee_departments'
+    # __table_args__ = {'extend_existing': True}
+
     # __table_args__ = (ForeignKeyConstraint(['user_id'], ['users.id'], name='users_tag_maps_department_id_fk'),)
 
     id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
@@ -394,6 +413,9 @@ class EmployeeDepartment(BaseModel):
             db.session.commit()
 
         return self
+
+
+
 
 # 3.
 # users_and_departments = db.Table(

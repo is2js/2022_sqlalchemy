@@ -4,7 +4,8 @@ from .notices import Notice, BannerType
 from .categories import Category, Post, PostPublishType, posttags, Tag
 from .auth import (
     User, Role, Permission, Roles, Employee, EmployeeInvite, JobStatusType,
-    Department, EmployeeDepartment,
+    Department, DepartmentType,
+    EmployeeDepartment,
 )
 
 from .admin import Banner, BannerType, Setting

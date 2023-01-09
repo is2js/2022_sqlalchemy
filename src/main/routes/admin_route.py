@@ -1259,6 +1259,6 @@ def employee_job_status_change():
 @admin_bp.route('/department/', methods=['GET', 'POST'])
 @login_required
 def add_employee_in_department():
-    print(g.user.get_departments())
+    print(g.user.get_my_departments())
 
     return ""

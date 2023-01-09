@@ -1,8 +1,6 @@
-import datetime
-import json
-import re
-import time
 
+
+from flask import jsonify
 from sqlalchemy import text, Table, Column, Integer, String, ForeignKey, select, literal_column, and_, func, desc, \
     union_all, update, delete, or_
 
@@ -13,7 +11,6 @@ from sqlalchemy.dialects import postgresql, mysql, oracle
 from sqlalchemy.orm import aliased, relationship, with_parent, selectinload, lazyload
 
 from create_database_tutorial3 import *
-from src.infra.tutorial3.auth.departments import DepartmentType
 from src.infra.tutorial3.notices import BannerType
 
 if __name__ == '__main__':
@@ -179,7 +176,7 @@ if __name__ == '__main__':
     # User[id=20]
 
     ## (1) 내가 팀장으로 속한 부서정보들 구하기
-    print('*' * 50)
+    print('*' * 30, '내가 팀장으로 속한 부서정보(들) 구하기 by has + is_leader', '*' * 50)
     # 1-1.  부서정보를 뽑되, 필터링 entity를 Employee -> .user_id or user로 User까지 사용하면 된다.
     # 1) 최종적으로 구할 객체의 entity -> select에
     # 2) Ed -> .any()/.has()로 Employee로 먼저 1차 필터링 entity 연결 (기본조건)
@@ -211,12 +208,13 @@ if __name__ == '__main__':
     print(emp_dep_leader_all)
     # [EmployeeDepartment[id=1, title='123', parent_id='병원장'], EmployeeDepartment[id=2, title='123', parent_id='진료부'], EmployeeDepartment[id=3, title='123', parent_id='한방진료실']]
 
-    ## (2) 이 중에, 내가 팀장인 부서정보중에, 가장 level이 가장 낮은  부서 찾기
+    ## (2) 이 중에, 내가 팀장인 부서정보중에, 가장 level이 가장 낮은  상위 부서 찾기
     # -> 같은 세션안에서 처리하므로, 관계필드를 타고 들어가서 비교해도 된다.
     # min_level_emp_dep_list = min(emp_dep_leader_all, key=lambda x:x.department.level)
     # print(min_level_emp_dep) # EmployeeDepartment[id=1, title='123', parent_id='병원장']
     ## (3) 없을 수도 있고, 같은level이 2개가 걸릴 수 도 있다. => 반복문으로 처리하자.
 
+    print('*' * 30, '내가 팀장인 부서정보중에, 가장 level이 가장 낮은  상위 부서 찾기 min_lv_subq + has ', '*' * 50)
     subq_scalar_min_level = (
         select(func.min(Department.level))
     ).correlate(EmployeeDepartment) \
@@ -287,6 +285,7 @@ if __name__ == '__main__':
     # print(session.scalars(stmt).all())
 
     ## (4) 개선 -> 부서로 먼저 변환후 min level필터링
+    print('*' * 30, '개선) has(user) + min_lv_select_scalar_subq -> 2개로 select ', '*' * 50)
     user_leader_dep_ids = (
         select(EmployeeDepartment.department_id)
         .where(EmployeeDepartment.dismissal_date.is_(None))
@@ -318,13 +317,16 @@ if __name__ == '__main__':
     #       FROM departments)
     # [Department[id=1, title='병원장', parent_id=None]]
 
-    ## 메서드화
-    # print('메서드화', '*'*30)
+    #### 메서드화
+    print('*' * 30, '메서드화', '*' * 30)
     # print(f"current_user.get_departments() >> {current_user.get_departments()}")
     # print(f"current_user.get_departments(as_leader=True) >> {current_user.get_departments(as_leader=True)}")
-    # print(f"current_user.get_departments(as_leader=True, min_level=True) >> {current_user.get_departments(as_leader=True, min_level=True)}")
+    print(
+        f"current_user.get_my_departments(as_leader=True, as_employee=False, as_min_level=True) => "
+        f"{current_user.get_my_departments(as_leader=True, as_employee=False, as_min_level=True)}"
+    )
 
-    print('부서조회', '*' * 30)
+    # print('부서조회', '*' * 30)
     ## (5) 모든 부서 재귀 조회 - 전체 조회는 path 정렬 + level 패딩을 줘서, 1개씩 출력한다
     # - path로 인해, 자신의 자식부터 다 연결하고, 다음 것으로 넘어간다
     # stmt = (
@@ -379,7 +381,7 @@ if __name__ == '__main__':
     #          Department(id=9, title='원무', parent_id=4) path='001003001',
     #          Department(id=10, title='총무', parent_id=4) path='001003002',
 
-    print('sort변경시 path도 같이 변경되게 하기', '*' * 30)
+    # print('sort변경시 path도 같이 변경되게 하기', '*' * 30)
     ## (6) 모든 부서 재귀 조회 - 전체 조회는 path 정렬 + level 패딩을 줘서, 1개씩 출력한다
     #   Department(id=1, title='병원장', parent_id=None) sort=1) path='001',
     #      Department(id=2, title='진료부', parent_id=1) sort=1) path='001001',
@@ -479,26 +481,92 @@ if __name__ == '__main__':
     #### sort변경은 1:1로 2개씩 한다.(직접 1개씩 주입하면 겹치게 되어 망함)
     #### 외부에서는 dep_id 2개가 주어지게 할 것이다.?
     #### 메서드화
-    print('*' * 30)
+
+    #
+    # print('Department.change_sort_by_id(진료부.id, 간호부.id)')
+    # print('*' * 30)
+    # Department.change_sort_by_id(진료부.id, 간호부.id)
+    # for it in Department.get_all():
+    #     print(it.level * '    ', it)
+    #
+    # print('Department.change_sort_by_id(간호부.id, 행정부.id)')
+    # print('*' * 30)
+    # Department.change_sort_by_id(간호부.id, 행정부.id)
+    # for it in Department.get_all():
+    #     print(it.level * '    ', it)
+    #
+    # print('Department.change_sort_by_id(한방진료실.id, 탕전실.id)')
+    # print('*' * 30)
+    # Department.change_sort_by_id(한방진료실.id, 탕전실.id)
+    # for it in Department.get_all():
+    #     print(it.level * '    ', it)
+
+    #### 나 + 자식들id를 누적하는 재귀
+    print('*' * 30, '특정 부서의 (나 제외) 직후 1차 자식들만 조회 with parent(부모객체)', '*' * 30, )
+    # (1) with_parent( 부모객체, 부모Entity.자식관계속성)  or   parent_id == 내id로  바로직후 자식들을 뽑아낸다.
+    # => my) with_parent는 타entity를 부모(One)으로 할 때, 하위 entity들을 뽑아낼 때 좋을 것 같다.
+    session.commit()
+    진료부 = Department.get_by_name('진료부')
+    session.add(진료부)
+    stmt = (
+        select(Department)
+        .where(with_parent(진료부, Department.children))
+        # 나의 자식들이 나오는데, 같은 level의 부서들이 나오므로 -> 정렬은 path순으로 하자.
+        .order_by(Department.path)
+    )
+    # print(stmt)
+    # SELECT departments.add_date, departments.pub_date, departments.id, departments.name, departments.parent_id, departments.status, departments.sort, departments.path, departments.type
+    # FROM departments
+    # WHERE :param_1 = departments.parent_id
+
+    children_department = session.scalars(stmt).all()
+    # [Department(id=2, title='진료부', parent_id=1) sort=3) path='002003',, Department(id=3, title='간호부', parent_id=1) sort=1) path='002001',, Department(id=4, title='행정부', parent_id=1) sort=2) path='002002',]
+
+    # (2) 자기참조이며 같은세션이므로 .children 관계속성으로 뽑아낼 수 있다 대신, 조회순서를 관계속성에 order_by='entity.필드' 로 지정해준다.
+    print(children_department)
+
+    print('*' * 30, '메서드화', '*' * 30)
+    print(f'진료부.get_children() => {진료부.get_children()}')
+
+
+
+
+    # [Department(id=2, title='진료부', parent_id=1) sort=3) path='002003',, Department(id=3, title='간호부', parent_id=1) sort=1) path='002001',, Department(id=4, title='행정부', parent_id=1) sort=2) path='002002',]
+
+    #  children = relationship('Department', backref=backref(
+    #         'parent', remote_side=[id], lazy='subquery',
+    #         cascade='all',  # 7
+    #     ), order_by='Department.path') #  order_by="desc(CourseInstance.semester_sort_ix)",
+    # print(진료부.children)
+    # [Department(id=3, title='간호부', parent_id=1) sort=1) path='002001',, Department(id=4, title='행정부', parent_id=1) sort=2) path='002002',, Department(id=2, title='진료부', parent_id=1) sort=3) path='002003',]
+
+    # (2) 재귀메서드안에서 자식들을 편하게 뽑아서 순회시킬 수 있도록 property로 정의한다 => 외부에서 하는게 아니라, 현재특정부서객체에서 호출해야하므로 cls method가 아닌 property로
+
+    # (3) 자식부서들을 순회하며 자식부서가 부모역할을 하도록 하되, 그 그 자식들을 보관할 수 있게 한다
+    # def get_child_departments(parent: Department, id_list: list):
+    def get_self_and_children_id_list(parent: Department):
+        # (3-1) 재귀를 돌며 누적시킬 것을 현재부터 뽑아낸다? => 첫 입력인자에 계속 누적시킬 거면, return없이 list에 그대로 append만 해주면 된다.
+        result = [parent.id]
+        # (3-1) 현재(부모)부서에서 자식들을 뽑아 순회시키며, id만 뽑아놓고, 이제 자신이 부모가 된다.
+        # => 자신처리+중간누적을 반환하는 메서드라면, 재귀호출후 반환값을 부모의 누적자료구조에 추가누적해준다.
+        for child in parent.children:
+            result += get_self_and_children_id_list(child)
+        return result
+
+
+    # print(get_self_and_children_id_list(진료부))
+    # [2, 6, 5]
+
+    # (4) 전체부서 - (나와 내자식들id를)로 제외시켜서, 수정form에 선택할 수 있는 부모부서로 나타내기
+    # => 수정form에서 부모부서를 고를 때, 나와 내자식들을 제외한 부서들을 부모로 선택할 수 있다.
+    departments = Department.get_all()
+    selectable_parent_departments = [(x.id, x.name) for x in departments if
+                                     x.id not in get_self_and_children_id_list(진료부)]
+    print('*' * 30, '나와 내자식들 id 조회 (나 포함 재귀) for 부서선택 ', '*' * 30, )
+    print(selectable_parent_departments)
+    # [(1, '병원장'), (3, '간호부'), (7, '외래'), (8, '병동'), (4, '행정부'), (9, '원무'), (10, '총무')]
+
+    print('*' * 30, '모든 부서 조회')
     for it in Department.get_all():
         print(it.level * '    ', it)
     print('*' * 30)
-
-
-    print('Department.change_sort_by_id(진료부.id, 간호부.id)')
-    print('*' * 30)
-    Department.change_sort_by_id(진료부.id, 간호부.id)
-    for it in Department.get_all():
-        print(it.level * '    ', it)
-
-    print('Department.change_sort_by_id(간호부.id, 행정부.id)')
-    print('*' * 30)
-    Department.change_sort_by_id(간호부.id, 행정부.id)
-    for it in Department.get_all():
-        print(it.level * '    ', it)
-
-    print('Department.change_sort_by_id(한방진료실.id, 탕전실.id)')
-    print('*' * 30)
-    Department.change_sort_by_id(한방진료실.id, 탕전실.id)
-    for it in Department.get_all():
-        print(it.level * '    ', it)

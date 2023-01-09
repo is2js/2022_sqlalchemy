@@ -247,7 +247,8 @@ class User(BaseModel):
                     f"[id={self.id!r}]"
         return info
 
-    def get_departments(self, as_leader=False, min_level=False):
+    #### with other entity
+    def get_my_departments(self, as_leader=False, as_employee=False, as_min_level=False):
         with DBConnectionHandler() as db:
             # 부서정보 -> Employee -> User 관계필터링
             subq_stmt = (
@@ -258,6 +259,10 @@ class User(BaseModel):
             # 부서 중에 내가 팀장인 부서정보만
             if as_leader:
                 subq_stmt = subq_stmt.where(EmployeeDepartment.is_leader == 1)
+
+            ## 추가) 부서 중에 내가 팀원으로 있는 정보만
+            if as_employee:
+                subq_stmt = subq_stmt.where(EmployeeDepartment.is_leader == 0)
 
             dep_ids = (
                 subq_stmt
@@ -270,7 +275,7 @@ class User(BaseModel):
             )
 
             # 내가 (팀장으로) 소속중인 부서 중에 가장 높은 부서 (level 낮은 부서) 필터링 -> 여러개 or [] 일 수 있음.
-            if min_level:
+            if as_min_level:
                 min_level = (
                     select(func.min(Department.level))
                 ).scalar_subquery()

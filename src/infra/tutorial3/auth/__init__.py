@@ -2,5 +2,6 @@ from .users import (
     User, Role, Permission, Roles, Employee, EmployeeInvite, JobStatusType,
 )
 from .departments import (
-    Department, EmployeeDepartment
+    Department, DepartmentType,
+    EmployeeDepartment
 )
