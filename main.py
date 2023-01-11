@@ -336,6 +336,10 @@ if __name__ == '__main__':
         f"current_user.get_my_departments(as_leader=True, as_employee=False, as_min_level=True) => "
         f"{current_user.get_my_departments(as_leader=True, as_employee=False, as_min_level=True)}"
     )
+    print(
+        f"User.get_by_id(11).get_my_departments(as_min_level=True) => "
+        f"{User.get_by_id(11).get_my_departments(as_min_level=True)}"
+    )
 
     # print('부서조회', '*' * 30)
     ## (5) 모든 부서 재귀 조회 - 전체 조회는 path 정렬 + level 패딩을 줘서, 1개씩 출력한다
@@ -670,6 +674,11 @@ if __name__ == '__main__':
 
 
 
+    # 사용 직원 목록 :
+    # 직원_병원장
+    # 직원_부원장
+    # 직원_행정부장
+    # 직원_원무팀원
     # print('*' * 30, '모든 부서 조회')
     # for it in Department.get_all():
     #     print(it.level * '    ', it)

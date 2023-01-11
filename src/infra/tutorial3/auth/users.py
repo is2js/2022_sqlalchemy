@@ -269,19 +269,25 @@ class User(BaseModel):
             ).scalar_subquery()
 
             # 내가 (팀장으로) 소속중인 부서 추출
-            stmt = (
-                select(Department)
-                .where(Department.id.in_(dep_ids))
-            )
-
-            # 내가 (팀장으로) 소속중인 부서 중에 가장 높은 부서 (level 낮은 부서) 필터링 -> 여러개 or [] 일 수 있음.
+            # => min_level은 현재까지 집계 Department에 대한 집계를 correlate로 해야하며
+            #    그럴 경우, where subquery에 from이 없어서 집계subquery로 못들어가므로
+            #    select절에서 집계하여 해당 데이터만 나오도록 해야한다.
             if as_min_level:
-                min_level = (
+                min_level_subq = (
                     select(func.min(Department.level))
-                ).scalar_subquery()
+                ).correlate(Department).scalar_subquery()
 
-                stmt = stmt.where(Department.level == min_level)
+                stmt = (
+                    select(Department, min_level_subq)
+                    .where(Department.id.in_(dep_ids))
+                )
+            else:
+                stmt = (
+                    select(Department)
+                    .where(Department.id.in_(dep_ids))
+                )
             return db.session.scalars(stmt).all()
+
 
 
 class Permission(enum.IntEnum):
