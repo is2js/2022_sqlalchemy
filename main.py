@@ -1,8 +1,6 @@
-
-
 from flask import jsonify
 from sqlalchemy import text, Table, Column, Integer, String, ForeignKey, select, literal_column, and_, func, desc, \
-    union_all, update, delete, or_
+    union_all, update, delete, or_, distinct
 
 # .env
 # DB_CONNECTION=sqlite
@@ -134,14 +132,14 @@ if __name__ == '__main__':
     #### 동적으로 객체를 이용하는데, joined도 안해준 상태에서 관계객체 대신, fk_id를 직접 넣어준다면 작동할까?
     대표원장_취임 = EmployeeDepartment(
         department_id=Department.get_by_name('한방진료실').id,  # 내부에서 flush해서, self.department.type을 쓰므로, id를 입력해줘도 된다.
-        employee=Employee.get_by_user_role(Roles.CHIEFSTAFF)[0],
+        employee=Employee.get_by_user_role(Roles.CHIEFSTAFF)[1],
         employment_date=datetime.date.today(),
         is_leader=True
     ).save()
 
     대표원장_추가로_취임시_안됨 = EmployeeDepartment(
         department=Department.get_by_name('한방진료실'),
-        employee=Employee.get_by_user_role(Roles.CHIEFSTAFF)[1],  # 추가로 다른사람을 부임시키면 -> 부서장 이미 있다고 든다.
+        employee=Employee.get_by_user_role(Roles.CHIEFSTAFF)[0],  # 추가로 다른사람을 부임시키면 -> 부서장 이미 있다고 든다.
         employment_date=datetime.date.today(),
         is_leader=True  # 이미 is_leader가 있는 부서인데
     ).save()
@@ -158,6 +156,19 @@ if __name__ == '__main__':
         employee=Employee.get_by_user_role(Roles.STAFF)[1],
         employment_date=datetime.date.today(),
         # is_leader=True
+    ).save()
+
+    행정부_팀장_취임 = EmployeeDepartment(
+        department_id=Department.get_by_name('행정부').id,
+        employee=Employee.get_by_user_role(Roles.CHIEFSTAFF)[1],
+        employment_date=datetime.date.today(),
+        is_leader=True
+    ).save()
+
+    원무팀_팀원_취임 = EmployeeDepartment(
+        department_id=Department.get_by_name('원무').id,
+        employee=Employee.get_by_user_role(Roles.STAFF)[2],
+        employment_date=datetime.date.today(),
     ).save()
 
     #### 진료부장을 current_user로 생각해서, 부서+자식부서들 선택 / 나보다 하위직원 뽑기
@@ -529,8 +540,6 @@ if __name__ == '__main__':
     print(f'진료부.get_children() => {진료부.get_children()}')
 
 
-
-
     # [Department(id=2, title='진료부', parent_id=1) sort=3) path='002003',, Department(id=3, title='간호부', parent_id=1) sort=1) path='002001',, Department(id=4, title='행정부', parent_id=1) sort=2) path='002002',]
 
     #  children = relationship('Department', backref=backref(
@@ -542,14 +551,15 @@ if __name__ == '__main__':
 
     # (2) 재귀메서드안에서 자식들을 편하게 뽑아서 순회시킬 수 있도록 property로 정의한다 => 외부에서 하는게 아니라, 현재특정부서객체에서 호출해야하므로 cls method가 아닌 property로
 
-    # (3) 자식부서들을 순회하며 자식부서가 부모역할을 하도록 하되, 그 그 자식들을 보관할 수 있게 한다
+    # (3) 자식부서들을 순회하며 자식부서가 부모역할을 하도록 메서드인자에 해당객체를 + 정보를 보관할 결과물을 인자 or 내부에 list를 만들어 모은다.
     # def get_child_departments(parent: Department, id_list: list):
     def get_self_and_children_id_list(parent: Department):
         # (3-1) 재귀를 돌며 누적시킬 것을 현재부터 뽑아낸다? => 첫 입력인자에 계속 누적시킬 거면, return없이 list에 그대로 append만 해주면 된다.
         result = [parent.id]
         # (3-1) 현재(부모)부서에서 자식들을 뽑아 순회시키며, id만 뽑아놓고, 이제 자신이 부모가 된다.
         # => 자신처리+중간누적을 반환하는 메서드라면, 재귀호출후 반환값을 부모의 누적자료구조에 추가누적해준다.
-        for child in parent.children:
+        # for child in parent.children:
+        for child in parent.get_children():
             result += get_self_and_children_id_list(child)
         return result
 
@@ -562,11 +572,116 @@ if __name__ == '__main__':
     departments = Department.get_all()
     selectable_parent_departments = [(x.id, x.name) for x in departments if
                                      x.id not in get_self_and_children_id_list(진료부)]
-    print('*' * 30, '나와 내자식들 id 조회 (나 포함 재귀) for 부서선택 ', '*' * 30, )
+    print('*' * 30, '나와 내자식들 id 조회 (나 포함 재귀) -> 그것들을 제외한 부서들의 id, name선택 for 부서 수정시 선택 ', '*' * 30, )
     print(selectable_parent_departments)
     # [(1, '병원장'), (3, '간호부'), (7, '외래'), (8, '병동'), (4, '행정부'), (9, '원무'), (10, '총무')]
 
-    print('*' * 30, '모든 부서 조회')
+    print('*' * 30, '메서드화1: 나+나의자식들id list with 재귀', '*' * 30)
+    print(f'진료부.get_self_and_children() => {진료부.get_self_and_children_id_list()}')
+    print('*' * 30, '메서드화2: 나+나의자식들을 제외한 부서id, name list', '*' * 30)
+    print(f'진료부.get_selectable_departments() => {진료부.get_selectable_departments()}')
+
+    print('*' * 30, '나와 내 자식들 dict (자식은 "children" key) with lambda ', '*' * 30)
+    print('*' * 30, ' => 바로 메서드화까지 ', '*' * 30)
+    print(f'진료부.get_self_and_children_dict() => {진료부.get_self_and_children_dict()}')
+
+    print('*' * 30, '현 부서의 직원 수 카운트', '*' * 30)
+    # 부서정보에서, has/any로 타엔터티 기준을 현 부서로 걸어서, 그에 만족하는 수를 구한다.
+    # => 통합정보에서는, many, 관계테이블에서 select하며 조건을 one테이블을 건다?!
+    # stmt = (
+    #     select(EmployeeDepartment)
+    #     .where(EmployeeDepartment.dismissal_date.is_(None))
+    #
+    #     .where(EmployeeDepartment.department.has(Department.id == 한방진료실.id))
+    # )
+
+    # print(stmt)
+    # SELECT employee_departments.add_date, employee_departments.pub_date, employee_departments.id, employee_departments.employee_id, employee_departments.department_id, employee_departments.employment_date, employee_departments.dismissal_date, employee_departments.position, employee_departments.is_leader
+    # FROM employee_departments
+    # WHERE employee_departments.dismissal_date IS NULL AND (EXISTS (SELECT 1
+    # FROM departments
+    # WHERE departments.id = employee_departments.department_id AND departments.id = :id_1))
+    # current_dep_employees = session.scalars(stmt).all()
+    # print([x.employee_id for x in current_dep_employees])
+    # [EmployeeDepartment[id=2, title='123', parent_id='진료부']]
+    stmt = (
+        select(func.count(distinct(EmployeeDepartment.id)))  # 사람을 셀 때는 양적으로 세는지, 중복제외 세는지 distinct를 고려한다.
+        .where(EmployeeDepartment.dismissal_date.is_(None))
+
+        .where(EmployeeDepartment.department.has(Department.id == 한방진료실.id))
+    )
+    employee_count_in_dep = session.scalar(stmt)
+    print(employee_count_in_dep)
+
+    print('*' * 30, '메서드화', '*' * 30)
+    print(f"한방진료실.count_employee() => {한방진료실.count_employee()}")
+    print(f"병원장.count_employee() => {병원장.count_employee()}")
+
+    print('*' * 30, '현 부서의 직원 수 대신 -> 자식들과 중복 검정을 위해 현 부서 소속의 직원_id 모으기 ', '*' * 30)
+    print('*' * 30, '=> 바로 메서드화', '*' * 30)
+    print(f"한방진료실.get_employee_id_list() => {한방진료실.get_employee_id_list()}")
+
+    print('*' * 30, '현 부서 + 자식 부서 직원id list에 누적 for 중복제거시켜서 카운팅하려고 ', '*' * 30)
+    print('*' * 30, '=> 바로 메서드화', '*' * 30)
+    print(f"한방진료실.count_self_and_children_employee() => {한방진료실.get_self_and_children_id_list()}")
+    print(f"간호부.count_self_and_children_employee() => {간호부.get_self_and_children_id_list()}")
+    print(f"병원장.count_self_and_children_employee() => {병원장.get_self_and_children_id_list()}")
+
+    print('*' * 30, '(직원 프로필용)현 부서 + 자식 부서 직원id list에서 중복제거하여 => 직원 수 count ', '*' * 30)
+    print('*' * 30, '=> 바로 메서드화', '*' * 30)
+    print(f"한방진료실.count_self_and_children_employee() => {한방진료실.count_self_and_children_employee()}")
+    print(f"간호부.count_self_and_children_employee() => {간호부.count_self_and_children_employee()}")
+    print(f"병원장.count_self_and_children_employee() => {병원장.count_self_and_children_employee()}")
+
+    print('*' * 30, '(직원 프로필용2) => 상사 찾기 with 상위 재귀', '*' * 30)
+
+    print('----바로 메서드화 current_user(g.user.id) => 직원 정보 가져오기 Employee.get_by_user_id', '*' * 30)
+    print(f"Employee.get_by_user_id(current_user.id) => {Employee.get_by_user_id(current_user.id)}")
+
+    직원_병원장 = Employee.get_by_user_id(current_user.id)
+
+    print('----바로 메서드화 직원의 소속부서들 가져오기=> User도 있는 Employee.get_my_departments', '*' * 30)
+    print(f"직원_병원장.get_my_departments() => {직원_병원장.get_my_departments()}")
+
+    print('----바로 메서드화 => 직원이 [주어진 부서(들) 중 1개 부서]에 대해 팀장인지 확인 => 직원.is_leader_in(부서)', '*' * 30)
+    for dep in 직원_병원장.get_my_departments():
+        print(f"{직원_병원장.name}.is_leader_in({dep.name}) => {직원_병원장.is_leader_in(dep)}")
+
+
+    print('----바로 메서드화 => 해당부서 팀장 정보 조회  부서.get_leader()', '*' * 30)
+    print(f"병원장.get_leader() => {병원장.get_leader()}")
+
+    print('----바로 메서드화 => [재귀로 가장 가까운 팀장찾기] 해당부서 팀장을, 없으면 상위부서에서 팀장을, 상위부서가 없으면 None : 부서.get_leader_recursively(),  ', '*' * 30)
+
+    print(f"행정부.get_leader_recursively() => {행정부.get_leader_recursively()}")
+    print(f"진료부.get_leader_recursively() => {진료부.get_leader_recursively()}")
+    print(f"병원장.get_leader_recursively() => {병원장.get_leader_recursively()}")
+
+    print('----바로 메서드화 => 현 직원 => 현부서를 바탕으로 상사 찾기(내가 팀장인데 부모X -> None/내가 팀장인데 부모O -> 부모의 가까운팀장찾기 / 내가팀장X -> 가까운 팀장 찾기) , ', '*' * 30)
+    print('---------현 직원이 부서가 있을 때만.. 작동해야한다. - if employee.get_my_departments()')#
+    직원_부원장: Employee = Employee.get_by_user_role(Roles.STAFF)[0]
+    # print(직원_부원장)
+    print(f"직원_부원장.get_leader_or_senior_leader() => {직원_부원장.get_leader_or_senior_leader()}")
+    직원_행정부장: Employee = Employee.get_by_user_id(2)
+    print(f"직원_행정부장.get_leader_or_senior_leader() => {직원_행정부장.get_leader_or_senior_leader()}")
+    print(f"직원_병원장.get_leader_or_senior_leader() => {직원_병원장.get_leader_or_senior_leader()}")
+    직원_원무팀원: Employee = Employee.get_by_user_id(11)
+    print(f"직원_원무팀원.get_leader_or_senior_leader() => {직원_원무팀원.get_leader_or_senior_leader()}")
+
+
+
+    # print('*' * 30, '모든 부서 조회')
+    # for it in Department.get_all():
+    #     print(it.level * '    ', it)
+    # print('*' * 30)
+    print('*' * 30, '모든 부서 조회 with 직원 수 + 부서장')
     for it in Department.get_all():
-        print(it.level * '    ', it)
+        print(it.level * '    ', '[', it.name, '] ', '부서장:', it.get_leader(), '직원 수:', it.count_employee(), '하위부서 모든 직원 수:',
+              it.count_self_and_children_employee())
     print('*' * 30)
+
+
+
+
+
+

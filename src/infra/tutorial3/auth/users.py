@@ -7,7 +7,7 @@ from flask import url_for, g
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, select, case, and_, exists, func, DateTime, \
     BigInteger, update, Date
 from sqlalchemy.ext.hybrid import hybrid_property, hybrid_method
-from sqlalchemy.orm import relationship, backref
+from sqlalchemy.orm import relationship, backref, aliased
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from src.config import project_config
@@ -664,13 +664,129 @@ class Employee(BaseModel):
         d = super().to_dict()
         del d['add_date']  # base공통칼럼을 제외해야 keyword가 안겹친다
         del d['pub_date']
-        del d['user']  # 관계객체는 굳이 필요없다.
+        del d['user']  # 관계필드는 굳이 필요없다.
         del d['id']
         return d
 
     def update(self, info_dict):
         for k, v in info_dict.items():
             setattr(self, k, v)
+
+    @classmethod
+    def get_by_user_id(cls, user_id: int):
+        with DBConnectionHandler() as db:
+            stmt = (
+                select(cls)
+                .where(cls.user_id == user_id)
+            )
+
+            return db.session.scalars(stmt).first()
+
+    #### with other entity
+    def get_my_departments(self, as_leader=False, as_employee=False, as_min_level=False):
+        with DBConnectionHandler() as db:
+
+            # 부서정보 -> Employee
+            subq_stmt = (
+                select(EmployeeDepartment.department_id)
+                .where(EmployeeDepartment.dismissal_date.is_(None))
+                .where(EmployeeDepartment.employee.has(Employee.id == self.id))
+            )
+            # 부서 중에 내가 팀장인 부서정보만
+            if as_leader:
+                subq_stmt = subq_stmt.where(EmployeeDepartment.is_leader == 1)
+
+            ## 추가) 부서 중에 내가 팀원으로 있는 정보만
+            if as_employee:
+                subq_stmt = subq_stmt.where(EmployeeDepartment.is_leader == 0)
+
+            dep_ids = (
+                subq_stmt
+            ).scalar_subquery()
+
+            # 내가  소속중인 부서 추출
+            #### as_min_level을 적용하면 select문이 달라진다.
+            ## => 다른 테이블이 아닌 [같은 테이블 필터링 후]의 집계결과를 where scalar_subquery로 쓸 순 없다
+            ##    주entity의 필터링(where)된 결과 그대로 이어서 집계적용하려면 subquery에 correlate( 주entity)를 줘야하며
+            ##    correlate를 준 뒤로는, scalar_subquery에 from이 생략되어 where절에서 집계가 불가능하다.
+            ## => correlate 주entity stmt유지 집계 => select절의 집계로 사용되어야한다.
+            if as_min_level:
+                # correlate + select 는 entity원본으로 지정해야, 원본entity필터링된 상황에서 적용된다.
+                min_level_subq = (
+                    select(func.min(Department.level))
+                ).correlate(Department) \
+                    .scalar_subquery()
+
+                # 필터링 끝난 뒤에 같은entity 집계는 select절에서 바로 띄우면, 해당 집계 데이터만 나온다
+                # -> select절에 객체, 집게subquery지만, .all()로 하면 객체만 / .execute()하면 튜플형태로 나온다.
+                stmt = (
+                    select(Department, min_level_subq)
+                    .where(Department.id.in_(dep_ids))
+                )
+
+
+            else:
+                stmt = (
+                    select(Department)
+                    .where(Department.id.in_(dep_ids))
+                )
+
+            # 내가 소속중인 부서 중에 가장 상위 부서 (level 낮은 부서) 필터링 -> 여러개 or [] 일 수 있음.
+            # 1) min_level이 필터링 된 주체entity에 대한 것에서 집계하려면
+            # => corrleate필수다. 주entity 전체에 대한 집계를 해서  min_level = 0으로 잡힌다.
+            # 2) 주stmt에 where scalar_subquery에 거는 순간, correlate때문에 where절에 from절이 없다고 에러가 뜬다
+            # 3) aliased를 적용해줬더니.. level이 다시 0으로 잡혀서 주체entity를 인식 못한다.
+            # => aliased를 주entity필터링 결과 그대로 집계시 + correlate에는 적용 못한다.
+
+            return db.session.scalars(
+                stmt
+                .order_by(Department.path)
+            ).all()
+
+    #### with other entity
+    def is_leader_in(self, department: Department):
+        with DBConnectionHandler() as db:
+            stmt = (
+                select(EmployeeDepartment)
+                .where(EmployeeDepartment.dismissal_date.is_(None))
+                .where(EmployeeDepartment.department.has(Department.id == department.id))
+                .where(EmployeeDepartment.employee.has(Employee.id == self.id))
+            )
+
+            emp_dep: EmployeeDepartment = db.session.scalars(stmt).first()
+
+            if not emp_dep:
+                return False
+
+            return emp_dep.is_leader
+
+    #### with other entity
+    def get_leader_or_senior_leader(self):
+        # 1) 내 상사를 찾기 위해, 내가 가진 부서중 가장 상위 부서를 찾는다.
+        min_level_dept: Department = self.get_my_departments(as_min_level=True)
+        print(f"min_level_dept = >{min_level_dept}")
+        # -> list로 나오기 때문에 [0] 해주기 애초에 부서가 없으면, None return
+
+        # 2) 부서가 없으면, 상사도 없으니 None을 반환한다
+        if not min_level_dept:
+            return None
+        # (부서가 있을 때, min_level의 부서(들) list에서 path순 정렬됬으니 1개만 가져온다)
+        min_level_dept = min_level_dept[0]
+
+        # 3) (부서가 있을 때) 내가 팀장일 땐, 부모부서가 있는지 확인 후,
+        if self.is_leader_in(min_level_dept):
+            #  3-1) 부모부서 없으면 상사None,
+            if not min_level_dept.parent_id:
+                return None
+            #  3-2) 부모부서 있으면 부모부서를 시작으로 가장 가까운 팀장을 찾는다.
+            with DBConnectionHandler() as db:
+                parent_dept = db.session.scalars(
+                    select(Department)
+                    .where(Department.id == min_level_dept.parent_id)
+                ).first()
+            return parent_dept.get_leader_recursively()
+        # 4) (내가 팀장이 아닐 땐) 현 부서의 가까운 팀장을 찾아서 반환한다.
+        return min_level_dept.get_leader_recursively()
 
 
 # class InviteType(enum.IntEnum):

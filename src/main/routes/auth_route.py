@@ -611,9 +611,9 @@ def employeeinfo():
         #### user정보가 없는 employee가 있다? 일단 admin으로 접속하면, 기본user정보가 없다?
 
         employee = db.session.scalars(stmt).first()
-        print(g.user.id)
-        print(employee.user_id)
-        print(employee)
+        # print(g.user.id)
+        # print(employee.user_id)
+        # print(employee)
     return render_template('auth/userinfo_employeeinfo.html',
                            employee=employee
                            )

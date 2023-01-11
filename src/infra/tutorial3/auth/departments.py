@@ -5,13 +5,11 @@ import uuid
 from dateutil.relativedelta import relativedelta
 from flask import url_for, g
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, select, case, and_, exists, func, DateTime, \
-    BigInteger, update, Date, ForeignKeyConstraint, Text, or_
+    BigInteger, update, Date, ForeignKeyConstraint, Text, or_, distinct
 from sqlalchemy.ext.hybrid import hybrid_property, hybrid_method
 from sqlalchemy.orm import relationship, backref, with_parent, aliased
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from src.config import project_config
-from src.infra.config.base import Base
 from src.infra.config.connection import DBConnectionHandler
 from src.infra.tutorial3.common.base import BaseModel, InviteBaseModel
 from src.infra.tutorial3.common.int_enum import IntEnum
@@ -137,7 +135,8 @@ class Department(BaseModel):
     # code = Column(String(24))
     # root = Column(Boolean, default=False)  # parent_id가 None이면 root에 True넣어주고, 그외는 False로 기본 생성
     # menu
-    path = Column(Text, index=True, nullable=True)  # 동적으로 채울거라 nullabe=True로 일단 주고, add후 다른데이터를 보고 채운다다 => 자식검색시 path.like(자신apth)로 하니 index 필수
+    path = Column(Text, index=True,
+                  nullable=True)  # 동적으로 채울거라 nullabe=True로 일단 주고, add후 다른데이터를 보고 채운다다 => 자식검색시 path.like(자신apth)로 하니 index 필수
 
     #### EmployeeDepartment에 position을 남기기 위한, Type
     type = Column(IntEnum(DepartmentType), default=DepartmentType.팀, nullable=False, index=True)
@@ -217,9 +216,9 @@ class Department(BaseModel):
     def get_by_name(cls, name: str):
         with DBConnectionHandler() as db:
             dep = db.session.scalars(
-                select(Department)
-                .where(Department.status == 1)
-                .where(Department.name == name)
+                select(cls)
+                .where(cls.status == 1)
+                .where(cls.name == name)
             ).first()
             return dep
 
@@ -270,11 +269,118 @@ class Department(BaseModel):
             stmt = (
                 select(Department)
                 .where(with_parent(self, Department.children))
+                # 활성화된 메뉴만
+                .where(Department.status == 1)
                 # 나의 자식들이 나오는데, 같은 level의 부서들이 나오므로 -> 정렬은 path순으로 하자.
                 .order_by(Department.path)
             )
             return db.session.scalars(stmt).all()
 
+    def get_self_and_children_id_list(self):
+        # (3-1) 재귀를 돌며 누적시킬 것을 현재부터 뽑아낸다? => 첫 입력인자에 계속 누적시킬 거면, return없이 list에 그대로 append만 해주면 된다.
+        result = [self.id]
+        # (3-1) 현재(부모)부서에서 자식들을 뽑아 순회시키며, id만 뽑아놓고, 이제 자신이 부모가 된다.
+        # => 자신처리+중간누적을 반환하는 메서드라면, 재귀호출후 반환값을 부모의 누적자료구조에 추가누적해준다.
+        # for child in parent.children:
+        for child in self.get_children():
+            result += child.get_self_and_children_id_list()
+        return result
+
+    def get_selectable_departments(self):
+        departments = Department.get_all()
+        selectable_parent_departments = [(x.id, x.name) for x in departments if
+                                         x.id not in self.get_self_and_children_id_list()]
+        return selectable_parent_departments
+
+    #### BaseModel의 to_dict는 inspect(self) 를 칠 때, 관계필드까지 다 조사하면서, DetachedInstanceError가 뜨니, 재귀에선 활용못한다.
+    #### => 람다함수를 이용하여 객체.__table__.columns로 칼럼을 돌면서 만들어준다.
+    def to_dict(self):
+        d = super().to_dict()
+        # del d['children']  # 관계필드는 굳이 필요없다. 내가 직접 조회해서 넣어줄 것임.
+        return d
+
+    # print(self.__table__.columns)
+    # ImmutableColumnCollection(departments.add_date, departments.pub_date, departments.id, departments.name, departments.parent_id, departments.status, departments.sort, departments.path, departments.type)
+    #### => 다행이도 객체.__table__.columns는 관계필드('children') 만 조회되지 않는다.
+    # row_to_dict = lambda r: {c.name: str(getattr(r, c.name)) for c in r.__table__.columns}
+    row_to_dict = lambda r: {c.name: getattr(r, c.name) for c in r.__table__.columns
+                             if c.name not in []  # 필터링 할 칼럼 모아놓기
+                             }
+
+    def get_self_and_children_dict(self):
+        result = self.row_to_dict()
+
+        result['children'] = list()
+        for child in self.get_children():
+            # 내 자식들을 dict로 변환한 것을 내 dict의 chilren key로 관계필드 대신 넣되, 자식들마다 다 append로 한다.
+            result['children'].append(child.get_self_and_children_dict())
+        return result
+
+    #### with other entity
+    def count_employee(self):
+        with DBConnectionHandler() as db:
+            stmt = (
+                select(func.count(distinct(EmployeeDepartment.employee_id)))  # 직원이 혹시나 중복됬을 수 있으니 중복제거하고 카운팅(양적 숫자X)
+                .where(EmployeeDepartment.dismissal_date.is_(None))
+
+                .where(EmployeeDepartment.department.has(Department.id == self.id))
+            )
+            return db.session.scalar(stmt)
+
+    #### with other entity
+    #### 자식부서에 같은 사람이 취임할 수 있기 때문에, 개별count -> 단순 누적으로 하면 안된다.
+    #### => EmployeeDepartment상의 employee_id를 누적한 뒤, 중복제거해서 반환하는 것으로  처리해야한다.
+    def get_employee_id_list(self):
+        with DBConnectionHandler() as db:
+            stmt = (
+                select(EmployeeDepartment.employee_id)  # id를 select한 뒤, scalars().all()하면 객체 대신 int  id list가 반환된다.
+                .where(EmployeeDepartment.dismissal_date.is_(None))
+
+                .where(EmployeeDepartment.department.has(Department.id == self.id))
+            )
+            return db.session.scalars(stmt).all()
+
+    #### with other entity
+    def get_self_and_children_id_list(self):
+        result = self.get_employee_id_list()
+
+        for child in self.get_children():
+            result += child.get_self_and_children_id_list()
+
+        # 카운터를 세기 위해 len(set())으로 반환하고 싶지만, 자식들도 list로 건네줘야하기 때문에, 누적list를 반환해줘야한다.
+        return result
+
+    #### with other entity
+    def count_self_and_children_employee(self):
+        return len(set(self.get_self_and_children_id_list()))
+
+    #### with other entity
+    def get_leader(self):
+        # 양방향 순환참조를 해결하기 위해 메서드내에서 import
+        from .users import Employee
+
+        with DBConnectionHandler() as db:
+            stmt = (
+                select(Employee)
+                .join(EmployeeDepartment)
+                .where(EmployeeDepartment.dismissal_date.is_(None))
+                .where(EmployeeDepartment.department_id == self.id)
+                .where(EmployeeDepartment.is_leader == True)
+            )
+            return db.session.scalars(stmt).first()
+
+    def get_leader_recursively(self):
+        # 1) 해당 부서의 팀장을 조회한 뒤, 있으면 그 유저를 반환한다
+        leader = self.get_leader()
+        if leader:
+            return leader
+        # 2) (해당부서 팀장X) 상위 부서가 있는지 확인한 뒤, 있으면, 재귀로 다시 돌린다.
+        if self.parent_id:
+            with DBConnectionHandler() as db:
+                parent = db.session.scalars(select(Department).where(Department.id == self.parent_id)).first()
+                return parent.get_leader_recursively()
+        # 3) (팀장도X 상위부서도X) => 팀장정보가 아예 없으니 None반환
+        return None
 
 # 2.
 class EmployeeDepartment(BaseModel):
@@ -392,8 +498,6 @@ class EmployeeDepartment(BaseModel):
             print('1명만 부임가능한 부서로서 이미 할당된 부/장급 부서입니다.')
             return None
 
-
-
         with DBConnectionHandler() as db:
             #### flush나 commit을 하지 않으면 => fk_id 입력 vs fk관계객체입력이 따로 논다.
             #### => 한번 갔다오면, 관계객체 입력 <-> fk_id 입력이 동일시되며, fk_id입력으로도 내부에서 관계객체를 쓸 수 있게 된다.
@@ -413,9 +517,6 @@ class EmployeeDepartment(BaseModel):
             db.session.commit()
 
         return self
-
-
-
 
 # 3.
 # users_and_departments = db.Table(

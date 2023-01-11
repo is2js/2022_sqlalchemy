@@ -49,7 +49,7 @@ exists_user = db.session.scalars(
 
 # exists_user >>> True
 ```
-- 숫자만 가져오고 싶다면 execute + .scalar()
+- 숫자만 가져오고 싶다면 .execute + .scalar() 
 ```python
 ## 숫자만 추출하고 싶다면, .scalar()로 값을 가져오면 된다.
 stmt = (
@@ -59,6 +59,36 @@ stmt = (
 )
 print(stmt)
 print(session.execute(stmt).scalar())
+```
+- **session.scalar() 만 해도 된다.**
+```python
+  srt_stmt = select(func.count(entity.id)).where(and_(func.date(getattr(entity, 'add_date')) <= start_date))
+
+    if condition:
+      srt_stmt = srt_stmt.where(condition)
+      
+  start_count = db.session.scalar(
+      srt_stmt
+    )
+```
+- 주entity기반으로 주entity의 where필터링 끝난 상황에서 집계를 적용(correlate) => where에 못쓰는 scalar_subquery로서 주entity의 집계를 주 stmt의 select절에 올려서 쓸 수 있다.
+  - 만약, 주stmt에 correlate 집계 scalar_subquery을 .where에 올리면 from이 없는 subquery로서 에러 난다
+  - 자신에 대한 집계는, 컬럼으로서 select절에 바로 올려서 뽑을 수 있다.
+  - scalars().all()하면 집계값은 묻히고, 객체만 반환된다.
+```python
+if as_min_level:
+    # correlate + select 는 entity원본으로 지정해야, 원본entity필터링된 상황에서 적용된다.
+    min_level_subq = (
+        select(func.min(Department.level))
+    ).correlate(Department) \
+        .scalar_subquery()
+
+    # 필터링 끝난 뒤에 같은entity 집계는 select절에서 바로 띄우면, 해당 집계 데이터만 나온다
+    # -> select절에 객체, 집게subquery지만, .all()로 하면 객체만 / .execute()하면 튜플형태로 나온다.
+    stmt = (
+        select(Department, min_level_subq)
+        .where(Department.id.in_(dep_ids))
+    )
 ```
 
 #### Pycharm live template 추천
