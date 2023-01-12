@@ -1,6 +1,6 @@
 import datetime
 
-from flask import Blueprint, render_template, request, flash, redirect, url_for, session, g
+from flask import Blueprint, render_template, request, flash, redirect, url_for, session, g, abort
 from sqlalchemy import select, update, delete
 from sqlalchemy.orm import contains_eager
 
@@ -604,6 +604,7 @@ def employeeinfo():
 
         stmt = (
             select(Employee)
+            .where(Employee.is_active == True)
             .where(Employee.user_id == g.user.id)
         )
 
@@ -611,6 +612,10 @@ def employeeinfo():
         #### user정보가 없는 employee가 있다? 일단 admin으로 접속하면, 기본user정보가 없다?
 
         employee = db.session.scalars(stmt).first()
+
+        if not employee:
+            return "active 직원 정보가 없습니다."
+
         # print(g.user.id)
         # print(employee.user_id)
         # print(employee)

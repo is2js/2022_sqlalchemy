@@ -56,6 +56,7 @@ def create_app(config_name):
         api_routes_bp, auth_bp,
         admin_bp,
         util_bp,
+        dept_bp,
     )
 
     app.register_blueprint(main_bp)
@@ -63,6 +64,7 @@ def create_app(config_name):
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(util_bp)
+    app.register_blueprint(dept_bp)
 
     # 기본 / url 지정 in route.py의 function
     app.add_url_rule('/', endpoint='index', view_func=index)
@@ -75,7 +77,7 @@ def create_app(config_name):
     # app.context_processor(inject_permission_and_roles)
     app.context_processor(inject_permission)
 
-    ## [flask createadminuser] 명령어 추가
+    ## [flask xxxx] 명령어 추가
     from src.main.utils import init_script
     init_script(app)
 

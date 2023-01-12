@@ -58,8 +58,9 @@
             <th>Avatar</th>
             <th>이름</th>
             <th>나이</th>
-            <th>Email</th>
-            <th>Phone</th>
+<!--            <th>Email</th>-->
+<!--            <th>Phone</th>-->
+            <th>부서(직책)</th>
             <th>직위</th>
             <!-- 가입일은 안쓰고,
                  (1) 입사일(user_form : user-> staff수정시 입력되도록 해야함 + 직원추가시 입력되도록 해야함.)
@@ -77,7 +78,7 @@
         <!--  a태그-href들 주석처리된 상태  -->
         {% for employee in employee_list %}
         <tr>
-        <tr>
+        <tr class="is-size-7">
             <td><span class="is-size-7">{{ employee.employee_number }}</span></td>
             <td>
                 {% if employee.user.avatar %}
@@ -91,24 +92,33 @@
                 -
                 {% endif %}
             </td>
-            <td>{{ employee.name }}</td>
+            <td><strong>{{ employee.name }}</strong></td>
             <td><span class="is-size-7">{{ employee.age }}</span></td>
-            <td><span class="is-size-7">{{ employee.user.email }}</span></td>
-            <td><span class="is-size-7">{{ employee.user.phone | join_phone }}</span></td>
+<!--            <td><span class="is-size-7">{{ employee.user.email }}</span></td>-->
+<!--            <td><span class="is-size-7">{{ employee.user.phone | join_phone }}</span></td>-->
 
+            <td>
+                <span class="is-size-7">
+                    <div class="tags">
+                    {% for dept_and_pos in employee.get_dept_and_position_list() %}
+                        <span class="tag is-primary is-light">{{dept_and_pos[0]}} ({{dept_and_pos[1]}})</span>
+                    {% endfor %}
+                    </div>
+                </span>
+            </td>
             <td>
                 <div class="tags">
                     <span class="
                     tag
-                    {% if not employee.user.is_staff %}
+                    {% if not employee.is_staff %}
                     is-white
-                    {% elif employee.user.is_executive %}
+                    {% elif employee.is_executive %}
                     is-danger
                     {% else %}
                     is-info
                     {% endif %}
                      is-light">
-                        {{ employee.user.role.name}}
+                        {{ employee.role.name}}
                     </span>
                 </div>
             </td>

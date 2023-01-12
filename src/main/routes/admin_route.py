@@ -973,7 +973,7 @@ def employee():
     pagination = paginate(stmt, page=page, per_page=10)
     employee_list = pagination.items
 
-    #### 재직상태변경을 modal 속 select option 추가로 내려보내기
+    #### 재직상태변경 modal 속 select option 추가로 내려보내기
     job_status_list = JobStatusType.choices()
     # print(job_status_list)
     # [(1, '재직'), (2, '휴직'), (3, '퇴사')]

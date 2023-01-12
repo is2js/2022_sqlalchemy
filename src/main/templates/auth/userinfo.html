@@ -14,14 +14,14 @@
                     기본정보/초대
                 </a>
             </li>
-            {% if g.user.is_staff %}
-            {% endif %}
+            {% if g.user.is_employee_active %}
             <li>
                 <a class="{% if  '/employeeinfo' in request.path %}is-active{% endif %}"
                    href="{{ url_for('auth.employeeinfo') }}">
                     직원정보
                 </a>
             </li>
+            {% endif %}
 
 
             <!--        <ul class="menu-list"-->

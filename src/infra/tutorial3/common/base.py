@@ -17,7 +17,12 @@ class BaseModel(Base):
     pub_date = Column(DateTime, nullable=False, default=datetime.datetime.now, onupdate=datetime.datetime.now)
 
     def to_dict(self):
-        return {c: getattr(self, c) for c in inspect(self).attrs.keys()}
+        # inspect(self)시 관계필드까지 조회하는데, form이나 front에서 DetachedError난다.
+        # <-> 반면 self.__table__.columns는 관계필드를 조회안한다.
+        return {c.name: getattr(self, c.name) for c in self.__table__.columns
+                if c.name not in []  # 필터링 할 칼럼 모아놓기
+                }
+        # return {c: getattr(self, c) for c in inspect(self).attrs.keys()}
 
     @staticmethod
     def to_dict_list(l):
@@ -120,5 +125,3 @@ class InviteBaseModel(Base):
     @is_valid.expression
     def is_valid(cls):
         return and_(cls.is_not_expired, cls.is_not_answered)
-
-

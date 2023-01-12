@@ -288,6 +288,16 @@ class User(BaseModel):
                 )
             return db.session.scalars(stmt).all()
 
+    @hybrid_property
+    def is_employee_active(self):
+        with DBConnectionHandler() as db:
+            stmt = (
+                exists()
+                .where(Employee.user_id == self.id)
+                .where(Employee.is_active == True)
+                .select()
+            )
+            return db.session.scalar(stmt)
 
 
 class Permission(enum.IntEnum):
@@ -526,6 +536,8 @@ class Employee(BaseModel):
 
     # qrcode, qrcode_img: https://github.com/prameshstha/QueueMsAPI/blob/85dedcce356475ef2b4b149e7e6164d4042ffffb/bookings/models.py#L92
 
+    #### 특정 role의 사람들을 다 가져오기 위한 메서드
+    # -> 부서에 사람배치하는 test or 모든 팀장 가져오기?
     @classmethod
     def get_by_user_role(cls, roles: Roles):
         with DBConnectionHandler() as db:
@@ -670,7 +682,7 @@ class Employee(BaseModel):
         d = super().to_dict()
         del d['add_date']  # base공통칼럼을 제외해야 keyword가 안겹친다
         del d['pub_date']
-        del d['user']  # 관계필드는 굳이 필요없다.
+        # del d['user']  # 관계필드는 굳이 필요없다. -> inspect안써서 더이상 관계필드 조홰 안한다.
         del d['id']
         return d
 
@@ -770,7 +782,7 @@ class Employee(BaseModel):
     def get_leader_or_senior_leader(self):
         # 1) 내 상사를 찾기 위해, 내가 가진 부서중 가장 상위 부서를 찾는다.
         min_level_dept: Department = self.get_my_departments(as_min_level=True)
-        print(f"min_level_dept = >{min_level_dept}")
+        # print(f"min_level_dept = >{min_level_dept}")
         # -> list로 나오기 때문에 [0] 해주기 애초에 부서가 없으면, None return
 
         # 2) 부서가 없으면, 상사도 없으니 None을 반환한다
@@ -805,6 +817,28 @@ class Employee(BaseModel):
                 .where(Department.status == 1)
             )
             return db.session.execute(stmt).all()
+
+    #### with other entity
+    @hybrid_property
+    def role(self):
+        with DBConnectionHandler() as db:
+            stmt = (
+                select(Role)
+                .where(Role.users.any(User.id == self.user_id))
+            )
+            role = db.session.scalars(stmt).first()
+            return role
+
+    #### with other entity
+    @hybrid_property
+    def is_staff(self):
+        return self.role.is_(Roles.STAFF)
+
+    #### with other entity
+    @hybrid_property
+    def is_executive(self):
+        return self.role.is_(Roles.EXECUTIVE)
+
 
 # class InviteType(enum.IntEnum):
 #     직원_초대 = 0
