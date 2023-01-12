@@ -794,6 +794,17 @@ class Employee(BaseModel):
         # 4) (내가 팀장이 아닐 땐) 현 부서의 가까운 팀장을 찾아서 반환한다.
         return min_level_dept.get_leader_recursively()
 
+    #### with other entity
+    def get_dept_and_position_list(self):
+        with DBConnectionHandler() as db:
+            stmt = (
+                select(Department.name, EmployeeDepartment.position)
+                .where(EmployeeDepartment.dismissal_date.is_(None))
+                .where(EmployeeDepartment.employee_id == self.id)
+                .join(EmployeeDepartment.department)
+                .where(Department.status == 1)
+            )
+            return db.session.execute(stmt).all()
 
 # class InviteType(enum.IntEnum):
 #     직원_초대 = 0

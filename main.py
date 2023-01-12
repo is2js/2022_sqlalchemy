@@ -642,7 +642,7 @@ if __name__ == '__main__':
     print('----바로 메서드화 current_user(g.user.id) => 직원 정보 가져오기 Employee.get_by_user_id', '*' * 30)
     print(f"Employee.get_by_user_id(current_user.id) => {Employee.get_by_user_id(current_user.id)}")
 
-    직원_병원장 = Employee.get_by_user_id(current_user.id)
+    직원_병원장: Employee = Employee.get_by_user_id(current_user.id)
 
     print('----바로 메서드화 직원의 소속부서들 가져오기=> User도 있는 Employee.get_my_departments', '*' * 30)
     print(f"직원_병원장.get_my_departments() => {직원_병원장.get_my_departments()}")
@@ -671,6 +671,26 @@ if __name__ == '__main__':
     print(f"직원_병원장.get_leader_or_senior_leader() => {직원_병원장.get_leader_or_senior_leader()}")
     직원_원무팀원: Employee = Employee.get_by_user_id(11)
     print(f"직원_원무팀원.get_leader_or_senior_leader() => {직원_원무팀원.get_leader_or_senior_leader()}")
+
+    print('*' * 30, '직원의 (부서명, position) list 조회', '*' * 30)
+    # 취임정보entity서 position을 가져오면 된다.
+    # => 한 사람이 여러 부서를 가질 수 있으니, 부서별 / 취임정보position을 같이 가져온다
+    # => 부서명을 가져오려면, join시켜야한다.
+    stmt = (
+        select(Department.name, EmployeeDepartment.position)
+        .where(EmployeeDepartment.dismissal_date.is_(None))
+        .where(EmployeeDepartment.employee_id == 직원_병원장.id)
+        .join(EmployeeDepartment.department)
+        .where(Department.status == 1)
+    )
+    print(session.execute(stmt).all())
+    # [('병원장', '병원장'), ('진료부', '진료부장'), ('한방진료실', '대표원장')]
+    print('*' * 30, '메서드화', '*' * 30)
+    print(f"직원_병원장.get_dept_and_position_list() => {직원_병원장.get_dept_and_position_list()}")
+    print(f"직원_부원장.get_dept_and_position_list() => {직원_부원장.get_dept_and_position_list()}")
+    print(f"직원_행정부장.get_dept_and_position_list() => {직원_행정부장.get_dept_and_position_list()}")
+    print(f"직원_원무팀원.get_dept_and_position_list() => {직원_원무팀원.get_dept_and_position_list()}")
+
 
 
 
