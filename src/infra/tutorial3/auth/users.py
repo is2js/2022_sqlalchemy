@@ -836,8 +836,38 @@ class Employee(BaseModel):
 
     #### with other entity
     @hybrid_property
+    def is_chiefstaff(self):
+        return self.role.is_(Roles.CHIEFSTAFF)
+
+    #### with other entity
+    @hybrid_property
     def is_executive(self):
         return self.role.is_(Roles.EXECUTIVE)
+
+    #### with other entity
+    @hybrid_property
+    def is_administrator(self):
+        return self.role.is_(Roles.ADMINISTRATOR)
+
+    @classmethod
+    def get_by_name(cls, name):
+        with DBConnectionHandler() as db:
+            stmt = (
+                select(cls)
+                .where(cls.name == name)
+            )
+
+            return db.session.scalars(stmt).first()
+
+    @classmethod
+    def get_by_id(cls, id):
+        with DBConnectionHandler() as db:
+            stmt = (
+                select(cls)
+                .where(cls.id == id)
+            )
+
+            return db.session.scalars(stmt).first()
 
 
 # class InviteType(enum.IntEnum):

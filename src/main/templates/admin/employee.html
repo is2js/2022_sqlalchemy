@@ -1,5 +1,55 @@
 {% extends 'admin/index.html' %}
 
+
+{% block extra_head_style %}
+<!--css는 모양만 확인하고 주석처리 -->
+<!--<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.0.0/dist/css/bootstrap.min.css"-->
+<!--      integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">-->
+
+<style>
+    .popover {
+        position: absolute;
+        top: 0;
+        left: 0;
+        z-index: 1060;
+        display: block;
+        max-width: 276px;
+        font-style: normal;
+        font-weight: 400;
+        line-height: 1.5;
+        text-align: left;
+        text-align: start;
+        text-decoration: none;
+        text-shadow: none;
+        text-transform: none;
+        letter-spacing: normal;
+        word-break: normal;
+        word-spacing: normal;
+        white-space: normal;
+        line-break: auto;
+        font-size: .875rem;
+        word-wrap: break-word;
+        background-color: #fff;
+        background-clip: padding-box;
+        border: 1px solid rgba(0, 0, 0, .2);
+        border-radius: 0.3rem;
+        /* 그림자나 화살표까진 복사안되서 그림자만 추가*/
+        box-shadow: 2px 2px 4px 0;
+    }
+</style>
+
+<!--용량을 줄이려고 boostrap4에 있는 slim 빌드 jQuery를 사용했었는데, slim 빌드를 사용하게되면, $.ajax()를 사용할 수 없다.-->
+<!-- jQuery first (not slim for $.ajax) -> then Popper.js,->  then Bootstrap JS -->
+<!--    <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>-->
+<script src="https://code.jquery.com/jquery-3.2.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/popper.js@1.12.9/dist/umd/popper.min.js"
+        integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q"
+        crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.0.0/dist/js/bootstrap.min.js"
+        integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl"
+        crossorigin="anonymous"></script>
+{% endblock extra_head_style %}
+
 {% block member %}
 <!-- 위쪽 제목 공간 -->
 <div class="is-block">
@@ -20,6 +70,7 @@
     <!--    </div>-->
 
     {% endblock button %}
+
     <div class="is-clearfix"></div>
     <div class="dropdown-divider"></div>
 
@@ -55,13 +106,13 @@
         <thead>
         <tr>
             <th>사번</th>
-            <th>Avatar</th>
+            <!--            <th>Avatar</th>-->
             <th>이름</th>
             <th>나이</th>
-<!--            <th>Email</th>-->
-<!--            <th>Phone</th>-->
+            <!--            <th>Email</th>-->
+            <!--            <th>Phone</th>-->
             <th>부서(직책)</th>
-            <th>직위</th>
+            <!--            <th>직위</th>-->
             <!-- 가입일은 안쓰고,
                  (1) 입사일(user_form : user-> staff수정시 입력되도록 해야함 + 직원추가시 입력되도록 해야함.)
                  (2) 퇴사일(직원수정form에서만 -> 퇴사체크시 자동으로 입력)
@@ -79,49 +130,120 @@
         {% for employee in employee_list %}
         <tr>
         <tr class="is-size-7">
-            <td><span class="is-size-7">{{ employee.employee_number }}</span></td>
             <td>
-                {% if employee.user.avatar %}
-                <figure class="image is-48x48">
-                    <!--                         src="/uploads/{{employee.avatar}}"-->
-                    <img class="is-rounded" style="height: 100%;"
-                         src="{{url_for('download_file', filename=employee.user.avatar) }}"
-                         alt="{{ employee.name }}">
-                </figure>
-                {% else %}
-                -
-                {% endif %}
+                <span class="user_popup">
+                    <p href="{{ url_for('admin.user_popup', employee_id=employee.id) }}"
+                       class="
+
+                        {% if employee.is_administrator %}
+                            has-text-weight-bold
+                            has-text-danger-dark
+                        {% elif employee.is_executive %}
+                            has-text-weight-bold
+                            has-text-danger
+                        {% elif employee.is_chiefstaff %}
+                            has-text-weight-bold
+                            has-text-info-dark
+                        {% elif employee.is_staff %}
+                            has-text-info
+                        {% endif %}
+                       "
+                    >
+                        {{ employee.employee_number }}
+                    </p>
+                </span>
             </td>
-            <td><strong>{{ employee.name }}</strong></td>
+            <!--            <td>-->
+            <!--                {% if employee.user.avatar %}-->
+            <!--                <figure class="image is-48x48">-->
+            <!--                    &lt;!&ndash;                         src="/uploads/{{employee.avatar}}"&ndash;&gt;-->
+            <!--                    <img class="is-rounded" style="height: 100%;"-->
+            <!--                         src="{{url_for('download_file', filename=employee.user.avatar) }}"-->
+            <!--                         alt="{{ employee.name }}">-->
+            <!--                </figure>-->
+            <!--                {% else %}-->
+            <!--                - -->
+            <!--                {% endif %}-->
+            <!--            </td>-->
+            <td>
+                <strong>
+                    {{ employee.name }}
+                </strong>
+                <!--                        :triggers="['click']"-->
+                <!--                        :auto-close="['outside', 'escape']"-->
+                <!--                <b-tooltip-->
+                <!--                        type="is-light"-->
+                <!--                        size="is-large"-->
+                <!--                        multilined-->
+                <!--                >-->
+                <!--                    <template v-slot:content>-->
+                <!--                        <b-icon icon="heart" type="is-danger"></b-icon>-->
+                <!--                        <b-icon icon="thumb-up" type="is-info"></b-icon>-->
+                <!--                        <b-icon icon="thumb-down" type="is-warning"></b-icon>-->
+                <!--                        <b-icon icon="emoticon-cool"></b-icon>-->
+                <!--                    </template>-->
+
+                <!--                    <b-button-->
+                <!--                            type="is-dark is-small "-->
+                <!--                            class="is-outlined is-rounded"-->
+                <!--                            label="{{ employee.name }}"/>-->
+
+                <!--                </b-tooltip>-->
+            </td>
             <td><span class="is-size-7">{{ employee.age }}</span></td>
-<!--            <td><span class="is-size-7">{{ employee.user.email }}</span></td>-->
-<!--            <td><span class="is-size-7">{{ employee.user.phone | join_phone }}</span></td>-->
+            <!--            <td><span class="is-size-7">{{ employee.user.email }}</span></td>-->
+            <!--            <td><span class="is-size-7">{{ employee.user.phone | join_phone }}</span></td>-->
 
             <td>
                 <span class="is-size-7">
-                    <div class="tags">
-                    {% for dept_and_pos in employee.get_dept_and_position_list() %}
-                        <span class="tag is-primary is-light">{{dept_and_pos[0]}} ({{dept_and_pos[1]}})</span>
-                    {% endfor %}
-                    </div>
+<!--                    <div class="tags">-->
+                    {% set dept_count = (employee.get_dept_and_position_list() | length) %}
+                    {% if dept_count > 0  %}
+                        <span class="tag is-primary is-light">
+                            {{employee.get_dept_and_position_list()[0][0]}} ({{employee.get_dept_and_position_list()[0][1]}})
+                        </span>
+                        {% if dept_count > 1 %}
+                        <b-tooltip
+                                    position="is-right"
+                                    type="is-primary">
+                            <template v-slot:content>
+                                {% for dept_and_pos in employee.get_dept_and_position_list() %}
+                                            <span class="has-text-white">
+                                                {{dept_and_pos[0]}} ({{dept_and_pos[1]}})
+                                            </span></br>
+                                {% endfor %}
+                            </template>
+
+<!--                            <b-button label="Action" type="is-light" class="button is-inverted"/>-->
+                            <span class="has-text-primary">외 {{dept_count - 1}}개 부서</span>
+                        </b-tooltip>
+                        {% endif %}
+                    {% else %}
+                        -
+                    {% endif %}
+<!--                                                            {% for dept_and_pos in employee.get_dept_and_position_list() %}-->
+<!--                                                                <span class="tag is-primary is-light">-->
+<!--                                                                    {{dept_and_pos[0]}} ({{dept_and_pos[1]}})-->
+<!--                                                                </span></br>-->
+<!--                                                            {% endfor %}-->
                 </span>
             </td>
-            <td>
-                <div class="tags">
-                    <span class="
-                    tag
-                    {% if not employee.is_staff %}
-                    is-white
-                    {% elif employee.is_executive %}
-                    is-danger
-                    {% else %}
-                    is-info
-                    {% endif %}
-                     is-light">
-                        {{ employee.role.name}}
-                    </span>
-                </div>
-            </td>
+            <!--            <td>-->
+            <!--                <div class="tags">-->
+            <!--                    <span class="-->
+            <!--                    tag-->
+            <!--                    {% if not employee.is_staff %}-->
+            <!--                    is-white-->
+            <!--                    {% elif employee.is_executive %}-->
+            <!--                    is-danger-->
+            <!--                    {% else %}-->
+            <!--                    is-info-->
+            <!--                    {% endif %}-->
+            <!--                     is-light">-->
+            <!--                        {{ employee.role.name}}-->
+            <!--                    </span>-->
+            <!--                </div>-->
+            <!--            </td>-->
 
             <td><span class="is-size-7">{{employee.years_from_join_date}}년차({{ employee.working_days}})</span></td>
             <td><span class="is-size-7">
@@ -137,7 +259,13 @@
                 {% endif %}
             </span></td>
 
-            <td>{{ employee.reference }}</td>
+            <td>
+                {% if employee.reference %}
+                {{ employee.reference }}
+                {% else %}
+                -
+                {% endif %}
+            </td>
 
             <td>
                 <div class="tags">
@@ -218,8 +346,8 @@
 >
     <!--    <form action="{{url_for('admin.employee_job_status_change') }}" -->
     <form action="{{url_for('admin.employee_job_status_change') }}"
-            method="post"
-            @submit.prevent="submitForm"
+          method="post"
+          @submit.prevent="submitForm"
     >
         <div class="modal-card is-" style="width: auto">
             <header class="modal-card-head">
@@ -269,5 +397,67 @@
 </b-modal>
 {% endblock table_content %}
 {% endblock member %}
+
+
+{% block extra_foot_script %}
+<script>
+    $(function () {
+        var timer = null;
+
+        $('.user_popup').hover(
+            function (event) {
+                // mouse in event handler
+                var elem = $(event.currentTarget);
+                // console.log(elem)
+                // hover된 span태그의 first() a태그의 name text()
+                // console.log(elem.first().text().trim())
+
+                // 갖다대자마자 요청보내는게 아니라 1초 머무를 경우, 정보조회로 판단하고 요청보내도록 1초 timer를 건다
+                timer = setTimeout(function () {
+                    timer = null;
+                    // popup logic goes here
+                    //@admin_bp.route('employee/<name>/user_popup')
+                    // '/admin/employee/' + elem.first().text().trim() + '/user_popup')
+                    //@admin_bp.route('employee/<int:employee_id>/user_popup')
+                    xhr = $.ajax(
+                        '/admin/employee/' + elem.first().text().trim().substring(6, 8) + '/user_popup')
+                        .done(
+                            function (data) {
+                                xhr = null;
+                                // create and display popup here
+                                elem.popover({
+                                    trigger: 'manual',
+                                    html: true,
+                                    animation: false,
+                                    container: elem,
+                                    content: data
+                                }).popover('show');
+                                // flask_moment_render_all();
+                            });
+                }, 500);
+
+            },
+            function (event) {
+                // mouse out event handler
+                var elem = $(event.currentTarget);
+                if (timer) {
+                    clearTimeout(timer);
+                    timer = null;
+                } else if (xhr) {
+                    xhr.abort();
+                    xhr = null;
+                } else {
+                    // destroy popup here
+                    // elem.popover('destroy');
+                    // $pop.popover('destroy'); // jQuery < 4.1
+                    // $pop.popover('dispose'); // jQuery > 4.1
+                    elem.popover('dispose');
+                }
+
+            }
+        )
+    });
+</script>
+{% endblock extra_foot_script %}
 
 {% block vue_script %}{% endblock vue_script %}

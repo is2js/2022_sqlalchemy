@@ -968,7 +968,7 @@ def employee():
     #### - Employee도 대기상태 or 퇴사상태 데이터가 있기 때문에, 필터링을 한번 해야한다
     stmt = select(Employee) \
         .order_by(Employee.join_date.desc())
-        # .where(Employee.is_active) \
+    # .where(Employee.is_active) \
 
     pagination = paginate(stmt, page=page, per_page=10)
     employee_list = pagination.items
@@ -1255,6 +1255,16 @@ def employee_job_status_change():
         db.session.commit()
 
     return redirect(redirect_url())
+
+
+@admin_bp.route('employee/<int:employee_id>/user_popup')
+@login_required
+def user_popup(employee_id):
+    employee = Employee.get_by_id(employee_id)
+    user = employee.user
+
+    return render_template('admin/employee_user_popup.html', user=user)
+
 
 @admin_bp.route('/department/', methods=['GET', 'POST'])
 @login_required

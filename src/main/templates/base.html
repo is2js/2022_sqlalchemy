@@ -31,6 +31,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/materialdesignicons.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <!-- settings -> 테마색 적용하기  -->
+    {% block extra_head_style %}{% endblock extra_head_style %}
     <style>
         .navbar-item .is-primary, /* 닉네임 표시 or (회원가입)  */
         .navbar-start > a:hover, /* 상단메뉴 hover  */
@@ -50,7 +51,6 @@
             opacity: 0.4;
         }
     </style>
-    {% block extra_head_style %}{% endblock extra_head_style %}
 </head>
 
 <body>

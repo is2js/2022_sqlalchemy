@@ -1,0 +1,48 @@
+<table class="table">
+    <tr>
+        <td width="64" style="border: 0px;">
+            <figure class="image is-48x48">
+                <img class="is-rounded" style="height: 100%;"
+                     src="
+                            {% if user.avatar %}
+                             {{url_for('download_file', filename=user.avatar)}}
+                             {% else %}
+                             {{url_for('static', filename='/img/user/default_avatar.svg')}}
+                             {% endif %}
+                            "
+                     alt="{{ user.username }}">
+            </figure>
+        </td>
+        <td style="border: 0px;">
+            <p>
+                <span class="tag is-primary">{{ user.username }}</span>
+            </p>
+
+            <small>
+                <p>최근 접속일 : {{ user.last_seen | feed_datetime(is_feed=True) }}</p>
+                <div class="dropdown-divider"></div>
+                <p><span class="has-text-primary-dark has-text-weight-bold">직위</span>
+
+                    <span class="
+                        tag
+                        {% if not user.is_staff %}
+                        is-white
+                        {% elif user.is_executive %}
+                        is-danger
+                        {% else %}
+                        is-info
+                        {% endif %}
+                         is-light">
+                            {{ user.role.name}}
+                        </span>
+
+                </p>
+                <p><span class="has-text-primary-dark has-text-weight-bold">email</span> {{ user.email }}</p>
+                <p><span class="has-text-primary-dark has-text-weight-bold">성별</span> {{ user.sex.name }}</p>
+                <p><span class="has-text-primary-dark has-text-weight-bold">주소</span> {{ user.address }}</p>
+                <p><span class="has-text-primary-dark has-text-weight-bold">휴대폰</span> {{ user.phone | join_phone }}</p>
+            </small>
+        </td>
+
+    </tr>
+</table>
