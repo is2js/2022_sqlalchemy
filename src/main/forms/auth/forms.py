@@ -307,13 +307,20 @@ class EmployeeForm(UserInfoForm):
         else:  # 생성시 자신의 데이터를 중복검사
             condition = Employee.birth == field.data
 
-        with DBConnectionHandler() as db:
-            is_exists = db.session.scalars(
-                exists().where(condition).select()
-            ).one()
+        #### 재입사로서 self.user => Employee에 정보가 있을 경우, 해당 데이터 제외하고 검사
+        # print(self.user, self.user.has_employee_history)
+        # User[id=32] True
+        if self.user and self.user.has_employee_history:
+            condition = and_(Employee.user_id != self.user.id, Employee.birth == field.data)
 
-        if is_exists:
-            raise ValidationError('이미 존재하는 주민등록번호 입니다')
+        with DBConnectionHandler() as db:
+            is_exists = db.session.scalar(
+                exists().where(condition).select()
+            )
+
+
+            if is_exists:
+                raise ValidationError('이미 존재하는 주민등록번호 입니다')
 
 
 class EmployeeInfoForm(FlaskForm):

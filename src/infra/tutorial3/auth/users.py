@@ -13,6 +13,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from src.config import project_config
 from src.infra.config.base import Base
 from src.infra.config.connection import DBConnectionHandler
+from src.main.templates.filters import format_date
 from .departments import EmployeeDepartment, Department
 from src.infra.tutorial3.common.base import BaseModel, InviteBaseModel
 from src.infra.tutorial3.common.int_enum import IntEnum
@@ -238,9 +239,14 @@ class User(BaseModel):
             user = db.session.get(cls, id)
             return user
 
-    def update(self, info_dict):
-        for k, v in info_dict.items():
+    def update(self, info_dict=None, **kwargs):
+        if info_dict:
+            for k, v in info_dict.items():
+                setattr(self, k, v)
+
+        for k, v in kwargs.items():
             setattr(self, k, v)
+
 
     def __repr__(self):
         info: str = f"{self.__class__.__name__}" \
@@ -295,6 +301,16 @@ class User(BaseModel):
                 exists()
                 .where(Employee.user_id == self.id)
                 .where(Employee.is_active == True)
+                .select()
+            )
+            return db.session.scalar(stmt)
+
+    @hybrid_property
+    def has_employee_history(self):
+        with DBConnectionHandler() as db:
+            stmt = (
+                exists()
+                .where(Employee.user_id == self.id)
                 .select()
             )
             return db.session.scalar(stmt)
@@ -893,9 +909,11 @@ class Employee(BaseModel):
 
                 emp.job_status = job_status
                 emp.resign_date = datetime.date.today()
-                # 이미 user.role에 Role.get_by_name을 가지고 있는 경우, 같은 데이터를 불러오는 에러가 나므로
-                # => 외부에서 같은 재직상태 => 같은 role을 가지는 것을 막아준다.
-                emp.user.role = Role.get_by_name('USER') # emp.role은 User의 role을 가져오는 식이므로 변경에 못쓴다.
+
+                #### 관계필드를 조회하는 순간 같은세션에서 같은 key의 객체를 가져오게 되므로
+                #### USER role이 아닌 경우에만, USER role을 찾아서 대입해준다.
+                if emp.user.role.default != True:
+                    emp.user.role = Role.get_by_name('USER') # emp.role은 User의 role을 가져오는 식이므로 변경에 못쓴다.
 
                 db.session.add(emp)
 
@@ -918,6 +936,9 @@ class Employee(BaseModel):
 
                 emp.job_status = job_status
 
+                # emp.reference = f'휴직({format_date(datetime.date.today())})'
+                emp.update_reference(f'휴직({format_date(datetime.date.today())})')
+
                 db.session.add(emp)
 
                 emp_dept_list: list = EmployeeDepartment.get_by_emp_id(emp.id)
@@ -928,6 +949,42 @@ class Employee(BaseModel):
                 db.session.commit()
 
                 return emp
+
+        #### 복직처리 => 기존 부서 그대로 복직한다. 필요하면 해임하고, 부서변경해야한다.
+        elif job_status == JobStatusType.재직:
+            with DBConnectionHandler() as db:
+                emp: Employee = cls.get_by_id(emp_id)
+
+                emp.job_status = job_status
+
+                # emp.reference = f'복직({format_date(datetime.date.today())})'
+                emp.update_reference(f'복직({format_date(datetime.date.today())})')
+
+                db.session.add(emp)
+
+                emp_dept_list: list = EmployeeDepartment.get_by_emp_id(emp.id)
+                for emp_dept in emp_dept_list:
+                    emp_dept.reinstatement_date = datetime.date.today()
+
+                db.session.add_all(emp_dept_list)
+                db.session.commit()
+
+                return emp
+
+    def update_reference(self, text):
+        if not self.reference:
+            self.reference = text
+        else:
+            self.reference = text + '\r\n' + self.reference
+
+    def update(self, info_dict=None, **kwargs):
+        if info_dict:
+            for k, v in info_dict.items():
+                setattr(self, k, v)
+
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
 
 
 
@@ -980,3 +1037,4 @@ class EmployeeInvite(InviteBaseModel):
 
             invite_list = db.session.scalars(stmt).all()
         return invite_list
+
