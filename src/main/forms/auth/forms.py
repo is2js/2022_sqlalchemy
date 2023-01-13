@@ -301,6 +301,15 @@ class EmployeeForm(UserInfoForm):
             # choice만 주면, 기존user정보로 필드의.data가 채워진 상태로, 보이기만  choices1개만 보여지게 된다.
             self.role_id.data = role.id
 
+        #### 재입사시, 기존 직원들 정보로 미리 채우는 것 추가
+        if self.user and self.user.has_employee_history:
+            prev_emp: Employee = Employee.get_by_user_id(self.user.id)
+            if not prev_emp:
+                return
+            self.name.data = prev_emp.name
+            self.sub_name.data = prev_emp.sub_name
+            self.birth.data = prev_emp.birth
+
     def validate_birth(self, field):
         if self.employee:  # 수정시 자신의 제외하고 데이터 중복 검사
             condition = and_(Employee.id != self.employee.id, Employee.birth == field.data)
@@ -310,7 +319,7 @@ class EmployeeForm(UserInfoForm):
         #### 재입사로서 self.user => Employee에 정보가 있을 경우, 해당 데이터 제외하고 검사
         # print(self.user, self.user.has_employee_history)
         # User[id=32] True
-        if self.user and self.user.has_employee_history:
+        if self.user.has_employee_history:
             condition = and_(Employee.user_id != self.user.id, Employee.birth == field.data)
 
         with DBConnectionHandler() as db:

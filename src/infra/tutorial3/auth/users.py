@@ -975,7 +975,7 @@ class Employee(BaseModel):
         if not self.reference:
             self.reference = text
         else:
-            self.reference = text + '\r\n' + self.reference
+            self.reference = text + '</br>' + self.reference
 
     def update(self, info_dict=None, **kwargs):
         if info_dict:
