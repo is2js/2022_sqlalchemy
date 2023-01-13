@@ -369,7 +369,8 @@
                     <b-select
                             name="job_status"
                             placeholder="선택"
-                            rounded required
+                            rounded
+                            required
                     >
                         {% for job_status in job_status_list %}
                         <option value="{{job_status[0]}}">{{job_status[1]}}</option>

@@ -1236,23 +1236,40 @@ def employee_job_status_change():
     with DBConnectionHandler() as db:
         employee = db.session.get(Employee, employee_id)
 
-        if not employee.user.role.is_under(g.user.role):
-            flash('자신보다 아래 직위의 직원만 수정할 수 있습니다.', category='is-danger')
+        if not employee.role.is_under(g.user.role):
+            flash('자신보다 하위 직위의 직원만 수정할 수 있습니다.', category='is-danger')
             return redirect(redirect_url())
 
-        employee.job_status = job_status
-        if job_status == JobStatusType.퇴사:
-            # print("퇴사처리시 resign_date가 찍히게 된다.")
-            employee.resign_date = date.today()
-            # 퇴사처리시 role을 user로 다시 바꿔, 직원정보는 남아있되, role이 user라서 접근은 못하게 한다
-            role = db.session.scalars(
-                select(Role)
-                .where(Role.default == True)
-            ).first()
-            employee.user.role = role
+        #### 이미 해당 재직상태인데 같은 것으로 변경하는 것을 막기 위한 처리문
+        # => 이것을 처리해줘야 emp.user.role  <-> Role.get_by_name('USER')시 session내 같은 객체 조회를 막을 수 있다
+        if employee.job_status == job_status:
+            flash(f'같은 상태로 변경할 수 없습니다. ', category='is-danger')
+            return redirect(redirect_url())
 
-        db.session.add(employee)
-        db.session.commit()
+    Employee.change_job_status(employee_id, job_status)
+    # flash('자신보다 아래 직위의 직원만 수정할 수 있습니다.', category='is-danger')
+
+        # #### 퇴사처리1) 직원의 재직상태를 퇴사로 변경
+        # employee.job_status = job_status
+        # if job_status == JobStatusType.퇴사:
+        #     #### 퇴사처리 메서드로 구현(job_status-외부 + resign_date-내부 + role(default인 USER)-내부 변경
+        #     #### => 재직상태는 외부에서 주는 것이라 인자로 받아서 처리?!
+        #     employee.change_status(job_status)
+        #
+        #     #### 퇴사처리2) 직원의 퇴직일(resign_date)가 찍히게 된다.
+        #     employee.resign_date = date.today()
+        #
+        #     #### 퇴사처리3) 직원의 Role을 STAFF이상 => User(deafult=True)로 변경한다.
+        #     # 퇴사처리시 role을 user로 다시 바꿔, 직원정보는 남아있되, role이 user라서 접근은 못하게 한다
+        #     role = db.session.scalars(
+        #         select(Role)
+        #         .where(Role.default == True)
+        #     ).first()
+        #     employee.user.role = role
+        #
+        #
+        # db.session.add(employee)
+        # db.session.commit()
 
     return redirect(redirect_url())
 

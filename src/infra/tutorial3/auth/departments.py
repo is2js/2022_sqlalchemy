@@ -518,6 +518,18 @@ class EmployeeDepartment(BaseModel):
 
         return self
 
+    # with other entity
+    @classmethod
+    def get_by_emp_id(cls, emp_id):
+        with DBConnectionHandler() as db:
+            stmt = (
+                select(cls)
+                .where(cls.dismissal_date.is_(None))
+                .where(cls.employee_id == emp_id)
+            )
+            return db.session.scalars(stmt).all()
+
+
 # 3.
 # users_and_departments = db.Table(
 #     'users_and_departments',

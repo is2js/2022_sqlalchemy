@@ -575,14 +575,14 @@ class Employee(BaseModel):
     @hybrid_property
     def is_active(self):
         # return JobStatusType.대기 != self.job_status and self.job_status != JobStatusType.퇴사
-        return self.job_status not in [JobStatusType.대기, JobStatusType.퇴사]
+        return self.job_status not in [JobStatusType.대기, JobStatusType.휴직, JobStatusType.퇴사]
 
     @is_active.expression
     def is_active(cls):
         # 객체와 달리, expression은 and_로 2개 조건식을 나눠 써야한다.
         # return and_(JobStatusType.대기 != cls.job_status, cls.job_status != JobStatusType.퇴사)
         # return not cls.job_status.in_([JobStatusType.대기, JobStatusType.퇴사])
-        return cls.job_status.notin_([JobStatusType.대기, JobStatusType.퇴사])
+        return cls.job_status.notin_([JobStatusType.대기, JobStatusType.휴직, JobStatusType.퇴사])
 
     @hybrid_property
     def is_pending(self):
@@ -591,6 +591,14 @@ class Employee(BaseModel):
     @is_pending.expression
     def is_pending(cls):
         return cls.job_status == JobStatusType.대기
+
+    @hybrid_property
+    def is_resign(self):
+        return self.job_status == JobStatusType.휴직
+
+    @is_resign.expression
+    def is_resign(cls):
+        return cls.job_status == JobStatusType.휴직
 
     @hybrid_property
     def is_resign(self):
@@ -869,7 +877,37 @@ class Employee(BaseModel):
 
             return db.session.scalars(stmt).first()
 
+    ### with other entity
+    @classmethod
+    def change_job_status(cls, emp_id: int, job_status: int):
+        #### 퇴사상태로 변경하는 경우 -> job_stauts 변경외
+        # -> resign_date 할당 + (other entity)role을 default인 USER로 변경이다.
+        # => 관계entity의 속성을 변경해야하므로, sql으로 하지 않고, 객체를 찾아서 변경하도록 변경한다.
+        if job_status == JobStatusType.퇴사:
+            with DBConnectionHandler() as db:
+                emp: Employee = cls.get_by_id(emp_id)
 
+                emp.job_status = job_status
+                emp.resign_date = datetime.date.today()
+                # 이미 user.role에 Role.get_by_name을 가지고 있는 경우, 같은 데이터를 불러오는 에러가 나므로
+                # => 외부에서 같은 재직상태 => 같은 role을 가지는 것을 막아준다.
+                emp.user.role = Role.get_by_name('USER') # emp.role은 User의 role을 가져오는 식이므로 변경에 못쓴다.
+
+                db.session.add(emp)
+
+                #### 해당부서에 해임까지 시키기 => 내가 속한 모든 부서취임 정보list를 가져와서
+                # -> 모드 해임일을 입력하여 비활성화 시킨다.
+                emp_dept_list: list = EmployeeDepartment.get_by_emp_id(emp.id)
+                for emp_dept in emp_dept_list:
+                    emp_dept.dismissal_date = datetime.date.today()
+
+                db.session.add_all(emp_dept_list)
+
+                db.session.commit()
+
+
+#### 초대는 분야마다 초대하는 content(직원초대 -> Role 중 1개)가 다르기 때문에
+#### => Type을 놓지않고, 필드를 다르게해서 새로 만들어야한다.
 # class InviteType(enum.IntEnum):
 #     직원_초대 = 0
 #     모임_초대 = 1
