@@ -412,6 +412,9 @@ class EmployeeDepartment(BaseModel):
     # 2. 고용일과 퇴직일은 없을 수 있다?! (퇴직일만 nullable=True인듯)
     employment_date = Column(Date, nullable=False, comment='입사일과 다른, 부임일')
     dismissal_date = Column(Date, nullable=True)
+    # 휴직처리를 위한 휴직일과 복직일 칼럼 추가
+    leave_date = Column(Date, nullable=True)
+    reinstatement_date = Column(Date, nullable=True)
 
     # new 입사당시에 position을 Department.type에 따라 동적입력 -> 칼럼 nullable=True 필수 + .save()로 저장
     position = Column(String(50), nullable=True, comment="부서Type에 따른 직무")

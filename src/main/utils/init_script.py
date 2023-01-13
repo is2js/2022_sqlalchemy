@@ -28,9 +28,9 @@ def init_script(app: Flask):
     @click.option("--load_fake_data", prompt=True, default=False)
     def createdb(truncate, drop_table, load_fake_data):
         create_database(
-            truncate=True if truncate.lower() in ['y', 'yes'] else truncate,
-            drop_table=True if drop_table.lower() in ['y', 'yes'] else drop_table,
-            load_fake_data=True if load_fake_data.lower() in ['y', 'yes'] else load_fake_data
+            truncate=True if truncate in ['y', 'yes'] else truncate,
+            drop_table=True if drop_table in ['y', 'yes'] else drop_table,
+            load_fake_data=True if load_fake_data in ['y', 'yes'] else load_fake_data
         )
         click.echo(f'db.create_all() 완료')
 

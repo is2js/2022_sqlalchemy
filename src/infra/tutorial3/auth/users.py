@@ -610,8 +610,8 @@ class Employee(BaseModel):
 
     @property
     def birthday(self):
-        month, day = self.birth[2:4], self.birht[4:6]
-        return f"{int(month):2d}월{int(day):2d}"
+        month, day = self.birth[2:4], self.birth[4:6]
+        return f"{int(month):2d}월{int(day):2d}일"
 
     @property
     def age(self):
@@ -644,7 +644,11 @@ class Employee(BaseModel):
     # 근무개월 수 (다음달 해당일시 차이가 1달로 +1)
     @property
     def months_and_days_from_join_date(self):
-        today_date = datetime.date.today()
+        #### 이 사람이 퇴사했다면, 퇴사일을 기준으로 근무개월수를 세어야한다
+        if self.resign_date:
+            today_date = self.resign_date
+        else:
+            today_date = datetime.date.today()
         ## self.join_date + relativedelta(months=1) 는 정확히 다음달 같은 일을 나타낸다
         # - 2월1일(join) 입사했으면, 3월1일(today)에 연차가 생기도록, (딱 1달이 되는날)
         # - 차이가 1달이라는 말은, 시작일제외하고 [시작일로부터 차이가 한달]이 지났다는 말이다.
@@ -880,9 +884,9 @@ class Employee(BaseModel):
     ### with other entity
     @classmethod
     def change_job_status(cls, emp_id: int, job_status: int):
-        #### 퇴사상태로 변경하는 경우 -> job_stauts 변경외
-        # -> resign_date 할당 + (other entity)role을 default인 USER로 변경이다.
-        # => 관계entity의 속성을 변경해야하므로, sql으로 하지 않고, 객체를 찾아서 변경하도록 변경한다.
+        #### 퇴사상태로 변경하는 경우 -> job_stauts 외 resign_date 할당 + (other entity)role을 default인 USER로 변경
+        #     - 관계entity의 속성을 변경해야하므로, sql으로 하지 않고, 객체를 찾아서 변경하도록 변경한다.
+        #### 그외 EmployeDepartment에서 자신의 취임정보에 dismissal_date를 할당하여 비활성화 한다.
         if job_status == JobStatusType.퇴사:
             with DBConnectionHandler() as db:
                 emp: Employee = cls.get_by_id(emp_id)
@@ -902,8 +906,29 @@ class Employee(BaseModel):
                     emp_dept.dismissal_date = datetime.date.today()
 
                 db.session.add_all(emp_dept_list)
-
                 db.session.commit()
+
+                return emp
+
+        #### 휴직은 job_status만 변경(퇴직일X, ROLE변화X)
+        #### emp_dept에 휴직일 기입
+        elif job_status == JobStatusType.휴직:
+            with DBConnectionHandler() as db:
+                emp: Employee = cls.get_by_id(emp_id)
+
+                emp.job_status = job_status
+
+                db.session.add(emp)
+
+                emp_dept_list: list = EmployeeDepartment.get_by_emp_id(emp.id)
+                for emp_dept in emp_dept_list:
+                    emp_dept.leave_date = datetime.date.today()
+
+                db.session.add_all(emp_dept_list)
+                db.session.commit()
+
+                return emp
+
 
 
 #### 초대는 분야마다 초대하는 content(직원초대 -> Role 중 1개)가 다르기 때문에

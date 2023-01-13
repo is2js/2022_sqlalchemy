@@ -483,7 +483,9 @@ def employee_invite_accept(id):
             # print(prev_employee)
             if prev_employee:
                 # print("기존 입사정보가 있어서, 삭제하고 재입사 처리합니다.")
-                is_re_join = True
+                # is_re_join = True
+                #### T/F대신, false -> true로 활용할 때, 삭제될 퇴사날짜를 입력해서 비고란에 입력하자.
+                is_re_join = prev_employee.resing_date
                 db.session.delete(prev_employee)
                 db.session.commit()
             else:
@@ -521,10 +523,11 @@ def employee_invite_accept(id):
             )
 
             # Employee검사에서 재입사면, nullable인 reference 비고필드를 채워준다.
+            # boolean으로 쓰려다가, 삭제되기전 prev_emp에서 지난퇴사일을 가져와 비고에 입력해주기
             if is_re_join:
-                employee.reference = '재입사'
+                employee.reference = f'재입사(퇴사:{is_re_join})'
             else:
-                employee.reference = '신규입사'
+                employee.reference = f'신규입사(연도:{form.join_date.year})'
 
             #### invite ####
             invite.is_answered = True

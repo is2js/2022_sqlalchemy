@@ -977,6 +977,9 @@ def employee():
     job_status_list = JobStatusType.choices()
     # print(job_status_list)
     # [(1, '재직'), (2, '휴직'), (3, '퇴사')]
+    #### => 여기서만 재직 = 1을 복직으로 변경해서 내려주자. (form에서는 재직으로?)
+    job_status_list = job_status_list[1:] + [(1, '복직')]
+
 
     return render_template('admin/employee.html',
                            employee_list=employee_list,
@@ -1238,6 +1241,16 @@ def employee_job_status_change():
 
         if not employee.role.is_under(g.user.role):
             flash('자신보다 하위 직위의 직원만 수정할 수 있습니다.', category='is-danger')
+            return redirect(redirect_url())
+
+        #### 퇴사자는 재직상태 변경 못하고, 직원초대로만 가능하도록 early return
+        if employee.job_status == JobStatusType.퇴사:
+            flash(f'퇴사자는 재직상태변경이 불가하며 User관리에서 직원초대로 새로 입사해야합니다. ', category='is-danger')
+            return redirect(redirect_url())
+
+        #### 복직은 휴직자만 가능하도록 걸기
+        if job_status == JobStatusType.재직 and employee.job_status != JobStatusType.휴직:
+            flash(f'복직은 휴직자만 선택할 수 있습니다. ', category='is-danger')
             return redirect(redirect_url())
 
         #### 이미 해당 재직상태인데 같은 것으로 변경하는 것을 막기 위한 처리문

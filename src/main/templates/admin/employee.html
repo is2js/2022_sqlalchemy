@@ -109,6 +109,7 @@
             <!--            <th>Avatar</th>-->
             <th>이름</th>
             <th>나이</th>
+            <th>생일</th>
             <!--            <th>Email</th>-->
             <!--            <th>Phone</th>-->
             <th>부서(직책)</th>
@@ -117,7 +118,7 @@
                  (1) 입사일(user_form : user-> staff수정시 입력되도록 해야함 + 직원추가시 입력되도록 해야함.)
                  (2) 퇴사일(직원수정form에서만 -> 퇴사체크시 자동으로 입력)
                  (3) 퇴사여부(퇴사클릭시 -> user로 밴 + 퇴사여부y + 퇴사일기록)를 추가 -->
-            <th>연차</th>
+            <th>근무일</th>
             <th>상태</th>
             <!-- 작업 수정삭제에  + (4)퇴사버튼 추가 -->
             <th>비고</th>
@@ -190,7 +191,8 @@
 
                 <!--                </b-tooltip>-->
             </td>
-            <td><span class="is-size-7">{{ employee.age }}</span></td>
+            <td><span >{{ employee.age }}</span></td>
+            <td><span >{{ employee.birthday }}</span></td>
             <!--            <td><span class="is-size-7">{{ employee.user.email }}</span></td>-->
             <!--            <td><span class="is-size-7">{{ employee.user.phone | join_phone }}</span></td>-->
 
