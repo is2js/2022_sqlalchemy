@@ -1260,6 +1260,8 @@ def employee_job_status_change():
             return redirect(redirect_url())
 
     Employee.change_job_status(employee_id, job_status)
+    flash(f'재직상태변경이 완료되었습니다.', category='is-success')
+
     # flash('자신보다 아래 직위의 직원만 수정할 수 있습니다.', category='is-danger')
 
         # #### 퇴사처리1) 직원의 재직상태를 퇴사로 변경

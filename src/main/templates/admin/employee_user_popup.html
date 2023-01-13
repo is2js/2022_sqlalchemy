@@ -37,10 +37,18 @@
                         </span>
 
                 </p>
-                <p><span class="has-text-primary-dark has-text-weight-bold">email</span> {{ user.email }}</p>
-                <p><span class="has-text-primary-dark has-text-weight-bold">성별</span> {{ user.sex.name }}</p>
-                <p><span class="has-text-primary-dark has-text-weight-bold">주소</span> {{ user.address }}</p>
-                <p><span class="has-text-primary-dark has-text-weight-bold">휴대폰</span> {{ user.phone | join_phone }}</p>
+                <p><span class="has-text-primary-dark has-text-weight-bold">email</span>
+                    {{ user.email }}
+                </p>
+                <p><span class="has-text-primary-dark has-text-weight-bold">성별</span>
+                    {{ user.sex.name }}
+                </p>
+                <p><span class="has-text-primary-dark has-text-weight-bold">주소</span>
+                    {{ user.address }}
+                </p>
+                <p><span class="has-text-primary-dark has-text-weight-bold">휴대폰</span>
+                    {{ user.phone | join_phone }}
+                </p>
             </small>
         </td>
 

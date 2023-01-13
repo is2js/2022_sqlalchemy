@@ -191,8 +191,8 @@
 
                 <!--                </b-tooltip>-->
             </td>
-            <td><span >{{ employee.age }}</span></td>
-            <td><span >{{ employee.birthday }}</span></td>
+            <td><span>{{ employee.age }}</span></td>
+            <td><span>{{ employee.birthday }}</span></td>
             <!--            <td><span class="is-size-7">{{ employee.user.email }}</span></td>-->
             <!--            <td><span class="is-size-7">{{ employee.user.phone | join_phone }}</span></td>-->
 
@@ -206,8 +206,8 @@
                         </span>
                         {% if dept_count > 1 %}
                         <b-tooltip
-                                    position="is-right"
-                                    type="is-primary">
+                                position="is-right"
+                                type="is-primary">
                             <template v-slot:content>
                                 {% for dept_and_pos in employee.get_dept_and_position_list() %}
                                             <span class="has-text-white">
@@ -216,18 +216,18 @@
                                 {% endfor %}
                             </template>
 
-<!--                            <b-button label="Action" type="is-light" class="button is-inverted"/>-->
+                            <!--                            <b-button label="Action" type="is-light" class="button is-inverted"/>-->
                             <span class="has-text-primary">외 {{dept_count - 1}}개 부서</span>
                         </b-tooltip>
                         {% endif %}
                     {% else %}
                         -
                     {% endif %}
-<!--                                                            {% for dept_and_pos in employee.get_dept_and_position_list() %}-->
-<!--                                                                <span class="tag is-primary is-light">-->
-<!--                                                                    {{dept_and_pos[0]}} ({{dept_and_pos[1]}})-->
-<!--                                                                </span></br>-->
-<!--                                                            {% endfor %}-->
+                    <!--                                                            {% for dept_and_pos in employee.get_dept_and_position_list() %}-->
+                    <!--                                                                <span class="tag is-primary is-light">-->
+                    <!--                                                                    {{dept_and_pos[0]}} ({{dept_and_pos[1]}})-->
+                    <!--                                                                </span></br>-->
+                    <!--                                                            {% endfor %}-->
                 </span>
             </td>
             <!--            <td>-->
@@ -263,7 +263,19 @@
 
             <td>
                 {% if employee.reference %}
-                {{ employee.reference }}
+                <b-tooltip
+                        position="is-left"
+                        type="is-dark"
+                >
+                    <template v-slot:content>
+                        <span class="is-size-7">
+                            {{ employee.reference | safe }}
+                        </span>
+                    </template>
+
+                    <span class="has-text-dark">참고</span>
+                </b-tooltip>
+
                 {% else %}
                 -
                 {% endif %}

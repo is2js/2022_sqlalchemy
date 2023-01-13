@@ -8,6 +8,7 @@ from src.infra.config.connection import DBConnectionHandler
 from src.infra.tutorial3 import User, EmployeeInvite, Role, Employee
 from src.main.forms.auth import LoginForm, RegisterForm, UserInfoForm
 from src.main.forms.auth.forms import EmployeeForm, EmployeeInfoForm
+from src.main.templates.filters import format_date
 from src.main.utils import upload_file_path, delete_uploaded_file, redirect_url
 from src.main.utils.decorators import login_required
 
@@ -459,6 +460,22 @@ def employee_invite_accept(id):
         #### Employ정보를 생성하기 전에, 퇴사후 재입사인 경우 user:emp 1:1관계를 유지하기 위해
         #### => 기존  employee정보를 검색해서 있으면 삭제해준다
         with DBConnectionHandler() as db:
+            #### 신규입사/재입사 상관없이 Role USER -> STAFF이상으로 업데이트 과정은 공통이다.
+            #### user ####
+            user_info = {
+                'email': form.email.data,
+                'sex': form.sex.data,
+                'phone': form.phone.data,
+                'address': form.address.data,
+                'role_id': form.role_id.data,
+            }
+            #### 주어진 role로 변경(공통 로직)
+            invitee_user = db.session.get(User, invite.invitee_id)
+
+            invitee_user.update(user_info)
+            db.session.add(invitee_user)
+
+            #### 재입사 #######
             # 1) invite id -> invite -> invitee_id 값 찾기
             user_id_scalar = (
                 select(EmployeeInvite.invitee_id)
@@ -481,67 +498,103 @@ def employee_invite_accept(id):
             ).first()
             # print(stmt)
             # print(prev_employee)
+            # if prev_employee:
+            #     # print("기존 입사정보가 있어서, 삭제하고 재입사 처리합니다.")
+            #
+            #     # is_re_join = True
+            #     #### T/F대신, false -> true로 활용할 때, 삭제될 퇴사날짜를 입력해서 비고란에 입력하자.
+            #     is_re_join = prev_employee.resign_date
+            #
+            #     #### 기존 입사정보를 제거해버리면, 취임정보 속 employee_id FK(nullable)에 제약조건에 걸려버린다.
+            #     #### => 제거 하지말고, 신규입사 시 Emp객체 생성에 조건을 걸어서, prev_employee를 재활용하도록 하자
+            #     # db.session.delete(prev_employee)
+            #     # db.session.commit()
+            # else:
+            #     # print("기존 입사정보 없이, 신규입사입니다.")
+            #     pass
+
+            #### 기존 입사 정보가 있으면 따로 처리해야함.
             if prev_employee:
-                # print("기존 입사정보가 있어서, 삭제하고 재입사 처리합니다.")
-                # is_re_join = True
-                #### T/F대신, false -> true로 활용할 때, 삭제될 퇴사날짜를 입력해서 비고란에 입력하자.
-                is_re_join = prev_employee.resing_date
-                db.session.delete(prev_employee)
-                db.session.commit()
+            #### 재입사라서 기존 정보가 있으면 그것만 업데이트하자
+            #### => 대신 [reference는 기존 것 유지 + 해고일은 None으로 비어야한다.]
+                #### 이미 user의 관계필드에 해당객체를 가지고 있는 상태에서 처리하면 session 이미 가지고 있다고 나온다.
+                prev_employee.update(
+                    #### 재입사시 달라지는 부분 2
+                    #### =>관계필드로 이미 해당유저를 가지고 있기 때문에, 같은 user를 할당시 에러난다
+                    # user=invitee_user,
+                    user_id=invitee_user.id,
+                    name=form.name.data,
+                    sub_name=form.sub_name.data,
+                    birth=form.birth.data,
+                    join_date=form.join_date.data,
+                    job_status=form.job_status.data,
+                    # 재입사시 달라지는 부분
+                    # reference=prev_employee.reference,
+                    resign_date=None,
+                )
+
+                prev_employee.update_reference(f'재입사({format_date(form.join_date.data)})')
+
+                db.session.add(prev_employee)
+                # db.session.commit()
+
             else:
-                # print("기존 입사정보 없이, 신규입사입니다.")
-                pass
+            # with DBConnectionHandler() as db:
+            #     invite = db.session.get(EmployeeInvite, id)
+            #     invitee_user = db.session.get(User, invite.invitee_id)
 
-        with DBConnectionHandler() as db:
-            invite = db.session.get(EmployeeInvite, id)
-            invitee_user = db.session.get(User, invite.invitee_id)
-            #### user ####
-            user_info = {
-                'email': form.email.data,
-                'sex': form.sex.data,
-                'phone': form.phone.data,
-                'address': form.address.data,
-                'role_id': form.role_id.data,
-            }
-            invitee_user.update(user_info)
-            f = form.avatar.data
-            if f != invitee_user.avatar:
-                avatar_path, filename = upload_file_path(directory_name='avatar', file=f)
-                f.save(avatar_path)
-                delete_uploaded_file(directory_and_filename=invitee_user.avatar)
-                invitee_user.avatar = f'avatar/{filename}'
 
-            #### employee ####
-            # - role은 employee에  있진 않다. 부모격인 user객체에 들어가있음.
-            employee = Employee(
-                user=invitee_user,
-                name=form.name.data,
-                sub_name=form.sub_name.data,
-                birth=form.birth.data,
-                join_date=form.join_date.data,
-                job_status=form.job_status.data,
-            )
+                f = form.avatar.data
+                if f != invitee_user.avatar:
+                    avatar_path, filename = upload_file_path(directory_name='avatar', file=f)
+                    f.save(avatar_path)
+                    delete_uploaded_file(directory_and_filename=invitee_user.avatar)
+                    invitee_user.avatar = f'avatar/{filename}'
 
-            # Employee검사에서 재입사면, nullable인 reference 비고필드를 채워준다.
-            # boolean으로 쓰려다가, 삭제되기전 prev_emp에서 지난퇴사일을 가져와 비고에 입력해주기
-            if is_re_join:
-                employee.reference = f'재입사(퇴사:{is_re_join})'
-            else:
-                employee.reference = f'신규입사(연도:{form.join_date.year})'
+                #### employee ####
+                # - role은 employee에  있진 않다. 부모격인 user객체에 들어가있음.
+                # if not prev_employee:
+                employee = Employee(
+                    user=invitee_user,
+                    name=form.name.data,
+                    sub_name=form.sub_name.data,
+                    birth=form.birth.data,
+                    join_date=form.join_date.data,
+                    job_status=form.job_status.data,
 
+                    reference=f'신규입사({format_date(form.join_date.data)})'
+                )
+                #### 신규입사시만 새로 생성한 객체를 add하고
+                #### => 재입사시에는 prev_employee를 commit만 되면 된다. (add하면 session에 이미 가지고 있따고 뜸)
+                db.session.add(employee)
+                # db.session.commit()
+
+                    # db.session.add(prev_employee) # 넣으면 이미 session에 가지고 있다고 에러
+
+                # Employee검사에서 재입사면, nullable인 reference 비고필드를 채워준다.
+                # boolean으로 쓰려다가, 삭제되기전 prev_emp에서 지난퇴사일을 가져와 비고에 입력해주기
+                # if is_re_join:
+                # employee.reference = f'재입사(퇴사:{format_date(form.join_date)})'
+
+                # else:
+                # employee.reference = f'신규입사({format_date(form.join_date)})'
+            # with DBConnectionHandler() as db:
+            #     invite = db.session.get(EmployeeInvite, id)
+            #     invitee_user = db.session.get(User, invite.invitee_id)
             #### invite ####
+            invite = db.session.get(EmployeeInvite, id)
+
             invite.is_answered = True
             invite.is_accepted = True
 
             db.session.add(invite)
 
-            db.session.add(invitee_user)
-            db.session.add(employee)
-            #### invite 처리####
+            # db.session.add(invitee_user)
+            #### invite 처리(나머지 처리를 위해 미리 처리) ####
             db.session.commit()
 
         #### 나머지 초대들 삭제처리하기
-        with DBConnectionHandler() as db:
+        # with DBConnectionHandler() as db:
             invite1 = db.session.get(EmployeeInvite, id)
             invitee_user1 = db.session.get(User, invite1.invitee_id)
 
@@ -558,7 +611,9 @@ def employee_invite_accept(id):
             # UPDATE employee_invites SET is_answered=:is_answered, is_accepted=:is_accepted WHERE employee_invites.id != :id_1 AND employee_invites.create_on >= :create_on_1 AND :param_1 = employee_invites.invitee_id
 
             db.session.execute(stmt)
+
             db.session.commit()
+
             flash("직원 전환 성공")
 
         return redirect(url_for('auth.userinfo'))
@@ -604,7 +659,6 @@ def employee_invite_postpone(id):
 @login_required
 def employeeinfo():
     with DBConnectionHandler() as db:
-
         stmt = (
             select(Employee)
             .where(Employee.is_active == True)
@@ -638,7 +692,6 @@ def employeeinfo_edit():
 
         employee = db.session.scalars(stmt).first()
 
-
         form = EmployeeInfoForm(employee=employee)
 
     if form.validate_on_submit():
@@ -657,8 +710,6 @@ def employeeinfo_edit():
             db.session.commit()
 
             flash('직원 정보 수정 성공', category='is-success')
-
-
 
     return render_template('auth/userinfo_employeeinfo_form.html',
                            form=form)
