@@ -516,7 +516,7 @@ def employee_invite_accept(id):
             #### 기존 입사 정보가 있으면 따로 처리해야함.
             if prev_employee:
             #### 재입사라서 기존 정보가 있으면 그것만 업데이트하자
-            #### => 대신 [reference는 기존 것 유지 + 해고일은 None으로 비어야한다.]
+            #### => 대신 재직상태 변경으로 [reference는 기존 것 유지 + 해고일/휴직일은 None으로 비어야한다.]
                 #### 이미 user의 관계필드에 해당객체를 가지고 있는 상태에서 처리하면 session 이미 가지고 있다고 나온다.
                 prev_employee.update(
                     #### 재입사시 달라지는 부분 2
@@ -528,9 +528,12 @@ def employee_invite_accept(id):
                     birth=form.birth.data,
                     join_date=form.join_date.data,
                     job_status=form.job_status.data,
-                    # 재입사시 달라지는 부분
-                    # reference=prev_employee.reference,
+                    # 재입사해도 유지되는 부분
+                    # reference=reference,
+                    # 재입사시 달라지는 부분 => 재직상태변경으로 퇴직일/휴직일 비우기
                     resign_date=None,
+                    # 휴직일
+                    leave_date=None,
                 )
 
                 prev_employee.update_reference(f'재입사({format_date(form.join_date.data)})')

@@ -547,6 +547,8 @@ class Employee(BaseModel):
     # - 예약시에는 reserve_status가 대기 중인 것을 골라낼 것이다.
     job_status = Column(IntEnum(JobStatusType), default=JobStatusType.재직, nullable=False, index=True)
     resign_date = Column(Date, nullable=True)
+    # new : 휴직 상태의 최종휴직일을 알도록 칼럼을 추가한다
+    leave_date = Column(Date, nullable=True)
 
     reference = Column(String(128), nullable=True)
 
@@ -609,19 +611,28 @@ class Employee(BaseModel):
         return cls.job_status == JobStatusType.대기
 
     @hybrid_property
-    def is_resign(self):
+    def is_active(self):
+        return self.job_status == JobStatusType.재직
+
+    @is_active.expression
+    def is_active(cls):
+        return cls.job_status == JobStatusType.재직
+
+
+    @hybrid_property
+    def is_leaved(self):
         return self.job_status == JobStatusType.휴직
 
-    @is_resign.expression
-    def is_resign(cls):
+    @is_leaved.expression
+    def is_leaved(cls):
         return cls.job_status == JobStatusType.휴직
 
     @hybrid_property
-    def is_resign(self):
+    def is_resigned(self):
         return self.job_status == JobStatusType.퇴사
 
-    @is_resign.expression
-    def is_resign(cls):
+    @is_resigned.expression
+    def is_resigned(cls):
         return cls.job_status == JobStatusType.퇴사
 
     @property
@@ -657,14 +668,24 @@ class Employee(BaseModel):
         except:
             return None
 
+
     # 근무개월 수 (다음달 해당일시 차이가 1달로 +1)
     @property
     def months_and_days_from_join_date(self):
-        #### 이 사람이 퇴사했다면, 퇴사일을 기준으로 근무개월수를 세어야한다
-        if self.resign_date:
-            today_date = self.resign_date
-        else:
-            today_date = datetime.date.today()
+        # 재직상태에 따라 근무의 마지막일 찾기
+        # => 그림1: https://raw.githubusercontent.com/is3js/screenshots/main/image-20230114212700480.png
+        #### 이 사람이 퇴사한 상태라면, 퇴사일을 마지막으로 기준으로 근무 개월수를 세어야한다
+        if self.is_resigned:
+            end_date = self.resign_date
+        #### 이 사람이 휴직 상태라면, 부서취임정보에서 휴직일을 들고와야한다?
+        #### => 어차피 나중에 부서취임을 필수로 해서, 중간휴직-중간복직이 나올 것이기 때문에
+        ####    최종휴직일(nullable)칼럼을 만들고, 휴직상태시 최종 휴직날짜를 알게 한다
+        elif self.is_leaved:
+            end_date = self.leave_date
+        # 재직이나 대기상태
+        else: 
+            end_date = datetime.date.today()
+
         ## self.join_date + relativedelta(months=1) 는 정확히 다음달 같은 일을 나타낸다
         # - 2월1일(join) 입사했으면, 3월1일(today)에 연차가 생기도록, (딱 1달이 되는날)
         # - 차이가 1달이라는 말은, 시작일제외하고 [시작일로부터 차이가 한달]이 지났다는 말이다.
@@ -672,13 +693,15 @@ class Employee(BaseModel):
         # - 계산기준일에 relativedelta를 끼워서 계산하도록 한다.
         # - 월차휴가 계산과 동일하며, 월차는 연도제한 + 연차도 계산해야한다.
         months = 0
-        while today_date >= self.join_date + relativedelta(months=1):
-            today_date -= relativedelta(months=1)
+        while end_date >= self.join_date + relativedelta(months=1):
+            end_date -= relativedelta(months=1)
             months += 1
-        days = (today_date - self.join_date).days  # timedelta.days   not int()
+        days = (end_date - self.join_date).days  # timedelta.days   not int()
+
+
         return months, days
 
-    # 재직자 N년차(햇수) 1년차(0)부터 시작하며, 일한 개월수가 12가 넘어가야 2년차다
+    # 재직자 N년차(햇수) 1년차(0)부터 시작하며, 일한 개월 수가 12가 넘어가야 2년차다
     @property
     def years_from_join_date(self):
         months, _ = self.months_and_days_from_join_date
@@ -935,6 +958,8 @@ class Employee(BaseModel):
                 emp: Employee = cls.get_by_id(emp_id)
 
                 emp.job_status = job_status
+                #### 휴직시, 최종 휴직일칼럼도 채운다 like 퇴직
+                emp.leave_date = datetime.date.today()
 
                 # emp.reference = f'휴직({format_date(datetime.date.today())})'
                 emp.update_reference(f'휴직({format_date(datetime.date.today())})')

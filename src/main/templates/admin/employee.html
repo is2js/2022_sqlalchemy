@@ -210,7 +210,7 @@
                                 type="is-primary">
                             <template v-slot:content>
                                 {% for dept_and_pos in employee.get_dept_and_position_list() %}
-                                            <span class="has-text-white">
+                                            <span class="has-text-white is-size-7">
                                                 {{dept_and_pos[0]}} ({{dept_and_pos[1]}})
                                             </span></br>
                                 {% endfor %}
@@ -264,7 +264,7 @@
             <td>
                 {% if employee.reference %}
                 <b-tooltip
-                        position="is-left"
+                        position="is-right"
                         type="is-dark"
                 >
                     <template v-slot:content>
