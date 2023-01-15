@@ -247,7 +247,7 @@
             <!--                </div>-->
             <!--            </td>-->
 
-            <td><span class="is-size-7">{{employee.years_from_join_date}}년차({{ employee.working_days}})</span></td>
+            <td><span class="is-size-7">{{employee.years_from_join}}년차({{ employee.complete_working_date }})</span></td>
             <td><span class="is-size-7">
                 {% if employee.job_status.name == '대기' %}
                 <span class="tag is-info">{{ employee.job_status.name }}</span>

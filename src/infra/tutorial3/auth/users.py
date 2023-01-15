@@ -247,7 +247,6 @@ class User(BaseModel):
         for k, v in kwargs.items():
             setattr(self, k, v)
 
-
     def __repr__(self):
         info: str = f"{self.__class__.__name__}" \
                     f"[id={self.id!r}]"
@@ -618,7 +617,6 @@ class Employee(BaseModel):
     def is_active(cls):
         return cls.job_status == JobStatusType.재직
 
-
     @hybrid_property
     def is_leaved(self):
         return self.job_status == JobStatusType.휴직
@@ -668,10 +666,28 @@ class Employee(BaseModel):
         except:
             return None
 
+    ## self.join_date + relativedelta(months=1) 는 정확히 다음달 같은 일을 나타낸다
+    # - 2월1일(join) 입사했으면, 3월1일(today)에 연차가 생기도록, (딱 1달이 되는날)
+    # - 차이가 1달이라는 말은, 시작일제외하고 [시작일로부터 차이가 한달]이 지났다는 말이다.
+    #    3-1 = 시작일 빼고 2일,   차이6 => 시작일포함 7일, 시작일 제외 시작일부터 6일지남
+    # - 계산기준일에 relativedelta를 끼워서 계산하도록 한다.
+    # - 월차휴가 계산과 동일하며, 월차는 연도제한 + 연차도 계산해야한다.
+    def calc_complete_month_and_days(self, start_date, end_date):
+        months = 0
+        while end_date >= start_date + relativedelta(months=1):
+            end_date -= relativedelta(months=1)
+            months += 1
+        # 사실상 1개월만근이후 남은 days은 [월차]계산시 필요없다.
+        days = (end_date - start_date).days  # timedelta.days   not int()
+
+        return months, days
+
 
     # 근무개월 수 (다음달 해당일시 차이가 1달로 +1)
+    # 연차휴가 참고식: https://www.acmicpc.net/problem/23628
+    # https://www.saramin.co.kr/zf_user/tools/holi-calculator
     @property
-    def months_and_days_from_join_date(self):
+    def complete_working_months_and_days(self):
         # 재직상태에 따라 근무의 마지막일 찾기
         # => 그림1: https://raw.githubusercontent.com/is3js/screenshots/main/image-20230114212700480.png
         #### 이 사람이 퇴사한 상태라면, 퇴사일을 마지막으로 기준으로 근무 개월수를 세어야한다
@@ -683,8 +699,20 @@ class Employee(BaseModel):
         elif self.is_leaved:
             end_date = self.leave_date
         # 재직이나 대기상태
-        else: 
+        else:
             end_date = datetime.date.today()
+
+        #### with other entity
+        # 1) 복직일이 찍힌 휴직정보만 가져와야한다. 퇴사정보는 필요없다
+        #    복직일만 not None이면, 휴직은 이미 찍혀있으므로 복직일 찍힌 휴징정보만 가져오면 된다.
+        stmt = (
+            select(EmployeeDepartment)
+            .where(EmployeeDepartment.employee_id == self.id) # 내 취임정보 중
+            .where(EmployeeDepartment.reinstatement_date.isnot(None)) # 복직일이 찍힌 휴직~복직 정보만 가져온다
+
+        )
+        print(stmt)
+
 
         ## self.join_date + relativedelta(months=1) 는 정확히 다음달 같은 일을 나타낸다
         # - 2월1일(join) 입사했으면, 3월1일(today)에 연차가 생기도록, (딱 1달이 되는날)
@@ -692,35 +720,47 @@ class Employee(BaseModel):
         #    3-1 = 시작일 빼고 2일,   차이6 => 시작일포함 7일, 시작일 제외 시작일부터 6일지남
         # - 계산기준일에 relativedelta를 끼워서 계산하도록 한다.
         # - 월차휴가 계산과 동일하며, 월차는 연도제한 + 연차도 계산해야한다.
-        months = 0
-        while end_date >= self.join_date + relativedelta(months=1):
-            end_date -= relativedelta(months=1)
-            months += 1
-        days = (end_date - self.join_date).days  # timedelta.days   not int()
-
+        months, days = self.calc_complete_month_and_days(self.join_date, end_date)
 
         return months, days
 
-    # 재직자 N년차(햇수) 1년차(0)부터 시작하며, 일한 개월 수가 12가 넘어가야 2년차다
+    # 만근 개월수 => 만근 년수 만들기(원래는 해당연도별로 필터링해서, 해당연도 만근했는지 확인해야할 듯)
     @property
-    def years_from_join_date(self):
-        months, _ = self.months_and_days_from_join_date
-        years = (months // 12) + 1
+    def complete_working_years(self):
+        months, _ = self.complete_working_months_and_days
+        years, _ = divmod(months, 12)
         return years
 
-    # 연차휴가 참고식: https://www.acmicpc.net/problem/23628
-    # https://www.saramin.co.kr/zf_user/tools/holi-calculator
     @property
-    def working_days(self):
-        months, days = self.months_and_days_from_join_date
-        years, months = divmod(months, 12)  # 여기서 years는 N년차가 아니라, 0부터 시작하는 근무연수
+    def complete_working_date(self):
+        months, days = self.complete_working_months_and_days
+        years, months = divmod(months, 12)
 
-        result = f"{days}일"
+        result = f'{days}일'
         if months:
             result = f"{months}개월" + result
         if years:
-            result = f"{years}년" + result
+            result = f"{years}개월" + result
+
         return result
+
+
+    #### 여기는 1개월만근과 관계없이 입사 N년차(1부터 시작)
+    @property
+    def years_from_join(self):
+        if self.is_resigned:
+            end_date = self.resign_date
+        elif self.is_leaved:
+            end_date = self.leave_date
+        else:
+            end_date = datetime.date.today()
+
+        years = 1
+        while end_date >= self.join_date + relativedelta(years=1):
+            end_date -= relativedelta(years=1)
+            years += 1
+
+        return years
 
     @property
     def employee_number(self):
@@ -936,7 +976,7 @@ class Employee(BaseModel):
                 #### 관계필드를 조회하는 순간 같은세션에서 같은 key의 객체를 가져오게 되므로
                 #### USER role이 아닌 경우에만, USER role을 찾아서 대입해준다.
                 if emp.user.role.default != True:
-                    emp.user.role = Role.get_by_name('USER') # emp.role은 User의 role을 가져오는 식이므로 변경에 못쓴다.
+                    emp.user.role = Role.get_by_name('USER')  # emp.role은 User의 role을 가져오는 식이므로 변경에 못쓴다.
 
                 db.session.add(emp)
 
@@ -966,6 +1006,7 @@ class Employee(BaseModel):
 
                 db.session.add(emp)
 
+                ####  휴직시 기존 취임정보(들)에 휴직일을 찍었음.
                 emp_dept_list: list = EmployeeDepartment.get_by_emp_id(emp.id)
                 for emp_dept in emp_dept_list:
                     emp_dept.leave_date = datetime.date.today()
@@ -1009,8 +1050,6 @@ class Employee(BaseModel):
 
         for k, v in kwargs.items():
             setattr(self, k, v)
-
-
 
 
 #### 초대는 분야마다 초대하는 content(직원초대 -> Role 중 1개)가 다르기 때문에
@@ -1062,4 +1101,3 @@ class EmployeeInvite(InviteBaseModel):
 
             invite_list = db.session.scalars(stmt).all()
         return invite_list
-
