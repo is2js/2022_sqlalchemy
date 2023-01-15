@@ -14,7 +14,7 @@ from src.config import project_config
 from src.infra.config.base import Base
 from src.infra.config.connection import DBConnectionHandler
 from src.main.templates.filters import format_date
-from .departments import EmployeeDepartment, Department, EmployeeLeaveHistory
+from .departments import EmployeeDepartment, Department
 from src.infra.tutorial3.common.base import BaseModel, InviteBaseModel
 from src.infra.tutorial3.common.int_enum import IntEnum
 
@@ -1058,6 +1058,17 @@ class Employee(BaseModel):
         for k, v in kwargs.items():
             setattr(self, k, v)
 
+    #### with other entity
+    def get_leave_history(self):
+        with DBConnectionHandler() as db:
+            stmt = (
+                select(EmployeeLeaveHistory)
+                .where(EmployeeLeaveHistory.employee_id == self.id)  # 있다는 말은 이미 휴직/복직 set완성
+                .order_by(EmployeeLeaveHistory.add_date)  # 시간순으로 가져오기
+            )
+
+            return db.session.scalars(stmt).all()
+
 
 #### 초대는 분야마다 초대하는 content(직원초대 -> Role 중 1개)가 다르기 때문에
 #### => Type을 놓지않고, 필드를 다르게해서 새로 만들어야한다.
@@ -1108,3 +1119,33 @@ class EmployeeInvite(InviteBaseModel):
 
             invite_list = db.session.scalars(stmt).all()
         return invite_list
+
+
+class EmployeeLeaveHistory(BaseModel):
+    __tablename__ = 'employee_leave_histories'
+
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
+
+    employee_id = Column(Integer, ForeignKey('employees.id'),
+                         nullable=False, index=True)
+
+    #### 원래는 직원별, 부서별, 휴~복직 정보를 모으려고 했는데
+    #### => 어차피 내가 속한 부서들 다 가져와서 한번에 처리하므로
+    #### => 아예 부서정보를 빼고 1번만 생성되도록 한다면, 나중에 중복제거를 안해도 된다.
+    #### => 그렇다면, 취임정보(employee_departments)테이블과 무관하게 생성해도 된다.
+    #### => 직원이 휴직하면 소속부서 전체가 휴직정보를 남기지만,
+    ####    복직시 history는 직원단위로 1개만 남기게 한다?!
+    # department_id = Column(Integer, ForeignKey('employee_departments.department_id'),
+    #                        nullable=False, index=True)
+    #### 부서정보가 빠지면, EmpDept가 아닌 Emp와 1:M의 관계로서, 반대로 관계객체도 만들 수 있다?!
+    employee = relationship("Employee", backref="employee_leave_histories", foreign_keys=[employee_id],
+                            )
+
+    leave_date = Column(Date, nullable=False)
+    reinstatement_date = Column(Date, nullable=False)
+
+    def __repr__(self):
+        info: str = f"{self.__class__.__name__}" \
+                    f"[직원id={self.employee_id!r}," \
+                    f" 휴직={self.leave_date!r} ~ 복직={self.reinstatement_date!r}]"
+        return info

@@ -6,7 +6,7 @@ from .auth import (
     User, Role, Permission, Roles, Employee, EmployeeInvite, JobStatusType,
     Department, DepartmentType,
     EmployeeDepartment,
-    EmployeeLeaveHistory
+    EmployeeLeaveHistory,
 )
 
 from .admin import Banner, BannerType, Setting
