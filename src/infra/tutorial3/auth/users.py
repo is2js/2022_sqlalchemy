@@ -14,7 +14,7 @@ from src.config import project_config
 from src.infra.config.base import Base
 from src.infra.config.connection import DBConnectionHandler
 from src.main.templates.filters import format_date
-from .departments import EmployeeDepartment, Department
+from .departments import EmployeeDepartment, Department, EmployeeLeaveHistory
 from src.infra.tutorial3.common.base import BaseModel, InviteBaseModel
 from src.infra.tutorial3.common.int_enum import IntEnum
 
@@ -740,7 +740,7 @@ class Employee(BaseModel):
         if months:
             result = f"{months}개월" + result
         if years:
-            result = f"{years}개월" + result
+            result = f"{years}년" + result
 
         return result
 
@@ -1001,7 +1001,6 @@ class Employee(BaseModel):
                 #### 휴직시, 최종 휴직일칼럼도 채운다 like 퇴직
                 emp.leave_date = datetime.date.today()
 
-                # emp.reference = f'휴직({format_date(datetime.date.today())})'
                 emp.update_reference(f'휴직({format_date(datetime.date.today())})')
 
                 db.session.add(emp)
@@ -1010,6 +1009,8 @@ class Employee(BaseModel):
                 emp_dept_list: list = EmployeeDepartment.get_by_emp_id(emp.id)
                 for emp_dept in emp_dept_list:
                     emp_dept.leave_date = datetime.date.today()
+                    ####  new) for leave history => 휴직시, 최종복직일을 비우는 로직 추가
+                    emp_dept.reinstatement_date = None
 
                 db.session.add_all(emp_dept_list)
                 db.session.commit()
@@ -1023,16 +1024,26 @@ class Employee(BaseModel):
 
                 emp.job_status = job_status
 
-                # emp.reference = f'복직({format_date(datetime.date.today())})'
                 emp.update_reference(f'복직({format_date(datetime.date.today())})')
 
                 db.session.add(emp)
+
 
                 emp_dept_list: list = EmployeeDepartment.get_by_emp_id(emp.id)
                 for emp_dept in emp_dept_list:
                     emp_dept.reinstatement_date = datetime.date.today()
 
                 db.session.add_all(emp_dept_list)
+
+                #### new) 복직시, 휴-복직일이 완성되어, leave_history를 남긴다
+                leave_history = EmployeeLeaveHistory(employee=emp,
+                                               # 휴직일을, 내가속한부서들에서 가져오지말고, emp에 만들어준 최종휴직일을 써보자.
+                                               leave_date=emp.leave_date,
+                                               # 복직일은, 당일이므로 toady를 취임정보에 넣듯이 today로 처리해보자.
+                                               reinstatement_date=datetime.date.today(),
+                                               )
+                db.session.add(leave_history)
+
                 db.session.commit()
 
                 return emp

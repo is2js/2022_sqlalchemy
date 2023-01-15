@@ -3,5 +3,6 @@ from .users import (
 )
 from .departments import (
     Department, DepartmentType,
-    EmployeeDepartment
+    EmployeeDepartment,
+    EmployeeLeaveHistory
 )
