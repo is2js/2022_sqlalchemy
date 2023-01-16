@@ -1,5 +1,6 @@
 import datetime
 import enum
+import itertools
 import uuid
 
 from dateutil.relativedelta import relativedelta
@@ -17,6 +18,7 @@ from src.main.templates.filters import format_date
 from .departments import EmployeeDepartment, Department
 from src.infra.tutorial3.common.base import BaseModel, InviteBaseModel
 from src.infra.tutorial3.common.int_enum import IntEnum
+from ..common.grouped import grouped
 
 
 class SexType(enum.IntEnum):
@@ -720,8 +722,6 @@ class Employee(BaseModel):
         # - 월차휴가 계산과 동일하며, 월차는 연도제한 + 연차도 계산해야한다.
         months, days = self.calc_complete_month_and_days(self.join_date, end_date)
 
-        if self.id == 4:
-            print(end_date, months, days)
         return months, days
 
 
@@ -1059,7 +1059,7 @@ class Employee(BaseModel):
             setattr(self, k, v)
 
     #### with other entity
-    def get_leave_history(self):
+    def get_leave_histories(self):
         with DBConnectionHandler() as db:
             stmt = (
                 select(EmployeeLeaveHistory)
@@ -1069,6 +1069,25 @@ class Employee(BaseModel):
 
             return db.session.scalars(stmt).all()
 
+    #### with other entity
+    def calc_monthly_vacations(self):
+        leave_histories = self.get_leave_histories()
+        # 1) 중간에 휴-복직 기록이 없는 경우, 입사-마지막근무일로 만근개월수를 계산한다
+        if not leave_histories:
+            complete_months, _ = self.calc_complete_month_and_days(self.join_date, self.last_working_date)
+            return complete_months
+        # 2) 중간 휴-복직 기록이 있을 경우, 입사일-마지막근무일과 모두 합해서, 정렬한 뒤,
+        #   => 2개씩 짝지어 섹션마다 만근개월수를 계산한다.
+        else:
+            dates = [self.join_date, self.last_working_date]
+            # 휴-복직 기록의 날짜만 골라서,  1차원 list로 평탄화하여 extends
+            dates += list(itertools.chain(*[(x.leave_date, x.reinstatement_date) for x in leave_histories]))
+
+            total_complete_months = 0
+            for srt, end in grouped(sorted(dates), 2):
+                complete_months, _ = self.calc_complete_month_and_days(srt, end)
+                total_complete_months += complete_months
+            return total_complete_months
 
 #### 초대는 분야마다 초대하는 content(직원초대 -> Role 중 1개)가 다르기 때문에
 #### => Type을 놓지않고, 필드를 다르게해서 새로 만들어야한다.
