@@ -102,7 +102,7 @@
 <!-- 위쪽 아래쪽 table or form 공간 -->
 {% block table_content %}
 <div class="table-container">
-    <table class="table is-fullwidth is-hoverable is-striped is-vcentered">
+    <table class="table is-fullwidth is-hoverable is-striped is-vcentered my-3">
         <thead>
         <tr>
             <th>사번</th>
@@ -412,6 +412,17 @@
                         {% endfor %}
                     </b-select>
                 </b-field>
+                <!-- INPUT3:  -->
+                <b-field label="날짜">
+                    <b-datepicker
+                            inline
+                            icon="calendar-today"
+                            v-model="date"
+                    >
+                    </b-datepicker>
+                </b-field>
+                <!-- date로 작성하면 => base에서 stringDate로 watch로 보고있다 -->
+                <input type="hidden" name="date" v-model="stringDate">
 
             </section>
             <footer class="modal-card-foot">
@@ -496,4 +507,8 @@
 </script>
 {% endblock extra_foot_script %}
 
-{% block vue_script %}{% endblock vue_script %}
+{% block vue_script %}
+<script>
+    app._data.date = new Date()
+</script>
+{% endblock vue_script %}

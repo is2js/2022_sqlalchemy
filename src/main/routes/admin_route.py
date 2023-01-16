@@ -973,12 +973,14 @@ def employee():
     pagination = paginate(stmt, page=page, per_page=10)
     employee_list = pagination.items
 
+
     #### 재직상태변경 modal 속 select option 추가로 내려보내기
     job_status_list = JobStatusType.choices()
     # print(job_status_list)
     # [(1, '재직'), (2, '휴직'), (3, '퇴사')]
     #### => 여기서만 재직 = 1을 복직으로 변경해서 내려주자. (form에서는 재직으로?)
     job_status_list = job_status_list[1:] + [(1, '복직')]
+    # [(2, '휴직'), (3, '퇴사') (1, '복직')]
 
 
     return render_template('admin/employee.html',
@@ -1235,6 +1237,9 @@ def employee_edit(id):
 def employee_job_status_change():
     employee_id = request.form.get('employee_id', type=int)
     job_status = request.form.get('job_status', type=int)
+    target_date = request.form.get('date',
+                                   type=lambda x: datetime.strptime(x, '%Y-%m-%d').date()
+                                   )
 
     with DBConnectionHandler() as db:
         employee = db.session.get(Employee, employee_id)
@@ -1248,9 +1253,19 @@ def employee_job_status_change():
             flash(f'퇴사자는 재직상태변경이 불가하며 User관리에서 직원초대로 새로 입사해야합니다. ', category='is-danger')
             return redirect(redirect_url())
 
+        #### new => 퇴직은 입사일보다 더 이전에는 할 수 없도록 검사하기
+        if job_status == JobStatusType.퇴사 and target_date < employee.join_date:
+            flash(f'입사일보다 더 이전으로 퇴사할 수 없습니다. ', category='is-danger')
+            return redirect(redirect_url())
+
         #### 복직은 휴직자만 가능하도록 걸기
         if job_status == JobStatusType.재직 and employee.job_status != JobStatusType.휴직:
             flash(f'복직은 휴직자만 선택할 수 있습니다. ', category='is-danger')
+            return redirect(redirect_url())
+
+        #### new => 복직은 최종 휴직일(in emp)보다 더 이전에는 할 수 없도록 검사하기
+        if job_status == JobStatusType.재직 and target_date < employee.leave_date:
+            flash(f'휴직일보다 더 이전으로 복직할 수 없습니다. ', category='is-danger')
             return redirect(redirect_url())
 
         #### 이미 해당 재직상태인데 같은 것으로 변경하는 것을 막기 위한 처리문
@@ -1259,7 +1274,8 @@ def employee_job_status_change():
             flash(f'같은 상태로 변경할 수 없습니다. ', category='is-danger')
             return redirect(redirect_url())
 
-    Employee.change_job_status(employee_id, job_status)
+    # Employee.change_job_status(employee_id, job_status)
+    Employee.change_job_status(employee_id, job_status, target_date)
     flash(f'재직상태변경이 완료되었습니다.', category='is-success')
 
     # flash('자신보다 아래 직위의 직원만 수정할 수 있습니다.', category='is-danger')

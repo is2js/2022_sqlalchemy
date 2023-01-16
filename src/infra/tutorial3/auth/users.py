@@ -1013,7 +1013,7 @@ class Employee(BaseModel):
 
     ### with other entity
     @classmethod
-    def change_job_status(cls, emp_id: int, job_status: int):
+    def change_job_status(cls, emp_id: int, job_status: int, target_date):
         #### 퇴사상태로 변경하는 경우 -> job_stauts 외 resign_date 할당 + (other entity)role을 default인 USER로 변경
         #     - 관계entity의 속성을 변경해야하므로, sql으로 하지 않고, 객체를 찾아서 변경하도록 변경한다.
         #### 그외 EmployeDepartment에서 자신의 취임정보에 dismissal_date를 할당하여 비활성화 한다.
@@ -1022,7 +1022,8 @@ class Employee(BaseModel):
                 emp: Employee = cls.get_by_id(emp_id)
 
                 emp.job_status = job_status
-                emp.resign_date = datetime.date.today()
+                # emp.resign_date = datetime.date.today()
+                emp.resign_date = target_date
 
                 #### 관계필드를 조회하는 순간 같은세션에서 같은 key의 객체를 가져오게 되므로
                 #### USER role이 아닌 경우에만, USER role을 찾아서 대입해준다.
@@ -1035,7 +1036,7 @@ class Employee(BaseModel):
                 # -> 모드 해임일을 입력하여 비활성화 시킨다.
                 emp_dept_list: list = EmployeeDepartment.get_by_emp_id(emp.id)
                 for emp_dept in emp_dept_list:
-                    emp_dept.dismissal_date = datetime.date.today()
+                    emp_dept.dismissal_date = target_date
 
                 db.session.add_all(emp_dept_list)
                 db.session.commit()
@@ -1050,16 +1051,16 @@ class Employee(BaseModel):
 
                 emp.job_status = job_status
                 #### 휴직시, 최종 휴직일칼럼도 채운다 like 퇴직
-                emp.leave_date = datetime.date.today()
+                emp.leave_date = target_date
 
-                emp.update_reference(f'휴직({format_date(datetime.date.today())})')
+                emp.update_reference(f'휴직({format_date(target_date)})')
 
                 db.session.add(emp)
 
                 ####  휴직시 기존 취임정보(들)에 휴직일을 찍었음.
                 emp_dept_list: list = EmployeeDepartment.get_by_emp_id(emp.id)
                 for emp_dept in emp_dept_list:
-                    emp_dept.leave_date = datetime.date.today()
+                    emp_dept.leave_date = target_date
                     ####  new) for leave history => 휴직시, 최종복직일을 비우는 로직 추가
                     emp_dept.reinstatement_date = None
 
@@ -1075,13 +1076,13 @@ class Employee(BaseModel):
 
                 emp.job_status = job_status
 
-                emp.update_reference(f'복직({format_date(datetime.date.today())})')
+                emp.update_reference(f'복직({format_date(target_date)})')
 
                 db.session.add(emp)
 
                 emp_dept_list: list = EmployeeDepartment.get_by_emp_id(emp.id)
                 for emp_dept in emp_dept_list:
-                    emp_dept.reinstatement_date = datetime.date.today()
+                    emp_dept.reinstatement_date = target_date
 
                 db.session.add_all(emp_dept_list)
 
@@ -1090,7 +1091,7 @@ class Employee(BaseModel):
                                                      # 휴직일을, 내가속한부서들에서 가져오지말고, emp에 만들어준 최종휴직일을 써보자.
                                                      leave_date=emp.leave_date,
                                                      # 복직일은, 당일이므로 toady를 취임정보에 넣듯이 today로 처리해보자.
-                                                     reinstatement_date=datetime.date.today(),
+                                                     reinstatement_date=target_date,
                                                      )
                 db.session.add(leave_history)
 
