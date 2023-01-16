@@ -675,12 +675,49 @@ class Employee(BaseModel):
     # - 계산기준일에 relativedelta를 끼워서 계산하도록 한다.
     # - 월차휴가 계산과 동일하며, 월차는 연도제한 + 연차도 계산해야한다.
     def calc_complete_month_and_days(self, start_date, end_date):
+        #### 시작일이 2년차 시작일을 넘어가면 월차계산을 할 필요가 없다.
+        #### 또는 srt는 1년만인데, end가 1년을 넘어가면 또 계산안한다.
+        # 참고(연차휴가 퇴직정산): https://www.nodong.kr/AnnuaVacationComparison
+        # 참고(만 1년(365일) 근무 후 퇴직시 연차휴가 발생 여부): https://www.nodong.kr/holyday/2265906
+
+        next_year_start_date = self.join_date + relativedelta(years=1)
+        if start_date >= next_year_start_date:
+            # print(f'시작일{start_date}가 입사1년(2년차시작, 12개째 발생지점){next_year_start_date}을 넘어서는 순간 월차계산은 0으로 return된다')
+            return 0, 0
+
+        #### (start가 월차발생지점보다 작은데)
+        #### 마지막 근무일이 2년차 시작일(deadline_date)보다 큰 경우,
+        #### 월차 11개의 미자믹은, 1.1입사 -> 2.1부터 12.1까지만 판단하므로
+        #### => 다음해 1.1은 계산시 사용되면 안된다.
+        ####    월차발생기준일은 2.1등 +1달한 것의 기준인데, 12개발생하는 기준점인 다음해 1.1을 제외시켜 자제적으로 계산 안되게 한다
+
+        # if end_date >= next_year_start_date:
+        #     12개 발생 기준점을 없애버리자.=> 계산식을 안고쳐도 된다?!
+        # print(f'마지막 근무일{end_date}가 입사후1년 == 12번째 월차발생지점{next_year_start_date}을 넘어서는 순간 마지막 근무일 대신 deadline_date - 1로 end_date를 바꿔서 일을 빼서, 발생못하게 막는다(최대 1년마지막날)')
+        # end_date = next_year_start_date - relativedelta(days=1)
+
+        # end_date = min(end_date, next_year_start_date - relativedelta(days=1))
+
+        #### end_date를 12개 발생지점(2년차 시작일)이 안되도록 -1로 계산되게 하여 11개로 제한했지만,
+        #### => 중간에 맞춰서  1달 쉰사람은, 11개 발생지점이 되기도 한다.
+        #### => end_date를 12개 발생지점(2년차 시작일, 다음해 입사일)까지 허용하되
+        ####   반복문에서 1달씩 누적시, 11개를 넘지 못하도록 한다.
+        end_date = min(end_date, next_year_start_date)
+
         months = 0
         while end_date >= start_date + relativedelta(months=1):
             end_date -= relativedelta(months=1)
-            months += 1
-        # 사실상 1개월만근이후 남은 days은 [월차]계산시 필요없다.
+            # months += 1
+            #### 원래는 각 구간별 11개 이하가 아니라, 바깥에서 누적되는 것이 11개 이하가 되도록 유지해야하지만
+            #### 1) 휴직없이 풀로 일한다 => 누적없이 이 메서드 1번만 타서 전체가 11개이하가 된다.
+            #### 2) 중간에 휴직을 짧게 했다 => 직전 누적월차를 고려해서 11개 이하가 되도록 유지해야하지만
+            ####    => 휴직을 1번이라도 한 이상, 이미 1개를 놓치기 때문에, 12개발생지점까지 카운팅한다손 치더라도,
+            ####       최대 12개 발생가능 중에 1개는 무조건 깍여서 최대 11개가 된다.
+            if months < 11:
+                months += 1
 
+
+        # 사실상 1개월만근이후 남은 days은 [월차]계산시 필요없다.
         days = (end_date - start_date).days  # timedelta.days   not int()
 
         return months, days
@@ -691,13 +728,17 @@ class Employee(BaseModel):
         # => 그림1: https://raw.githubusercontent.com/is3js/screenshots/main/image-20230114212700480.png
         #### 이 사람이 퇴사한 상태라면, 퇴사일을 마지막으로 기준으로 근무 개월수를 세어야한다
         if self.is_resigned:
-            end_date = self.resign_date
+
+            # end_date = self.resign_date
+            #### 퇴직일이 해당일이라면, 하루 전이 마지막 근무일이다.
+            end_date = self.resign_date - relativedelta(days=1)
         #### 이 사람이 휴직 상태라면, 부서취임정보에서 휴직일을 들고와야한다?
         #### => 어차피 나중에 부서취임을 필수로 해서, 중간휴직-중간복직이 나올 것이기 때문에
         ####    최종휴직일(nullable)칼럼을 만들고, 휴직상태시 최종 휴직날짜를 알게 한다
         elif self.is_leaved:
-            end_date = self.leave_date
-        # 재직이나 대기상태
+            #### 휴직일이 해당일이라면, 그 전날까지가 근무일이다.
+            end_date = self.leave_date - relativedelta(days=1)
+        # 재직이나 대기상태 => 해당일도 근무일이다.
         else:
             end_date = datetime.date.today()
         return end_date
@@ -706,13 +747,8 @@ class Employee(BaseModel):
     # 연차휴가 참고식: https://www.acmicpc.net/problem/23628
     # https://www.saramin.co.kr/zf_user/tools/holi-calculator
     @property
-    def complete_working_months_and_days(self):
-        end_date = self.last_working_date
-
-
-        #### with other entity
-
-
+    def complete_working_months_and_last_month_days(self):
+        # end_date = self.last_working_date
 
         ## self.join_date + relativedelta(months=1) 는 정확히 다음달 같은 일을 나타낸다
         # - 2월1일(join) 입사했으면, 3월1일(today)에 연차가 생기도록, (딱 1달이 되는날)
@@ -720,21 +756,41 @@ class Employee(BaseModel):
         #    3-1 = 시작일 빼고 2일,   차이6 => 시작일포함 7일, 시작일 제외 시작일부터 6일지남
         # - 계산기준일에 relativedelta를 끼워서 계산하도록 한다.
         # - 월차휴가 계산과 동일하며, 월차는 연도제한 + 연차도 계산해야한다.
-        months, days = self.calc_complete_month_and_days(self.join_date, end_date)
+        # months, days = self.calc_complete_month_and_days(self.join_date, end_date)
 
-        return months, days
+        leave_histories = self.get_leave_histories()
+        # 1) 중간에 휴-복직 기록이 없는 경우, 입사-마지막근무일로 만근개월수를 계산한다
+        if not leave_histories:
+            complete_months, last_month_days = self.calc_complete_month_and_days(self.join_date, self.last_working_date)
+            # print(f"휴-복직 없는 놈({self.join_date}~{self.last_working_date}) => 한번에 계산 {complete_months, last_month_days}")
+            return complete_months, last_month_days
+        # 2) 중간 휴-복직 기록이 있을 경우, 입사일-마지막근무일과 모두 합해서, 정렬한 뒤,
+        #   => 2개씩 짝지어 섹션마다 만근개월수를 계산한다.
+        else:
+            dates = [self.join_date, self.last_working_date]
+            # 휴-복직 기록의 날짜만 골라서,  1차원 list로 평탄화하여 extends
+            dates += list(itertools.chain(*[(x.leave_date, x.reinstatement_date) for x in leave_histories]))
 
+            total_complete_months = 0
+            last_month_days = None
+            for srt, end in grouped(sorted(dates), 2):
+                complete_months, remain_days = self.calc_complete_month_and_days(srt, end)
+                total_complete_months += complete_months
+                last_month_days = remain_days
+                # print(f"휴-복직 있는놈({srt}~{end})=> 매번 계산 {complete_months, remain_days}")
+            # print(f"휴-복직 있는놈=> 최종 계산 {total_complete_months, last_month_days}")
+            return total_complete_months, last_month_days
 
     # 만근 개월수 => 만근 년수 만들기(원래는 해당연도별로 필터링해서, 해당연도 만근했는지 확인해야할 듯)
     @property
     def complete_working_years(self):
-        months, _ = self.complete_working_months_and_days
+        months, _ = self.complete_working_months_and_last_month_days
         years, _ = divmod(months, 12)
         return years
 
     @property
     def complete_working_date(self):
-        months, days = self.complete_working_months_and_days
+        months, days = self.complete_working_months_and_last_month_days
         years, months = divmod(months, 12)
 
         result = f'{days}일'
@@ -744,7 +800,6 @@ class Employee(BaseModel):
             result = f"{years}년" + result
 
         return result
-
 
     #### 여기는 1개월만근과 관계없이 입사 N년차(1부터 시작)
     @property
@@ -1024,7 +1079,6 @@ class Employee(BaseModel):
 
                 db.session.add(emp)
 
-
                 emp_dept_list: list = EmployeeDepartment.get_by_emp_id(emp.id)
                 for emp_dept in emp_dept_list:
                     emp_dept.reinstatement_date = datetime.date.today()
@@ -1033,11 +1087,11 @@ class Employee(BaseModel):
 
                 #### new) 복직시, 휴-복직일이 완성되어, leave_history를 남긴다
                 leave_history = EmployeeLeaveHistory(employee=emp,
-                                               # 휴직일을, 내가속한부서들에서 가져오지말고, emp에 만들어준 최종휴직일을 써보자.
-                                               leave_date=emp.leave_date,
-                                               # 복직일은, 당일이므로 toady를 취임정보에 넣듯이 today로 처리해보자.
-                                               reinstatement_date=datetime.date.today(),
-                                               )
+                                                     # 휴직일을, 내가속한부서들에서 가져오지말고, emp에 만들어준 최종휴직일을 써보자.
+                                                     leave_date=emp.leave_date,
+                                                     # 복직일은, 당일이므로 toady를 취임정보에 넣듯이 today로 처리해보자.
+                                                     reinstatement_date=datetime.date.today(),
+                                                     )
                 db.session.add(leave_history)
 
                 db.session.commit()
@@ -1070,24 +1124,33 @@ class Employee(BaseModel):
             return db.session.scalars(stmt).all()
 
     #### with other entity
-    def calc_monthly_vacations(self):
-        leave_histories = self.get_leave_histories()
-        # 1) 중간에 휴-복직 기록이 없는 경우, 입사-마지막근무일로 만근개월수를 계산한다
-        if not leave_histories:
-            complete_months, _ = self.calc_complete_month_and_days(self.join_date, self.last_working_date)
-            return complete_months
-        # 2) 중간 휴-복직 기록이 있을 경우, 입사일-마지막근무일과 모두 합해서, 정렬한 뒤,
-        #   => 2개씩 짝지어 섹션마다 만근개월수를 계산한다.
-        else:
-            dates = [self.join_date, self.last_working_date]
-            # 휴-복직 기록의 날짜만 골라서,  1차원 list로 평탄화하여 extends
-            dates += list(itertools.chain(*[(x.leave_date, x.reinstatement_date) for x in leave_histories]))
+    @property
+    def vacations_with_description(self):
+        # 1) 입사1년차(1년미만 근무)인 경우, 만근 개월 수 => [1년미만만 알아서 계산하는 월차]를 그대로 반환한다
+        complete_months, _ = self.complete_working_months_and_last_month_days
+        if self.years_from_join < 2:
+            # print('1년차 미만이시네요. 월차만 계산합니다.')
+            return complete_months, f"{complete_months}(1년미만)"
+        # 2) 입사2년차부터는 입사1년차동안 출근율 80%이상 출근시, 2년차 1일차에 [연차]가 15개가 공짜로 생긴다
+        #    기존 1년차 최대 11개에서 + 2~3년차는 매년 +15개씩, 3~4년차는 16개씩 증가한다
+        #   => 그렇다면, [월차]계산은 1년차까지만 하고 나머지는 숫자로 누적해얗나다.
+        #   => 월차계산시, end_date를 최대 1년으로 계산해야한다.
+        #   => srt, end 계산하기 전에, dates목록에서 1년차를 넘어간 것들은 빼야한다?!
 
-            total_complete_months = 0
-            for srt, end in grouped(sorted(dates), 2):
-                complete_months, _ = self.calc_complete_month_and_days(srt, end)
-                total_complete_months += complete_months
-            return total_complete_months
+        # (2년차 이상) => 2년차 시작일로부터 1년씩 더해가면서, 발생시점을 넘기면 +15,+15, +16, +16
+        if self.years_from_join < 4:
+            # print('2~3년차시네요. 1년간 월차 + 매년 15개씩 만 계산합니다.')
+            # 2, 3년차에는 각각 1*15 , 2* 15를 더한다.
+            return complete_months + (
+                        self.years_from_join - 1) * 15, f"{complete_months}(1년미만)+15*{(self.years_from_join - 1)}(2~3년차)"
+        # (4년차 이상부터) 2개(2,3년차)를 15, 나머지는 16을 더한다.
+        else:
+            # print('4년차이상이시네요. 1년간 월차 + 2년간(2,3년차) 15개씩 + 4년차부터 16개씩')
+            return complete_months + 2 * 15 + (
+                        self.years_from_join - 3) * 16, f"{complete_months}(1년미만)+15*{(self.years_from_join - 1)}(2~3년차) + 16*{(self.years_from_join - 3)}(4년차이후)"
+
+
+
 
 #### 초대는 분야마다 초대하는 content(직원초대 -> Role 중 1개)가 다르기 때문에
 #### => Type을 놓지않고, 필드를 다르게해서 새로 만들어야한다.
