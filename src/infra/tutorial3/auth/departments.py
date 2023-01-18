@@ -68,6 +68,41 @@ class DepartmentType(enum.IntEnum):
         elif self == DepartmentType.위원:
             return '위원장' if is_leader else '위원'
 
+    # #### front에서 고르기 위해, 부서종류별로 내려주는 메서드
+    # def get_positions(self, dep_name):
+    #     # 1) 부/장부서 => ~장, ~부장
+    #     if self == DepartmentType.부장:
+    #         return dep_name + ('' if dep_name.endswith('장') else '장')  # 장으로 끝나지 않는 간호부 => 간호부 + 장이 되게 한다
+    #     # 2) 실 => 실장 - 실원
+    #     elif self == DepartmentType.실:
+    #         return '실장', '실원'
+    #     # 3) 팀 => 팀장 - 팀원
+    #     elif self == DepartmentType.팀:
+    #         return '팀장', '팀원'
+    #     # 4) 과 => 과장 - 팀원
+    #     elif self == DepartmentType.과:
+    #         return '과장', '팀원'
+    #     # 5) 치료실 => 실장 - 치료사
+    #     elif self == DepartmentType.치료실:
+    #         return '실장', '치료사'
+    #     # 6) 원장단 => 대표원장 - 원장
+    #     elif self == DepartmentType.원장단:
+    #         return '대표원장', '원장'
+    #     # 7) 진료과 => 과장 - 원장
+    #     elif self == DepartmentType.진료과:
+    #         return '과장', '원장'
+    #     # 8) 의료센터 => 센터장 - 원장
+    #     elif self == DepartmentType.의료센터:
+    #         return '센터장', '원장'
+    #     # 9) 연구소 => 연구소장 - 연구원
+    #     elif self == DepartmentType.연구소:
+    #         return '연구소장', '연구원'
+    #     # 10) 센터 => 센터장 - 센터원
+    #     elif self == DepartmentType.센터:
+    #         return '센터장', '센터원'
+    #     # 11) 위원회 => 위원장 - 위원
+    #     elif self == DepartmentType.위원:
+    #         return '위원장', '위원'
 
 class Department(BaseModel):
     _N = 3
@@ -217,14 +252,34 @@ class Department(BaseModel):
             return dep
 
     @classmethod
-    def get_all(cls):
+    def get_by_id(cls, id: str):
         with DBConnectionHandler() as db:
             dep = db.session.scalars(
                 select(cls)
                 .where(cls.status == 1)
+                .where(cls.id == id)
+            ).first()
+            return dep
+
+    @classmethod
+    def get_all(cls):
+        with DBConnectionHandler() as db:
+            depts = db.session.scalars(
+                select(cls)
+                .where(cls.status == 1)
                 .order_by(cls.path)
             ).all()
-            return dep
+            return depts
+
+    @classmethod
+    def get_all_tuple_list(cls):
+        with DBConnectionHandler() as db:
+            depts = db.session.scalars(
+                select(cls)
+                .where(cls.status == 1)
+                .order_by(cls.path)
+            ).all()
+            return [(x.id, x.name) for x in depts]
 
     @classmethod
     def change_sort_by_id(cls, id_a, id_b):
@@ -280,7 +335,17 @@ class Department(BaseModel):
             result += child.get_self_and_children_id_list()
         return result
 
-    def get_selectable_departments(self):
+    def get_self_and_children_dept_info_tuple_list(self):
+        # (3-1) 재귀를 돌며 누적시킬 것을 현재부터 뽑아낸다? => 첫 입력인자에 계속 누적시킬 거면, return없이 list에 그대로 append만 해주면 된다.
+        result = [(self.id, self.name, self.level)]
+        # (3-1) 현재(부모)부서에서 자식들을 뽑아 순회시키며, id만 뽑아놓고, 이제 자신이 부모가 된다.
+        # => 자신처리+중간누적을 반환하는 메서드라면, 재귀호출후 반환값을 부모의 누적자료구조에 추가누적해준다.
+        # for child in parent.children:
+        for child in self.get_children():
+            result += child.get_self_and_children_dept_info_tuple_list()
+        return result
+
+    def get_selectable_departments_for_edit(self):
         departments = Department.get_all()
         selectable_parent_departments = [(x.id, x.name) for x in departments if
                                          x.id not in self.get_self_and_children_id_list()]
@@ -335,18 +400,18 @@ class Department(BaseModel):
             return db.session.scalars(stmt).all()
 
     #### with other entity
-    def get_self_and_children_id_list(self):
+    def get_self_and_children_emp_id_list(self):
         result = self.get_employee_id_list()
 
         for child in self.get_children():
-            result += child.get_self_and_children_id_list()
+            result += child.get_self_and_children_emp_id_list()
 
         # 카운터를 세기 위해 len(set())으로 반환하고 싶지만, 자식들도 list로 건네줘야하기 때문에, 누적list를 반환해줘야한다.
         return result
 
     #### with other entity
     def count_self_and_children_employee(self):
-        return len(set(self.get_self_and_children_id_list()))
+        return len(set(self.get_self_and_children_emp_id_list()))
 
     #### with other entity
     def get_leader(self):
@@ -363,6 +428,7 @@ class Department(BaseModel):
             )
             return db.session.scalars(stmt).first()
 
+    #### 상사 찾기
     def get_leader_recursively(self):
         # 1) 해당 부서의 팀장을 조회한 뒤, 있으면 그 유저를 반환한다
         leader = self.get_leader()
@@ -375,6 +441,8 @@ class Department(BaseModel):
                 return parent.get_leader_recursively()
         # 3) (팀장도X 상위부서도X) => 팀장정보가 아예 없으니 None반환
         return None
+
+
 
 
 # 2.
@@ -419,9 +487,10 @@ class EmployeeDepartment(BaseModel):
 
     def __repr__(self):
         info: str = f"{self.__class__.__name__}" \
-                    f"[id={self.id!r}," \
-                    f" title={self.employee.name!r}," \
-                    f" parent_id={self.department.name!r}]" \
+                    f"[id={self.id!r}]" \
+                    # f" title={self.employee.name!r}," \
+                    # f" parent_id={self.department.name!r}]" \ # 관계필드는 적지말자.
+
             # f" level={self.level!r}]" # path를 채우기 전에 출력했더니 level써서 에러가 남.
         return info
 
@@ -484,17 +553,17 @@ class EmployeeDepartment(BaseModel):
         emp_dep_or_none = self.exists_same_department()
         if emp_dep_or_none:
             print('이미 부임된 부서입니다. >>> ')
-            return emp_dep_or_none
+            return None, "이미 부임된 부서입니다."
 
         #### (2) is_leader로 지원했는데, 팀장이 이미 차 있는지 여부 (exits호출 조건으로서 if is_leadear가 True여야한다.)
         if self.is_leader and self.exists_already_leader():
             print('해당부서에 이미 부서장이 존재합니다.')
-            return None
+            return None, "해당부서에 이미 부서장이 존재합니다."
 
         #### (3) 부/장급 부서는 only 1명만 등록가능하고, is_leader가 체크안되어있더라도, 체크해줘야한다
         if self.is_full_in_one_person_department():
             print('1명만 부임가능한 부서로서 이미 할당된 부/장급 부서입니다.')
-            return None
+            return None, "1명만 부임가능한 부서로서 이미 할당된 부/장급 부서입니다."
 
         with DBConnectionHandler() as db:
             #### flush나 commit을 하지 않으면 => fk_id 입력 vs fk관계객체입력이 따로 논다.
@@ -503,29 +572,51 @@ class EmployeeDepartment(BaseModel):
             db.session.add(self)
             db.session.flush()  # fk_id 입력과 fk관계객체입력 둘중에 뭘 해도 관계객체를 사용할 수 있게 DB한번 갔다오기
 
+            #### 부장급 부서의 취임이라면, is_leader를 무조건 True로 넣어줘서 => position 결정 전에 넣어주고, 자동으로 팀장 포지션이 되게 한다
+            if self.department.type == DepartmentType.부장:
+                self.is_leader = True
+
             self.position = self.department.type.find_position(is_leader=self.is_leader,
                                                                dep_name=self.department.name)  # joined를 삭제하면 fk만 넣어줘도 이게 돌아갈까?
 
-            #### 부장급 부서의 취임이라면, is_leader를 무조건 True로 넣어준다.
-            if self.department.type == DepartmentType.부장:
-                self.is_leader = True
 
             #### 한번만 session에 add해놓으면, 또 add할 필요는 없다.
             # db.session.add(self)
             db.session.commit()
 
-        return self
+        return True, "새로운 부서취임 정보가 발생하였습니다."
 
-    # with other entity
     @classmethod
     def get_by_emp_id(cls, emp_id):
         with DBConnectionHandler() as db:
             stmt = (
                 select(cls)
-                .where(cls.dismissal_date.is_(None))
+                .where(cls.dismissal_date == None)
                 .where(cls.employee_id == emp_id)
             )
             return db.session.scalars(stmt).all()
+
+    @classmethod
+    def get_by_emp_and_dept_id(cls, emp_id, dept_id):
+        with DBConnectionHandler() as db:
+            stmt = (
+                select(cls)
+                .where(cls.dismissal_date.is_(None))
+                .where(cls.employee_id == emp_id)
+                .where(cls.department_id == dept_id)
+            )
+            return db.session.scalars(stmt).first()
+
+    # 부/장급 부서취임정보는 dept_id 검색만 하면, 부/장 1명 정보만 나올 것이다
+    @classmethod
+    def get_by_dept_id(cls, dept_id):
+        with DBConnectionHandler() as db:
+            stmt = (
+                select(cls)
+                .where(cls.dismissal_date.is_(None))
+                .where(cls.department_id == dept_id)
+            )
+            return db.session.scalars(stmt).first()
 
 
 # 3.

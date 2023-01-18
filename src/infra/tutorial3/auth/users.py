@@ -843,7 +843,7 @@ class Employee(BaseModel):
             return db.session.scalars(stmt).first()
 
     #### with other entity
-    def get_my_departments(self, as_leader=False, as_employee=False, as_min_level=False):
+    def get_my_departments(self, as_leader=False, as_employee=False, as_min_level=False, except_dept_id=None):
         with DBConnectionHandler() as db:
 
             # 부서정보 -> Employee
@@ -852,6 +852,12 @@ class Employee(BaseModel):
                 .where(EmployeeDepartment.dismissal_date.is_(None))
                 .where(EmployeeDepartment.employee.has(Employee.id == self.id))
             )
+
+            #### 부서 변경시, 현재부서를 제외한 부서들을 조회하기 위한 keyword 및 stmt 추가
+            if except_dept_id:
+                subq_stmt = subq_stmt.where(EmployeeDepartment.department_id != except_dept_id)
+
+
             # 부서 중에 내가 팀장인 부서정보만
             if as_leader:
                 subq_stmt = subq_stmt.where(EmployeeDepartment.is_leader == 1)
@@ -898,10 +904,16 @@ class Employee(BaseModel):
             # 3) aliased를 적용해줬더니.. level이 다시 0으로 잡혀서 주체entity를 인식 못한다.
             # => aliased를 주entity필터링 결과 그대로 집계시 + correlate에는 적용 못한다.
 
-            return db.session.scalars(
-                stmt
-                .order_by(Department.path)
-            ).all()
+            #### ValueError: None is not a valid DepartmentType
+            #### 아예 부서정보가 조회안됬는데 as_min_level=True로 집계한다면 오류가 난다.
+            # 일단 try except로 잡아보자.
+            try:
+                return db.session.scalars(
+                    stmt
+                    .order_by(Department.path)
+                ).all()
+            except ValueError:
+                return []
 
     #### with other entity
     def is_leader_in(self, department: Department):
@@ -1150,7 +1162,109 @@ class Employee(BaseModel):
             return complete_months + 2 * 15 + (
                         self.years_from_join - 3) * 16, f"{complete_months}(1년미만)+15*{(self.years_from_join - 1)}(2~3년차) + 16*{(self.years_from_join - 3)}(4년차이후)"
 
+    #### with other entity
+    #### 직원추가시 팀장 부서가 있다면, 그 부서와 그 하위부서들의 (id, name) list를 반환
+    def get_dept_infos_for_add_staff(self):
+        #### 관리자일 경우, 모든 부서들 나올 수 있도록
+        if self.is_administrator:
+            return [(x.id, x.name) for x in Department.get_all()]
 
+
+        my_min_level_departments_as_leader = self.get_my_departments(as_leader=True, as_min_level=True)
+        if not my_min_level_departments_as_leader:
+            print("팀장인 부서를 가진 직원만, 해당부서에 직원을 추가할 수 있습니다.")
+            return []
+
+        dept_id_and_name_list = []
+        for min_dept in my_min_level_departments_as_leader:
+            dept_id_and_name_list += min_dept.get_self_and_children_dept_info_tuple_list()
+
+
+
+        return [(x[0], x[1]) for x in sorted(dept_id_and_name_list, key=lambda x: x[2])]
+
+    #### with other entity
+    #### 나보다 하위 직원들(무소속포함) 받아오기
+    def get_under_role_employees(self, no_dept=False):
+        with DBConnectionHandler() as db:
+            stmt = (
+                select(Employee)
+                # 관계필드가 아니라, .role은 프로퍼티라서 join조건에 못넣는다.
+                #### Employee.role(프로퍼티).id == Role.id 로 할 시,  => 1로 고정되어버리는 현상. => 관계필드가 아니면 expression에 쓰지말자.
+                .join(User, Employee.user)
+                .join(Role, and_(User.role, Role.is_(Roles.STAFF),
+                                 Role.is_under(self.role)))  # 필터링용join entity의 조건은 join시 같이 걸자
+                .where(Employee.job_status == 1)  # 재직중인 사람 들 중
+                # .where(Role.is_under(행정부장.role)) # 자신의 role permission이 특정직원의 role permission보다 낮은 사람들만 => 필터링용join entity의 조건은 join시 같이 걸어도 된다.
+                # 이미 다른 부서에 가입되어있어도 괜찮으니, 무소속을 걸러내진 않는다.
+                # .where(~Employee.employee_departments.any())
+            )
+
+            if no_dept:
+                stmt = stmt.where(~Employee.employee_departments.any())
+
+            return db.session.scalars(stmt).all()
+
+    #### with other entity
+    def change_department_with_promote_or_demote(self, after_dept_id, target_date,
+                                                 before_dept_id=False,
+                                                 as_leader=False,
+                                                 ):
+        #### after_dept_id는 해당부서가 반드시 존재해야하므로, 존재 검사를 한다
+        if not Department.get_by_id(after_dept_id):
+            return False, "해당 부서는 사용할 수 없는 부서입니다."
+
+        with DBConnectionHandler() as db:
+            #### 부서처리 전에, 승진/강등 여부에 따라, role변경해주기
+            # -> 관계객체에 접근시 이미 해당데이터가 있기 때문에, 할당시에는 같은 객체를 불러오면 안된다.
+            # -> 외부에서 is_demote가 되려면 STAFF가 아닐 때부터 처리해야한다.
+            if self.is_demote(as_leader=as_leader, current_dept_id=before_dept_id):
+                self.user.role = Role.get_by_name('STAFF')
+                db.session.add(self)
+                print("강등입니다.")
+            if self.is_promote(as_leader=as_leader):
+                self.user.role = Role.get_by_name('CHIEFSTAFF')
+                db.session.add(self)
+                print("승진입니다.")
+
+            #### 이전 부서가 있는 경우, 이전부서에 해임처리
+            # => 위에서 self를 add라느라 썼다면, 쓰지말고 id(value)만 넘겨서 처리되도록 하자.
+            if before_dept_id:
+                before_emp_dept: EmployeeDepartment = EmployeeDepartment.get_by_emp_and_dept_id(self.id, before_dept_id)
+                before_emp_dept.dismissal_date = target_date
+
+                db.session.add(before_emp_dept)
+
+
+            after_emp_dept: EmployeeDepartment = EmployeeDepartment(employee_id=self.id,
+                                                                    department_id=after_dept_id,
+                                                                    is_leader=as_leader,
+                                                                    employment_date=target_date)
+            result, message_after_save = after_emp_dept.save()
+
+            if result:
+                # 만약 after성공했다면, 취임정보.save()의 메세지 대신, 부서변경 메세지로 반환
+                db.session.commit()
+                return True, f"부서 변경을 성공하였습니다."
+            else:
+                # 만약 실패한다면, 취임정보.save()에서 나온 에러메세지를 반환
+                db.session.rollback()
+                return False, message_after_save
+
+
+    #### with other entity
+    def is_promote(self, as_leader=False):
+        #### 승진: 만약, before_dept_id를 [포함]하여 팀장인 부서가 없으면서(아무도것도 팀장X) & as_leader =True(최초 팀장으로 가면) => 승진
+        #### - 팀장인 부서가 1개도 없다면, 팀원 -> 팀장 최초로 올라가서, 승진
+        depts_as_leader = self.get_my_departments(as_leader=True)
+        return as_leader and len(depts_as_leader) == 0
+
+    #### with other entity
+    def is_demote(self, as_leader=True, current_dept_id=None):
+        #### 강등: 만약, before_dept_id를 [제외]하고 팀장인 부서가 없으면서(현재부서만 팀장) & as_leader =False(마지막 팀장자리 -> 팀원으로 내려가면) => 강등
+        #### - 선택된 부서외 팀장인 다른 부서가 있다면, 현재부서만 팀장 -> 팀원으로 내려가서, 팀장 직책 유지
+        other_depts_as_leader = self.get_my_departments(as_leader=True, except_dept_id=current_dept_id)
+        return not as_leader and len(other_depts_as_leader) == 0
 
 
 #### 초대는 분야마다 초대하는 content(직원초대 -> Role 중 1개)가 다르기 때문에
