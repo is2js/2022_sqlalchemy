@@ -327,9 +327,13 @@
             user_id: null,
             //employee.html modal 띄우는 변수
             isJobStatusModalActive: false,
+            isDepartmentModalActive: false,
             employee_id: null,
             //employee.html modal 속 제출 처리 변수
             isLoading: null,
+            //employee.html modal 속 스위치의 Y/N시 들어갈 값을 받아주는 변수 (각 html파일에서 초기화하고, swtich내에서 true-value, false-value를 정의함
+            //app._data.isSwitchedCustom = '팀원';
+            isSwitchedCustom: null,
         },
         watch: {
             // admin/banner_form , auth/userinfo_form 에서 쓰는 b-upload v-model변수

@@ -309,7 +309,7 @@
                             <span class="icon">
                                 <i class="mdi mdi-square-edit-outline"></i>
                             </span>
-                        수정
+                        정보
                     </a>
 
                     <!--                    <a href="{{url_for('admin.employee', id=employee.id)}}" -->
@@ -318,9 +318,19 @@
                        class="tag is-warning is-light"
                     >
                             <span class="icon">
-                                 <i class="mdi mdi-trash-can-outline"></i>
+                                 <i class="mdi mdi mdi-graph-outline"></i>
                             </span>
-                        재직상태변경
+                        재직상태
+                    </a>
+
+                    <a href="javascript:;"
+                       @click="isDepartmentModalActive = true; employee_id = {{employee.id}}; isSwitchedCustom='부서원';"
+                       class="tag is-primary is-light"
+                    >
+                            <span class="icon">
+                                 <i class="mdi mdi-google-assistant"></i>
+                            </span>
+                        부서
                     </a>
 
 
@@ -442,6 +452,139 @@
 
     </form>
 </b-modal>
+
+<!-- 부서 변경 모달 -->
+<b-modal
+        v-model="isDepartmentModalActive"
+        has-modal-card
+        trap-focus
+        aria-role="dialog"
+        aria-label="Department Select Modal"
+        aria-modal>
+    <!--    <form action="{{url_for('admin.employee_job_status_change') }}"-->
+    <form action=""
+          method="post"
+          @submit.prevent="submitForm"
+    >
+        <div class="modal-card is-" style="width: auto">
+            <header class="modal-card-head">
+                <p class="modal-card-title is-size-5">
+                    부서 변경
+                </p>
+                <button
+                        type="button"
+                        class="delete"
+                        @click="isDepartmentModalActive = false; employee_id = null; isSwitchedCustom='부서원';"/>
+            </header>
+            <section class="modal-card-body">
+                <!-- INPUT1: HIDEEN 모달클릭시 v-bind변수에 담아놨던 변수로, form에 포함될 변수로서 id를 반영 -->
+                <input type="hidden" name="employee_id" :value="employee_id">
+
+
+                <!-- 현재부서 => 변경부서 선택-->
+                <!-- INPUT2: 2개의 select를 1개 field에 horizontal로 주면 label이 깨지므로, columns에서 각각을 나누어, 개별 field+select를 각각 준다.-->
+                <div class="columns">
+                    <div class="column is-5">
+                        <b-field
+                                label="현재 부서"
+                                label-position="on-border"
+                        >
+                            <b-select
+                                    size="is-small"
+                                    name="job_status"
+                                    placeholder="현재 부서 선택"
+                                    rounded
+                            >
+                                {% for job_status in job_status_list %}
+                                <option value="{{job_status[0]}}">{{job_status[1]}}</option>
+                                {% endfor %}
+                            </b-select>
+                        </b-field>
+                    </div>
+                    <!-- 컬럼의 내용물을 세로정렬(세로 정렬) 하려면, flex + align-items 를 둘다 column 클래스에 추가 -->
+                    <div class="column is-2 is-align-items-center is-flex">
+                                <span class="icon is-size-3 has-text-primary ">
+                                    <i class="mdi mdi-arrow-right-bold"></i>
+                                </span>
+                    </div>
+
+                    <div class="column">
+                        <b-field
+                                label="변경 부서"
+                                label-position="on-border"
+                        >
+                            <b-select
+                                    size="is-small"
+                                    name="job_status"
+                                    placeholder="좌측 먼저 선택"
+                                    rounded
+                            >
+                                {% for job_status in job_status_list %}
+                                <option value="{{job_status[0]}}">{{job_status[1]}}</option>
+                                {% endfor %}
+                            </b-select>
+                        </b-field>
+                    </div>
+                </div>
+
+
+                <!-- INPUT3: 팀장여부 -->
+                <!-- switch에 따로 name을 지정해줘야한다. -->
+                <div class="columns">
+                    <div class="column is-7">
+                    </div>
+                    <!-- 가로정렬(가로 정렬)은 flex+is-align이 아니라 has-text-centered (is-center(ed)는 안먹더라)-->
+                    <div class="column has-text-centered">
+                        <b-field
+                                custom-class="is-small"
+                                label=""
+                                label-position="on-border"
+                        >
+                            <b-switch
+                                    size="is-small"
+                                    v-model="isSwitchedCustom"
+                                    true-value="부서장"
+                                    false-value="부서원"
+                                    name="as_leader"
+                            >
+                                {$ isSwitchedCustom $}
+                            </b-switch>
+                        </b-field>
+                    </div>
+                </div>
+                <!-- INPUT4:  -->
+                <b-field label="부서변경일"
+                         custom-class="is-default"
+                >
+                    <b-datepicker
+                            inline
+                            icon="calendar-today"
+                            v-model="date"
+                    >
+                    </b-datepicker>
+                </b-field>
+                <!-- date로 작성하면 => base에서 stringDate로 watch로 보고있다 -->
+                <input type="hidden" name="date" v-model="stringDate">
+
+
+            </section>
+            <footer class="modal-card-foot">
+                <!-- b-button들을 넣으면 1개 이후 사라지는 버그 => a태그 + input(submit) 조합으로 변경-->
+                <a class="button is-primary is-light mr-2"
+                   @click="isDepartmentModalActive = false; employee_id = null; isSwitchedCustom='부서원';"
+                >
+                    닫기
+                </a>
+                <input type="submit"
+                       class="button is-primary"
+                       value="완료"
+                       :disabled="isLoading"
+                >
+            </footer>
+        </div>
+
+    </form>
+</b-modal>
 {% endblock table_content %}
 {% endblock member %}
 
@@ -509,6 +652,9 @@
 
 {% block vue_script %}
 <script>
-    app._data.date = new Date()
+    app._data.date = new Date();
+    app._data.isSwitchedCustom = '부서원';
+     window.confirm('Are you sure you want to delete this post?');
+
 </script>
 {% endblock vue_script %}
