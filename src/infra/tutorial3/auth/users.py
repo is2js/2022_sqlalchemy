@@ -1253,18 +1253,41 @@ class Employee(BaseModel):
 
 
     #### with other entity
-    def is_promote(self, as_leader=False):
+    def is_promote(self, as_leader):
+        #### (0) 팀장으로 가는 경우가 아니면 탈락이다.
+        if not as_leader:
+            return False
+        #### (1) 팀장으로 가는데, 이미 팀장인 부서가 있다면 탈락이다.
+
         #### 승진: 만약, before_dept_id를 [포함]하여 팀장인 부서가 없으면서(아무도것도 팀장X) & as_leader =True(최초 팀장으로 가면) => 승진
         #### - 팀장인 부서가 1개도 없다면, 팀원 -> 팀장 최초로 올라가서, 승진
         depts_as_leader = self.get_my_departments(as_leader=True)
-        return as_leader and len(depts_as_leader) == 0
+        return len(depts_as_leader) == 0
 
     #### with other entity
-    def is_demote(self, as_leader=True, current_dept_id=None):
+    def is_demote(self, as_leader, current_dept_id):
+        #### (0) 팀원으로 가는 경우가 아니면 애초에 탈락이다.
+        if as_leader:
+            return False
+        #### 강등에는 현재부서에 대해 팀장이라는 조건이 필요하다.
+        #### (1) 현재부서가 없다면 강등에서 먼저 탈락이다.
+        current_dept = Department.get_by_id(current_dept_id)
+        if not current_dept :
+            return False
+
+        #### (2) 현재부서 있더라도, 팀장이 아니면 탈락이다.
+        is_current_dept_leader = self.is_leader_in(Department.get_by_id(current_dept_id))
+        if not is_current_dept_leader:
+            return False
+
+        #### (3) 현재부서의 팀장인 상태에서, 제외하고 다른팀 팀장이면 강등에서 탈락이다.
+
+
         #### 강등: 만약, before_dept_id를 [제외]하고 팀장인 부서가 없으면서(현재부서만 팀장) & as_leader =False(마지막 팀장자리 -> 팀원으로 내려가면) => 강등
         #### - 선택된 부서외 팀장인 다른 부서가 있다면, 현재부서만 팀장 -> 팀원으로 내려가서, 팀장 직책 유지
         other_depts_as_leader = self.get_my_departments(as_leader=True, except_dept_id=current_dept_id)
-        return not as_leader and len(other_depts_as_leader) == 0
+
+        return len(other_depts_as_leader) == 0
 
 
 #### 초대는 분야마다 초대하는 content(직원초대 -> Role 중 1개)가 다르기 때문에
