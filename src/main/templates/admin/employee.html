@@ -48,6 +48,10 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.0.0/dist/js/bootstrap.min.js"
         integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl"
         crossorigin="anonymous"></script>
+
+<!-- 부서변경시 부서정보 받아오기 위한 axios -->
+<script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+
 {% endblock extra_head_style %}
 
 {% block member %}
@@ -312,6 +316,17 @@
                         정보
                     </a>
 
+                    <!--                       @click="isDepartmentModalActive = true; employee_id = {{employee.id}}; isSwitchedCustom='부서원';"-->
+                    <a href="javascript:;"
+                       @click="getCurrentDepartments({{employee.id}})"
+                       class="tag is-primary is-light"
+                    >
+                            <span class="icon">
+                                 <i class="mdi mdi-google-assistant"></i>
+                            </span>
+                        부서
+                    </a>
+
                     <!--                    <a href="{{url_for('admin.employee', id=employee.id)}}" -->
                     <a href="javascript:;"
                        @click="isJobStatusModalActive = true; employee_id = {{employee.id}}"
@@ -323,23 +338,14 @@
                         재직상태
                     </a>
 
-                    <a href="javascript:;"
-                       @click="isDepartmentModalActive = true; employee_id = {{employee.id}}; isSwitchedCustom='부서원';"
-                       class="tag is-primary is-light"
-                    >
-                            <span class="icon">
-                                 <i class="mdi mdi-google-assistant"></i>
-                            </span>
-                        부서
-                    </a>
 
 
-                    <a href="{{url_for('admin.employee', id=employee.id)}}" class="tag is-danger is-light">
-                            <span class="icon">
-                                 <i class="mdi mdi-trash-can-outline"></i>
-                            </span>
-                        삭제
-                    </a>
+<!--                    <a href="{{url_for('admin.employee', id=employee.id)}}" class="tag is-danger is-light">-->
+<!--                            <span class="icon">-->
+<!--                                 <i class="mdi mdi-trash-can-outline"></i>-->
+<!--                            </span>-->
+<!--                        삭제-->
+<!--                    </a>-->
                 </div>
             </td>
 
@@ -435,7 +441,7 @@
                 <input type="hidden" name="date" v-model="stringDate">
 
             </section>
-            <footer class="modal-card-foot">
+            <footer class="modal-card-foot is-justify-content-center">
                 <!-- b-button들을 넣으면 1개 이후 사라지는 버그 => a태그 + input(submit) 조합으로 변경-->
                 <a class="button is-primary is-light mr-2"
                    @click="isJobStatusModalActive = false; employee_id = null;"
@@ -460,9 +466,10 @@
         trap-focus
         aria-role="dialog"
         aria-label="Department Select Modal"
-        aria-modal>
+        aria-modal
+>
     <!--    <form action="{{url_for('admin.employee_job_status_change') }}"-->
-    <form action=""
+    <form action="{{url_for('admin.department_change') }}"
           method="post"
           @submit.prevent="submitForm"
     >
@@ -471,10 +478,11 @@
                 <p class="modal-card-title is-size-5">
                     부서 변경
                 </p>
+                <!-- 닫기버튼시 사용된 변수 다 초기화 -->
                 <button
                         type="button"
                         class="delete"
-                        @click="isDepartmentModalActive = false; employee_id = null; isSwitchedCustom='부서원';"/>
+                        @click="isDepartmentModalActive = false; employee_id = null; isSwitchedCustom='부서원';currentDeptList=null;currentDeptId=null;selectableDeptList=null;selectedDeptId=null;"/>
             </header>
             <section class="modal-card-body">
                 <!-- INPUT1: HIDEEN 모달클릭시 v-bind변수에 담아놨던 변수로, form에 포함될 변수로서 id를 반영 -->
@@ -489,15 +497,24 @@
                                 label="현재 부서"
                                 label-position="on-border"
                         >
+                            <!-- placeholder="현재 부서 선택"-->
+                            <!-- @change="onCurrentDeptIdChange"-->
+                            <!-- 일반태그에서는 @click, @change가 먹히지만, b-field내 b-input들은 @input으로 입력된 v-model의 변화를 감지한다.-->
                             <b-select
                                     size="is-small"
-                                    name="job_status"
-                                    placeholder="현재 부서 선택"
+                                    name="current_dept_id"
+                                    :placeholder="currentDeptList && currentDeptList.length ? '현재부서 선택' : '현재부서 없음'"
                                     rounded
+                                    v-model="currentDeptId"
+                                    @input="onCurrentDeptIdChange"
                             >
-                                {% for job_status in job_status_list %}
-                                <option value="{{job_status[0]}}">{{job_status[1]}}</option>
-                                {% endfor %}
+<!--                                    required-->
+                                <option v-for="dept in currentDeptList" :value="dept.id"> {$ dept.name $}</option>
+
+                                <!-- value가 없어서 id가 None으로 가면 부서추가의 상황으로?!-->
+                                <!-- option에 value가 없으면 v-model에 text인 [부서추가]가 v-model에 입력되어 버린다.-->
+                                <!-- option에 value="" 로 놓아야 ===>  None취급당한다-->
+                                <option value=""> [부서 추가] </option>
                             </b-select>
                         </b-field>
                     </div>
@@ -513,15 +530,20 @@
                                 label="변경 부서"
                                 label-position="on-border"
                         >
+                            <!-- select태그는 사용자가 선택되면 그게 `value로 자동으로 가고` 개발자는 `name만 정의`해주면 된다. -->
                             <b-select
                                     size="is-small"
-                                    name="job_status"
+                                    name="after_dept_id"
                                     placeholder="좌측 먼저 선택"
                                     rounded
+                                    v-model="selectedDeptId"
+                                    @input="onSelectedDeptIdOrSwitchChange"
                             >
-                                {% for job_status in job_status_list %}
-                                <option value="{{job_status[0]}}">{{job_status[1]}}</option>
-                                {% endfor %}
+<!--                                    required-->
+                                <option v-for="dept in selectableDeptList" :value="dept.id"> {$ dept.name $}</option>
+                                <!-- 현재부서에 부서가 선택된 상태일때만 등장하도록 + value=""으로 주기-->
+                                <option v-if="currentDeptId" value=""> [부서 제거] </option>
+
                             </b-select>
                         </b-field>
                     </div>
@@ -530,31 +552,38 @@
 
                 <!-- INPUT3: 팀장여부 -->
                 <!-- switch에 따로 name을 지정해줘야한다. -->
-                <div class="columns">
-                    <div class="column is-7">
-                    </div>
-                    <!-- 가로정렬(가로 정렬)은 flex+is-align이 아니라 has-text-centered (is-center(ed)는 안먹더라)-->
-                    <div class="column has-text-centered">
-                        <b-field
-                                custom-class="is-small"
-                                label=""
-                                label-position="on-border"
-                        >
-                            <b-switch
-                                    size="is-small"
-                                    v-model="isSwitchedCustom"
-                                    true-value="부서장"
-                                    false-value="부서원"
-                                    name="as_leader"
-                            >
-                                {$ isSwitchedCustom $}
-                            </b-switch>
-                        </b-field>
-                    </div>
-                </div>
+                <!--                <div class="columns">-->
+                <!--                    <div class="column is-7">-->
+                <!--                    </div>-->
+                <!-- 가로정렬(가로 정렬)은 flex+is-align이 아니라 has-text-centered (is-center(ed)는 안먹더라)-->
+                <!--                                label-position="on-border"-->
+                <!--                                custom-class="is-small"-->
+                <b-field
+                        custom-class="is-small"
+                        label="부서장 여부"
+                >
+                    <!-- b-switch는 v-model이 data변수 + [input type="checkbox"의 value]로 매핑되는 것이 아니라 input태그아래의 스위치를 담당하는 span태그의 text를 변경시킨다. -->
+                    <!-- b-switch는 v-model변수에 대해 :native-value=""를 추가해서 input[type="checkbox"]에 value를 추가한다. -->
+                    <!-- b-switch가 input chekcbox를 가지고 있지만, value는 ="false"로만 채워지며, :native-value매핑을 한다고 해도 정상적으로 안넘어간다. -->
+                    <!--            => hidden input을 만들고, name과 :value매핑으로 v-model변수를 그대로 가져가도록 하자. -->
+                    <!--                            name="as_leader"-->
+                    <!--                            :value="isSwitchedCustom"-->
+                    <b-switch
+                            size="is-small"
+                            v-model="isSwitchedCustom"
+                            @input="onSelectedDeptIdOrSwitchChange"
+                            true-value="부서장"
+                            false-value="부서원"
+                    >
+                        {$ isSwitchedCustom $}
+                    </b-switch>
+                    <input type="hidden" name="as_leader" :value="isSwitchedCustom">
+                </b-field>
+
+                <!--                </div>-->
                 <!-- INPUT4:  -->
                 <b-field label="부서변경일"
-                         custom-class="is-default"
+                         custom-class="is-small"
                 >
                     <b-datepicker
                             inline
@@ -568,10 +597,11 @@
 
 
             </section>
-            <footer class="modal-card-foot">
+            <!-- 일반적인 태그 가운데 정렬은 is-justify-content-center 을 쓰면 된다.-->
+            <footer class="modal-card-foot is-justify-content-center">
                 <!-- b-button들을 넣으면 1개 이후 사라지는 버그 => a태그 + input(submit) 조합으로 변경-->
                 <a class="button is-primary is-light mr-2"
-                   @click="isDepartmentModalActive = false; employee_id = null; isSwitchedCustom='부서원';"
+                   @click="isDepartmentModalActive = false; employee_id = null; isSwitchedCustom='부서원';currentDeptList=null;currentDeptId=null;selectableDeptList=null;selectedDeptId=null;"
                 >
                     닫기
                 </a>
@@ -654,7 +684,7 @@
 <script>
     app._data.date = new Date();
     app._data.isSwitchedCustom = '부서원';
-     window.confirm('Are you sure you want to delete this post?');
+    // window.confirm('Are you sure you want to delete this post?');
 
 </script>
 {% endblock vue_script %}

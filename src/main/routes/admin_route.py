@@ -4,7 +4,8 @@ import json
 import os
 from pathlib import Path
 
-from flask import Blueprint, render_template, request, flash, redirect, url_for, send_from_directory, g
+from flask import Blueprint, render_template, request, flash, redirect, url_for, send_from_directory, g, jsonify, \
+    make_response
 from pyecharts import options as opts
 from pyecharts.charts import Bar, Line, Pie, Tab
 from sqlalchemy import select, delete, func, text, literal_column, column, literal, and_, extract, distinct, cast, \
@@ -15,8 +16,8 @@ from werkzeug.security import generate_password_hash
 from src.config import project_config
 from src.infra.commons import paginate
 from src.infra.config.connection import DBConnectionHandler
-from src.infra.tutorial3 import Category, Post, Tag, User, Banner, posttags, Setting
-from src.infra.tutorial3.auth.users import SexType, Roles, Role, Employee, EmployeeInvite, JobStatusType
+from src.infra.tutorial3 import Category, Post, Tag, User, Banner, posttags, Setting, Department, DepartmentType
+from src.infra.tutorial3.auth.users import SexType, Roles, Role, EmployeeInvite, JobStatusType, Employee
 from src.main.forms import CategoryForm
 from src.main.forms.admin.forms import PostForm, TagForm, CreateUserForm, BannerForm, SettingForm
 from src.main.forms.auth.forms import EmployeeForm, UserInfoForm
@@ -973,7 +974,6 @@ def employee():
     pagination = paginate(stmt, page=page, per_page=10)
     employee_list = pagination.items
 
-
     #### 재직상태변경 modal 속 select option 추가로 내려보내기
     job_status_list = JobStatusType.choices()
     # print(job_status_list)
@@ -981,7 +981,6 @@ def employee():
     #### => 여기서만 재직 = 1을 복직으로 변경해서 내려주자. (form에서는 재직으로?)
     job_status_list = job_status_list[1:] + [(1, '복직')]
     # [(2, '휴직'), (3, '퇴사') (1, '복직')]
-
 
     return render_template('admin/employee.html',
                            employee_list=employee_list,
@@ -1280,27 +1279,27 @@ def employee_job_status_change():
 
     # flash('자신보다 아래 직위의 직원만 수정할 수 있습니다.', category='is-danger')
 
-        # #### 퇴사처리1) 직원의 재직상태를 퇴사로 변경
-        # employee.job_status = job_status
-        # if job_status == JobStatusType.퇴사:
-        #     #### 퇴사처리 메서드로 구현(job_status-외부 + resign_date-내부 + role(default인 USER)-내부 변경
-        #     #### => 재직상태는 외부에서 주는 것이라 인자로 받아서 처리?!
-        #     employee.change_status(job_status)
-        #
-        #     #### 퇴사처리2) 직원의 퇴직일(resign_date)가 찍히게 된다.
-        #     employee.resign_date = date.today()
-        #
-        #     #### 퇴사처리3) 직원의 Role을 STAFF이상 => User(deafult=True)로 변경한다.
-        #     # 퇴사처리시 role을 user로 다시 바꿔, 직원정보는 남아있되, role이 user라서 접근은 못하게 한다
-        #     role = db.session.scalars(
-        #         select(Role)
-        #         .where(Role.default == True)
-        #     ).first()
-        #     employee.user.role = role
-        #
-        #
-        # db.session.add(employee)
-        # db.session.commit()
+    # #### 퇴사처리1) 직원의 재직상태를 퇴사로 변경
+    # employee.job_status = job_status
+    # if job_status == JobStatusType.퇴사:
+    #     #### 퇴사처리 메서드로 구현(job_status-외부 + resign_date-내부 + role(default인 USER)-내부 변경
+    #     #### => 재직상태는 외부에서 주는 것이라 인자로 받아서 처리?!
+    #     employee.change_status(job_status)
+    #
+    #     #### 퇴사처리2) 직원의 퇴직일(resign_date)가 찍히게 된다.
+    #     employee.resign_date = date.today()
+    #
+    #     #### 퇴사처리3) 직원의 Role을 STAFF이상 => User(deafult=True)로 변경한다.
+    #     # 퇴사처리시 role을 user로 다시 바꿔, 직원정보는 남아있되, role이 user라서 접근은 못하게 한다
+    #     role = db.session.scalars(
+    #         select(Role)
+    #         .where(Role.default == True)
+    #     ).first()
+    #     employee.user.role = role
+    #
+    #
+    # db.session.add(employee)
+    # db.session.commit()
 
     return redirect(redirect_url())
 
@@ -1314,9 +1313,147 @@ def user_popup(employee_id):
     return render_template('admin/employee_user_popup.html', user=user)
 
 
-@admin_bp.route('/department/', methods=['GET', 'POST'])
+@admin_bp.route('/departments/<employee_id>', methods=['GET'])
 @login_required
-def add_employee_in_department():
-    print(g.user.get_my_departments())
+def get_current_departments(employee_id):
+    emp: Employee = Employee.get_by_id(int(employee_id))
+    current_depts = emp.get_my_departments()
+    current_dept_infos = [{'id': x.id, 'name': x.name} for x in current_depts]
 
-    return ""
+    return make_response(
+        dict(deptInfos=current_dept_infos),
+        200
+    )
+
+
+# @admin_bp.route('/departments/selectable/<department_id>', methods=['GET'])
+# @login_required
+# def get_selectable_departments(department_id):
+#
+#     current_dept : Department = Department.get_by_id(int(department_id))
+#     selectable_depts_infos = current_dept.get_selectable_departments()
+@admin_bp.route('/departments/selectable/', methods=['POST'])
+@login_required
+def get_selectable_departments():
+    # print(request.form) # ImmutableMultiDict([('current_dept_id', '5'), ('employee_id', '16')])
+    # print(request.args) # ImmutableMultiDict([])
+    employee_id = request.form.get('employee_id', type=int)
+    current_dept_id = request.form.get('current_dept_id', type=int)
+    # print(employee_id, current_dept_id)  # None, None
+    #### 현재부서에서 [부서 추가]시 current_dept_id가 None으로 들어올 수 있다.
+    # if not employee_id or not current_dept_id:
+    if not employee_id:
+        return make_response(dict(message='직원id가 잘못되었습니다.'), 403)
+
+    #### 현재부서가 None => [부서 추가]로 판단하여, 변경부서를 모든 부서를 건네준다.
+    if current_dept_id:
+        current_dept: Department = Department.get_by_id(current_dept_id)
+        selectable_depts_infos = current_dept.get_selectable_departments()
+    else:
+        selectable_depts_infos = Department.get_all_infos()
+
+    #### 선택된 현재부서 => 가능한 부서들을 뽑아왔는데,
+    #### => emp_id까지 추가로 받아서, 가능한 부서들  - ( 직원의 선택안된 현재 부서들id 제외시켜주기 )
+    #### => [부서 추가]의 상황에서도  현재 소속부서들은 그대로 빼준다.
+    current_employee: Employee = Employee.get_by_id(employee_id)
+    current_dept_ids = [dept.id for dept in current_employee.get_my_departments()]
+
+    # 필터링
+    selectable_depts_infos = [dept for dept in selectable_depts_infos if dept.get('id') not in current_dept_ids]
+
+    return make_response(
+        dict(deptInfos=selectable_depts_infos),
+        200
+    )
+
+
+@admin_bp.route('/departments/all', methods=['GET'])
+@login_required
+def get_all_departments():
+    dept_infos = Department.get_all_infos()
+    if not dept_infos:
+        return make_response(dict(message='선택가능한 부서가 없습니다.'), 500)
+
+    return make_response(dict(deptInfos=dept_infos), 200)
+
+
+@admin_bp.route('/departments/promote/', methods=['POST'])
+@login_required
+def determine_promote():
+    current_dept_id = request.form.get('current_dept_id', type=int)
+    employee_id = request.form.get('employee_id', type=int)
+    as_leader = request.form.get('as_leader', type=lambda x: True if x == '부서장' else False)
+    # 부/장급부서는 자동으로 as_leader = True를 박기 위해 추가로 받음.
+    after_dept_id = request.form.get('after_dept_id', type=int)
+
+    # 필수 인자들이 안들어오면 에러다.
+    if not employee_id:
+        return make_response(dict(message='잘못된 요청입니다.'), 403)
+
+    # => 현재부서/변경부서는 둘중에 1개는 없을 수 있다. => 둘다 없으면 판단 못한다. => 부서장여부 스위치만 건들인 경우?
+    # if not current_dept_id and not after_dept_id:
+    if not (current_dept_id or after_dept_id):
+        return make_response(dict(message='부서를 선택한 뒤, 부서장여부를 결정해주세요.'), 403)
+
+    # 부/장급부서를 변경부서로 선택했다면, 넘어오는 as_leader를 무조건 True로 반영하기
+    # => 현재부서 -> 변경부서 [부서제거] 선택도입시 nuabllable한 after_dept_id로서, if 존재할때만 쿼리 날리기
+    # if after_dept_id:
+    #     after_dept: Department = Department.get_by_id(after_dept_id)
+    #     if after_dept.type == DepartmentType.부장:
+    #         as_leader = True
+
+    current_employee: Employee = Employee.get_by_id(employee_id)
+
+    # 승진여부판단에선 (전제 변경부서가 선택)이므로 => 변경부서가 [부서제거]-None가 아닌 [실제 값]으로 존재할때만 판단하도록 변경
+    # if as_leader:
+    # if after_dept_id and as_leader:
+    is_promote = current_employee.is_promote(after_dept_id, as_leader)
+    # else:
+    #     # 부서장여부는, 부/장급이면 자동으로 True로 채워졌는데, 그래도 False라면, 승진은 절대 아니므로 배제하고 쿼리날릴 필요도 없이 무조건 False로
+    #     is_promote = False
+
+    # 강등여부판단은 전제가 [변경부서선택 with 부서원] OR  변경부서선택을 => [부서제거]로 None이어도 상관없다.
+    # => 내부에서 1개 팀장인데 && 부서원으로 뿐만 아니라 1개 팀장인데 && after_dept_id가 None도 추가해야할 듯하다.
+    # if current_dept_id:
+        # 1) 현재부서  +  선택부서가 부서원으로 판단
+    is_demote = current_employee.is_demote(current_dept_id, after_dept_id, as_leader)
+        # 2) 현재부서 + 선택부서가 None으로 해지를 추가할 예정
+    # else:
+    #     현재부서는 nullable이고, 현재부서가 없다면, 쿼리날리기도 전에 강등은 있을 수 없어서 무조건 False
+        # is_demote = False
+
+    return make_response(dict(isPromote=is_promote, isDemote=is_demote), 200)
+
+
+@admin_bp.route('/departments/change', methods=['POST'])
+@login_required
+@role_required(allowed_roles=[Roles.CHIEFSTAFF])
+def department_change():
+    # print(request.form) 
+    # ImmutableMultiDict([('employee_id', '4'), ('current_dept_id', '5'), ('after_dept_id', '4'), ('as_leader', '부서장'), ('date', '2023-01-20')])
+    employee_id = request.form.get('employee_id', type=int)
+    current_dept_id = request.form.get('current_dept_id', type=int)
+    after_dept_id = request.form.get('after_dept_id', type=int)
+    # b-switch 아래 hidden input은 isSwitchedCustom에 의해 부서장 or 부서원이 들어옴
+    as_leader = request.form.get('as_leader', type=lambda x: True if x == '부서장' else False)
+    target_date = request.form.get('date',
+                                   type=lambda x: datetime.strptime(x, '%Y-%m-%d').date()
+                                   )
+
+    # with DBConnectionHandler() as db:
+    #     employee: Employee = db.session.get(Employee, employee_id)
+    employee: Employee = Employee.get_not_resigned_by_id(employee_id)
+    #### 해당 직원이 is_active필터링이 안걸리면 퇴사상태의 직원으로 간주하고, 변경불가하다고 돌려보내기
+    if not employee:
+        flash('퇴사한 직원은 부서 변경이 불가능 합니다.', category='is-danger')
+        return redirect(redirect_url())
+    
+    # (bool, msg) 반환
+    result, message = employee.change_department(current_dept_id, after_dept_id, as_leader, target_date)
+
+    if result:
+        flash(message, category='is-success')
+    else:
+        flash(message, category='is-danger')
+
+    return redirect(redirect_url())

@@ -15,7 +15,7 @@ from src.config import project_config
 from src.infra.config.base import Base
 from src.infra.config.connection import DBConnectionHandler
 from src.main.templates.filters import format_date
-from .departments import EmployeeDepartment, Department
+from .departments import EmployeeDepartment, Department, DepartmentType
 from src.infra.tutorial3.common.base import BaseModel, InviteBaseModel
 from src.infra.tutorial3.common.int_enum import IntEnum
 from ..common.grouped import grouped
@@ -716,7 +716,6 @@ class Employee(BaseModel):
             if months < 11:
                 months += 1
 
-
         # 사실상 1개월만근이후 남은 days은 [월차]계산시 필요없다.
         days = (end_date - start_date).days  # timedelta.days   not int()
 
@@ -856,7 +855,6 @@ class Employee(BaseModel):
             #### 부서 변경시, 현재부서를 제외한 부서들을 조회하기 위한 keyword 및 stmt 추가
             if except_dept_id:
                 subq_stmt = subq_stmt.where(EmployeeDepartment.department_id != except_dept_id)
-
 
             # 부서 중에 내가 팀장인 부서정보만
             if as_leader:
@@ -1023,6 +1021,17 @@ class Employee(BaseModel):
 
             return db.session.scalars(stmt).first()
 
+    @classmethod
+    def get_not_resigned_by_id(cls, id):
+        with DBConnectionHandler() as db:
+            stmt = (
+                select(cls)
+                .where(cls.id == id)
+                .where(cls.job_status != JobStatusType.퇴사)
+            )
+
+            return db.session.scalars(stmt).first()
+
     ### with other entity
     @classmethod
     def change_job_status(cls, emp_id: int, job_status: int, target_date):
@@ -1036,6 +1045,8 @@ class Employee(BaseModel):
                 emp.job_status = job_status
                 # emp.resign_date = datetime.date.today()
                 emp.resign_date = target_date
+
+                emp.update_reference(f'퇴사({format_date(target_date)})')
 
                 #### 관계필드를 조회하는 순간 같은세션에서 같은 key의 객체를 가져오게 되므로
                 #### USER role이 아닌 경우에만, USER role을 찾아서 대입해준다.
@@ -1155,12 +1166,12 @@ class Employee(BaseModel):
             # print('2~3년차시네요. 1년간 월차 + 매년 15개씩 만 계산합니다.')
             # 2, 3년차에는 각각 1*15 , 2* 15를 더한다.
             return complete_months + (
-                        self.years_from_join - 1) * 15, f"{complete_months}(1년미만)+15*{(self.years_from_join - 1)}(2~3년차)"
+                    self.years_from_join - 1) * 15, f"{complete_months}(1년미만)+15*{(self.years_from_join - 1)}(2~3년차)"
         # (4년차 이상부터) 2개(2,3년차)를 15, 나머지는 16을 더한다.
         else:
             # print('4년차이상이시네요. 1년간 월차 + 2년간(2,3년차) 15개씩 + 4년차부터 16개씩')
             return complete_months + 2 * 15 + (
-                        self.years_from_join - 3) * 16, f"{complete_months}(1년미만)+15*{(self.years_from_join - 1)}(2~3년차) + 16*{(self.years_from_join - 3)}(4년차이후)"
+                    self.years_from_join - 3) * 16, f"{complete_months}(1년미만)+15*{(self.years_from_join - 1)}(2~3년차) + 16*{(self.years_from_join - 3)}(4년차이후)"
 
     #### with other entity
     #### 직원추가시 팀장 부서가 있다면, 그 부서와 그 하위부서들의 (id, name) list를 반환
@@ -1168,7 +1179,6 @@ class Employee(BaseModel):
         #### 관리자일 경우, 모든 부서들 나올 수 있도록
         if self.is_administrator:
             return [(x.id, x.name) for x in Department.get_all()]
-
 
         my_min_level_departments_as_leader = self.get_my_departments(as_leader=True, as_min_level=True)
         if not my_min_level_departments_as_leader:
@@ -1178,8 +1188,6 @@ class Employee(BaseModel):
         dept_id_and_name_list = []
         for min_dept in my_min_level_departments_as_leader:
             dept_id_and_name_list += min_dept.get_self_and_children_dept_info_tuple_list()
-
-
 
         return [(x[0], x[1]) for x in sorted(dept_id_and_name_list, key=lambda x: x[2])]
 
@@ -1235,7 +1243,6 @@ class Employee(BaseModel):
 
                 db.session.add(before_emp_dept)
 
-
             after_emp_dept: EmployeeDepartment = EmployeeDepartment(employee_id=self.id,
                                                                     department_id=after_dept_id,
                                                                     is_leader=as_leader,
@@ -1251,43 +1258,190 @@ class Employee(BaseModel):
                 db.session.rollback()
                 return False, message_after_save
 
+    def change_department(self, current_dept_id, after_dept_id, as_leader, target_date):
+
+        with DBConnectionHandler() as db:
+            ## 부서의 [제거 or 변경/추가] 와 무관하게 승진/강등여부 판단 => role필드 변화해놓기
+            # => cf) 관계객체(user)의 .role필드에는 해당 데이터가 불러와 있으니, 같은 객체를 get조회해서 대입할시 에러 나니 조심.
+            if self.is_demote(current_dept_id, after_dept_id, as_leader):
+                self.user.role = Role.get_by_name('STAFF')
+                # db.session.add(self) # 뒤에 self.reference변경때문에 add를 좀 더 뒤에서
+
+            if self.is_promote(after_dept_id, as_leader):
+                self.user.role = Role.get_by_name('CHIEFSTAFF')
+                # db.session.add(self)
+
+            ## 현재 취임정보를 제거할 상황(부서변경or부서제거)을 찾아 먼저 제거하기
+            # (1) 현재부서가 선택되었다면, [부서추가]가 아닌 [부서변경] OR  [부서제거]상황이다.
+            #    => 둘다 현재부서 취임정보를 해임시켜야한다.
+            if current_dept_id:
+                current_emp_dept: EmployeeDepartment = EmployeeDepartment.get_by_emp_and_dept_id(self.id, current_dept_id)
+                current_emp_dept.dismissal_date = target_date
+
+                db.session.add(current_emp_dept)
+
+            ## 다음 취임정보를 생성하지 않는 상황(부서 제거) 먼저 처리하기
+            # (2) after 부서가 선택안되었다면 (current는 무조건 선택된) => [부서제거]의 상황으로 취임정보 생성 없이
+            #     현재 취임정보 삭제된 상태를 commit하고 끝낸다.
+            #    1) after부서가 없다면 -> [부서제거]로서 취임정보 생성 없이 바로 return해야한다.
+            #    =>  after부서가 없는 [부서제거] 상태 ( current는 무조건 있음 )를 처리한다.
+            #    2) after부서가 있다면 -> [부서변경] or [부서추가]의 상황으로 취임정보 새로 생성되어야한ㄷ다
+            # (2-1)
+            if not after_dept_id and current_dept_id:
+                # 부서제거시, 부서제거 refence입력하고 add
+                current_dept: Department = Department.get_by_id(current_dept_id)
+                self.update_reference(f"[{current_dept.name}]부서 해임({format_date(target_date)})")
+                db.session.add(self)
+
+                db.session.commit()
+                return True, f"[{current_dept.name}]부서 제거를 성공하였습니다."
+
+            ## 다음 취임정보를 생성하는 상황(부서 변경 or 부서 추가)
+            # (2-2) (after부서가 있는 상태): current O[부서변경] or current X [부서추가] -> after 부서 취임정보 생성
+            after_emp_dept: EmployeeDepartment = EmployeeDepartment(employee_id=self.id,
+                                                                    department_id=after_dept_id,
+                                                                    is_leader=as_leader,
+                                                                    employment_date=target_date)
+            result, message_after_save = after_emp_dept.save()
+
+            if result:
+                ## result가 True라는 말은, after부서가 있어서 => 새로운 부서 취임정보 생성 완료
+                after_dept: Department = Department.get_by_id(after_dept_id)
+                # (3) current부서 O : 부서 변경 / current부서 X : 부서 추가
+                # (4) 취임정보.save()에서 나온 성공1/실패N 메세지 중 [취임정보 생성 성공1]에 대해
+                # => current O/X에 따라 부서변경/ 부서추가의 메세지 따로 반환
+                if current_dept_id:
+                    current_dept: Department = Department.get_by_id(current_dept_id)
+                    self.update_reference(f"[{current_dept.name}→{after_dept.name}]부서 변경({format_date(target_date)})")
+
+                    message = f"부서 변경[{current_dept.name}→{after_dept.name}]을 성공하였습니다."
+
+                else:
+                    self.update_reference(f"[{after_dept.name}]부서 취임({format_date(target_date)})")
+                    message = f"부서 추가[{after_dept.name}]를 성공하였습니다."
+
+                db.session.add(self)
+                db.session.commit()
+
+                return True, message
+
+            ## save에 실패하면 message_after_save의 이유로 실패했다고 rollback하고  반환한다.
+            # (5) 최종 저장여부를 결정하는 것은 부서변경여부다. .save()가 실패하여 result가 False로 올경우 rollback한다.
+            else:
+                # (2-2) 만약  after부서에 취임 실패한다면, 취임정보.save()에서 나온 에러메세지를 반환 => route에서 그대로 취임실패 메세지를 flash
+                db.session.rollback()
+                return False, message_after_save
+
+    # #### with other entity
+    # def is_promote(self, as_leader):
+    #     #### (0) 팀장으로 가는 경우가 아니면 탈락이다.
+    #     if not as_leader:
+    #         return False
+    #     #### (1) 팀장으로 가는데, 이미 팀장인 부서가 있다면 탈락이다.
+    #
+    #     #### 승진: 만약, before_dept_id를 [포함]하여 팀장인 부서가 없으면서(아무도것도 팀장X) & as_leader =True(최초 팀장으로 가면) => 승진
+    #     #### - 팀장인 부서가 1개도 없다면, 팀원 -> 팀장 최초로 올라가서, 승진
+    #     depts_as_leader = self.get_my_departments(as_leader=True)
+    #     return len(depts_as_leader) == 0
 
     #### with other entity
-    def is_promote(self, as_leader):
-        #### (0) 팀장으로 가는 경우가 아니면 탈락이다.
+    def is_promote(self, after_dept_id, as_leader):
+        # 추가 -> (1) 이미 직위가 CHIEFSTAFF이상이면 탈락이다.
+        if self.is_chiefstaff:
+            return False
+
+        # 추가 -> (2) 변경할 부서가 없으면 [부서제거]이므로 승진은 탈락이다.
+        if not after_dept_id:
+            return False
+        # 추가 -> (3) after부서가 부/장급일 땐, as_leader가 부서원으로 왔어도 True로 미리 바꿔놔야한다.
+        after_dept: Department = Department.get_by_id(after_dept_id)
+        #            그 전에, active부서가 아니면 탈락이다.
+        if not after_dept:
+            return False
+
+        if after_dept.type == DepartmentType.부장:
+            as_leader = True
+
+        # (4) (부서가있더라도) 팀장으로 가는 경우가 아니면 탈락이다.
         if not as_leader:
             return False
-        #### (1) 팀장으로 가는데, 이미 팀장인 부서가 있다면 탈락이다.
 
+        # (5) 팀+장으로 가는데, 이미 팀장인 부서가 있다면 탈락이다. => 없어야 통과다
         #### 승진: 만약, before_dept_id를 [포함]하여 팀장인 부서가 없으면서(아무도것도 팀장X) & as_leader =True(최초 팀장으로 가면) => 승진
         #### - 팀장인 부서가 1개도 없다면, 팀원 -> 팀장 최초로 올라가서, 승진
         depts_as_leader = self.get_my_departments(as_leader=True)
-        return len(depts_as_leader) == 0
+        if depts_as_leader:
+            return False
+
+        return True
 
     #### with other entity
-    def is_demote(self, as_leader, current_dept_id):
-        #### (0) 팀원으로 가는 경우가 아니면 애초에 탈락이다.
-        if as_leader:
-            return False
-        #### 강등에는 현재부서에 대해 팀장이라는 조건이 필요하다.
-        #### (1) 현재부서가 없다면 강등에서 먼저 탈락이다.
-        current_dept = Department.get_by_id(current_dept_id)
-        if not current_dept :
+    def is_demote(self, current_dept_id, after_dept_id, as_leader):
+        # (0) EXECUTIVE 이상인 사람은, 강등에 해당하지 않는다.(이사급, 관리자가 STAFF되어버리는 참사 방지)
+        if self.is_executive:
             return False
 
-        #### (2) 현재부서 있더라도, 팀장이 아니면 탈락이다.
+        # (1) 이미 CHIEFSTAFF 미만 직위의 직원(STAFF)면 강등 탈락이다.
+        if not self.is_chiefstaff:
+            return False
+
+        # (2) 현재부서가 없다면 [부서 추가]의 상황으로 강등 탈락.
+        if not current_dept_id:
+            return False
+        # (3) 현재부서가 있더라도, 조회시 active한 부서가 아니라면 강등 탈락이다.
+        current_dept = Department.get_by_id(current_dept_id)
+        if not current_dept:
+            return False
+
+        # (4) current외 다른 부서의 팀장으로 소속되어 있다면 강등 탈락이다.
+        #### 강등: 만약, before_dept_id를 [제외]하고 팀장인 부서가 없으면서(현재부서만 팀장) & as_leader =False(마지막 팀장자리 -> 팀원으로 내려가면) => 강등
+        #### - 선택된 부서외 팀장인 다른 부서가 있다면, 현재부서만 팀장 -> 팀원으로 내려가서, 팀장 직책 유지
+        other_depts_as_leader = self.get_my_departments(as_leader=True, except_dept_id=current_dept_id)
+        if other_depts_as_leader:
+            return False
+
+        # (5) (팀장인 또다른 부서X)현부서만 가지고 있더라도, 팀장이 아니라면 강등 탈락이다.
         is_current_dept_leader = self.is_leader_in(Department.get_by_id(current_dept_id))
         if not is_current_dept_leader:
             return False
 
-        #### (3) 현재부서의 팀장인 상태에서, 제외하고 다른팀 팀장이면 강등에서 탈락이다.
+        # (6) after부서가 None이어도 되는데, 만약 있는데 부/장급 부서라면 as_leader True를 할당해야하며
+        # -> as_leader 판단시 True면 [부서원or부서제거]의 상황이 아니므로 탈락이다.
+        if after_dept_id:
+            after_dept: Department = Department.get_by_id(after_dept_id)
+            if after_dept.type == DepartmentType.부장:
+                as_leader = True
 
+        # (7) as_leader가 True면 CHIEFSTAFF이상으로 가는 거라 탈락이다.
+        if as_leader:
+            return False
 
-        #### 강등: 만약, before_dept_id를 [제외]하고 팀장인 부서가 없으면서(현재부서만 팀장) & as_leader =False(마지막 팀장자리 -> 팀원으로 내려가면) => 강등
-        #### - 선택된 부서외 팀장인 다른 부서가 있다면, 현재부서만 팀장 -> 팀원으로 내려가서, 팀장 직책 유지
-        other_depts_as_leader = self.get_my_departments(as_leader=True, except_dept_id=current_dept_id)
+        return True
 
-        return len(other_depts_as_leader) == 0
+    # #### with other entity
+    # def is_demote(self, as_leader, current_dept_id):
+    #
+    #     #### (0) 팀원으로 가는 경우가 아니면 애초에 탈락이다.
+    #     if as_leader:
+    #         return False
+    #     #### 강등에는 현재부서에 대해 팀장이라는 조건이 필요하다.
+    #     #### (1) 현재부서가 없다면 강등에서 먼저 탈락이다.
+    #     current_dept = Department.get_by_id(current_dept_id)
+    #     if not current_dept:
+    #         return False
+    #
+    #     #### (2) 현재부서 있더라도, 팀장이 아니면 탈락이다.
+    #     is_current_dept_leader = self.is_leader_in(Department.get_by_id(current_dept_id))
+    #     if not is_current_dept_leader:
+    #         return False
+    #
+    #     #### (3) 현재부서의 팀장인 상태에서, 제외하고 다른팀 팀장이면 강등에서 탈락이다.
+    #
+    #     #### 강등: 만약, before_dept_id를 [제외]하고 팀장인 부서가 없으면서(현재부서만 팀장) & as_leader =False(마지막 팀장자리 -> 팀원으로 내려가면) => 강등
+    #     #### - 선택된 부서외 팀장인 다른 부서가 있다면, 현재부서만 팀장 -> 팀원으로 내려가서, 팀장 직책 유지
+    #     other_depts_as_leader = self.get_my_departments(as_leader=True, except_dept_id=current_dept_id)
+    #
+    #     return len(other_depts_as_leader) == 0
 
 
 #### 초대는 분야마다 초대하는 content(직원초대 -> Role 중 1개)가 다르기 때문에

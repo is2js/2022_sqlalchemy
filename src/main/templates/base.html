@@ -331,9 +331,14 @@
             employee_id: null,
             //employee.html modal 속 제출 처리 변수
             isLoading: null,
-            //employee.html modal 속 스위치의 Y/N시 들어갈 값을 받아주는 변수 (각 html파일에서 초기화하고, swtich내에서 true-value, false-value를 정의함
-            //app._data.isSwitchedCustom = '팀원';
-            isSwitchedCustom: null,
+            //employee.html 부서modal 속 스위치의 Y/N시 들어갈 값을 받아주는 변수 (각 html파일에서 초기화하고, swtich내에서 true-value, false-value를 정의함
+            isSwitchedCustom: null, //app._data.isSwitchedCustom = '부서원';
+            //employee.html 부서modal 속 현재부서 option list(axios로 받아짐)
+            currentDeptList: null,
+            //employee.html 부서modal 속 선택된 현재부서 id
+            currentDeptId: null,
+            selectableDeptList: null,
+            selectedDeptId: null,
         },
         watch: {
             // admin/banner_form , auth/userinfo_form 에서 쓰는 b-upload v-model변수
@@ -425,7 +430,7 @@
                     'is-active': this.activeAnchor === current_index
                 }
             },
-            //employee.html modal 속 form 제출 처리
+            //employee.html 재직변경 modal 속 form 제출 처리 + 부서변경 모달의 제출 처리도
             submitForm(e) {
                 // console.log(e)
                 // e.preventDefault();
@@ -440,7 +445,145 @@
                     this.isLoading = false
                 }, 1000)
             },
+            //employee.html 부서변경 버튼 클릭시 정보를 받고 modal을 띄우기
+            getCurrentDepartments(emp_id) {
+                console.log(emp_id)
+                axios({
+                    url: '{{ url_for("admin.get_current_departments", employee_id="")}}' + emp_id,
+                    method: 'get',
+                    // dataType: 'html',
+                    // headers: {'content-type': 'application/json;charset=utf-8'},
+                }).then(res => {
+                    // alert("성공")
+                    console.log('res.status >> ', res.status);
+                    console.log('res.data >> ', res.data);
 
+                    this.currentDeptList = res.data.deptInfos;
+                    console.log('this.currentDeptList >> ', this.currentDeptList);
+
+                    // 현재 부서가 없을 경우, -> 새롭게 axios로 모든 부서 요청해서 => this.selectableDeptList에 넣기
+                    if (this.currentDeptId === null || this.currentDeptList.length === 0) {
+                        axios({
+                            url: '{{ url_for("admin.get_all_departments") }}',
+                            method: 'get',
+                        }).then(res => {
+                            console.log('res.status >> ', res.status);
+                            console.log('res.data >> ', res.data)
+                            this.selectableDeptList = res.data.deptInfos;
+                        }).catch(err => {
+                            console.log(err.response.data.message)
+                            alert(err.response.data.message)
+                        });
+                    }
+
+                    this.isDepartmentModalActive = true;
+                    this.employee_id = emp_id;
+                    this.isSwitchedCustom = '부서원';
+
+                }).catch(err => {
+                    alert("서버 연결이 올바르지 않습니다.")
+                    console.log(err)
+                });
+
+            },
+            //employee.html 부서변경 modal에서 첫번재 부서 선택시
+            onCurrentDeptIdChange() {
+                console.log("this.currentDeptId>>>", this.currentDeptId)
+                //현재부서에 [부서 추가] 도입후 axios
+
+                //employee_id까지 같이 FormData로 만들어서 보내기
+                const formData = new FormData();
+                formData.append('current_dept_id', this.currentDeptId);
+                formData.append('employee_id', this.employee_id);
+
+                axios({
+                    // url: '{{ url_for("admin.get_selectable_departments", department_id="")}}' + this.currentDeptId,
+                    url: '{{ url_for("admin.get_selectable_departments")}}',
+                    method: 'post', //new FormData()로 보낼 것이라면 get요청은 무조건 에러난다.
+                    data: formData,
+                    // form에 파일이 없다면 headers는 생략해도 된다.
+                    // headers: {'content-type': 'multipart/form-data'},
+                    // headers: {'content-type': 'application/json;charset=utf-8'},
+                    // dataType: 'html',
+                }).then(res => {
+                    // alert("성공")
+                    console.log('res.status >> ', res.status);
+                    console.log('res.data >> ', res.data);
+
+                    this.selectableDeptList = res.data.deptInfos;
+                    console.log('this.selectableDeptList >> ', this.selectableDeptList);
+
+                }).catch(err => {
+                    // alert("서버 연결이 올바르지 않습니다.")
+                    console.log(err)
+                    console.log(err.response.data) // return dict(json)
+                    console.log(err.response.data.message)
+                });
+
+            },
+
+            //employee.html 부서변경 modal에서 2번째 부서 선택시 + swtich바뀔 때
+            // onSelectedDeptIdChange(){
+            onSelectedDeptIdOrSwitchChange(e) {
+                // console.log('선택부서 선택함.')
+                const formData = new FormData();
+                formData.append('current_dept_id', this.currentDeptId); //null
+                formData.append('employee_id', this.employee_id); // 12
+                formData.append('as_leader', this.isSwitchedCustom); //부서원
+                // 부/장급 부서의 선택시, 무조건 as_leader로의 변경이므로 is_promote반영되도록 추가해서 보내기
+                formData.append('after_dept_id', this.selectedDeptId);
+
+
+                axios({
+                    url: '{{ url_for("admin.determine_promote")}}',
+                    method: 'post', //new FormData()로 보낼 것이라면 get요청은 무조건 에러난다.
+                    data: formData,
+
+                }).then(res => {
+                    console.log('res.status >> ', res.status);
+                    console.log('res.data >> ', res.data);
+                    // 승진이나 강등시 confirm으로 알려주기
+                    let change_position = '';
+                    if (res.data.isPromote) {
+                        change_position = '승진';
+                    }
+                    if (res.data.isDemote) {
+                        change_position = '강등';
+                    }
+                    // console.log(change_position) // js도 ''빈문자열을 if false로 취급하는 것으로 작동한다. => 둘 중에 1개가 채워졌으면 직위변경이다.
+                    if (change_position) {
+                        let appended_message = res.data.isPromote ? '부서관리의 책임이 생깁니다. 확인해주세요.' : '부서관리의 책임이 사라져요. 확인해주세요.';
+
+                        //부장급부서로 인해, 부서원상태에서도 -> 승진이 된다.
+                        // => 승진의 상황으로 판단됬는데 && 부서원으로 체크되어있으면 (부/장급부서)로 => [부서장]상태로 바꿔놓자
+                        if (res.data.isPromote && this.isSwitchedCustom === '부서원') {
+                            this.isSwitchedCustom = '부서장';
+                            appended_message = appended_message + '<br/><b>부/장급 부서</b>는 1인의 CHIEFSTAFF(직위)로 등록됩니다.';
+                        }
+
+                        this.$buefy.dialog.confirm({
+                            message: '<b>' + this.isSwitchedCustom + '</b>으로 <b>' + change_position + '</b>되서 직위가 변해요.' + '<br/>' + appended_message,
+                            type: 'is-danger',
+                            hasIcon: true,
+                            confirmText: '계속',
+                            // onConfirm: () => this.$buefy.toast.open('Account deleted!'),
+                            cancelText: '취소',
+                            onCancel: () => this.isSwitchedCustom = this.isSwitchedCustom === '부서장' ? '부서원' : '부서장',
+                        });
+                    }
+
+                }).catch(err => {
+                    // 승진여부판단시 잘못된 요청이 날아올 수 있으며 안내해야한다. (부서선택안하고 switch만 조절해서 넘어가는 경우)
+                    // alert(err.response.data.message)
+                    this.$buefy.toast.open({
+                        duration: 5000,
+                        message: err.response.data.message,
+                        position: 'is-top',
+                        type: 'is-danger'
+                    });
+                    // console.log(err.response.data.message)
+                });
+            },
 
         },
         filters:

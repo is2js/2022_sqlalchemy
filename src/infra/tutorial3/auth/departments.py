@@ -104,6 +104,7 @@ class DepartmentType(enum.IntEnum):
     #     elif self == DepartmentType.위원:
     #         return '위원장', '위원'
 
+
 class Department(BaseModel):
     _N = 3
 
@@ -252,7 +253,7 @@ class Department(BaseModel):
             return dep
 
     @classmethod
-    def get_by_id(cls, id: str):
+    def get_by_id(cls, id: int):
         with DBConnectionHandler() as db:
             dep = db.session.scalars(
                 select(cls)
@@ -280,6 +281,16 @@ class Department(BaseModel):
                 .order_by(cls.path)
             ).all()
             return [(x.id, x.name) for x in depts]
+
+    @classmethod
+    def get_all_infos(cls):
+        with DBConnectionHandler() as db:
+            depts = db.session.scalars(
+                select(cls)
+                .where(cls.status == 1)
+                .order_by(cls.path)
+            ).all()
+            return [{'id': x.id, 'name': x.name} for x in depts]
 
     @classmethod
     def change_sort_by_id(cls, id_a, id_b):
@@ -348,6 +359,12 @@ class Department(BaseModel):
     def get_selectable_departments_for_edit(self):
         departments = Department.get_all()
         selectable_parent_departments = [(x.id, x.name) for x in departments if
+                                         x.id not in self.get_self_and_children_id_list()]
+        return selectable_parent_departments
+
+    def get_selectable_departments(self):
+        departments = Department.get_all()
+        selectable_parent_departments = [{'id': x.id, 'name': x.name} for x in departments if
                                          x.id not in self.get_self_and_children_id_list()]
         return selectable_parent_departments
 
@@ -443,8 +460,6 @@ class Department(BaseModel):
         return None
 
 
-
-
 # 2.
 class EmployeeDepartment(BaseModel):
     __tablename__ = 'employee_departments'
@@ -488,10 +503,10 @@ class EmployeeDepartment(BaseModel):
     def __repr__(self):
         info: str = f"{self.__class__.__name__}" \
                     f"[id={self.id!r}]" \
-                    # f" title={self.employee.name!r}," \
-                    # f" parent_id={self.department.name!r}]" \ # 관계필드는 적지말자.
+            # f" title={self.employee.name!r}," \
+        # f" parent_id={self.department.name!r}]" \ # 관계필드는 적지말자.
 
-            # f" level={self.level!r}]" # path를 채우기 전에 출력했더니 level써서 에러가 남.
+        # f" level={self.level!r}]" # path를 채우기 전에 출력했더니 level써서 에러가 남.
         return info
 
     #### (1) 같은부서에 대해서만 존재 여부 확인 -> 다른 부서에는 또 부임할 수 있다.
@@ -579,7 +594,6 @@ class EmployeeDepartment(BaseModel):
             self.position = self.department.type.find_position(is_leader=self.is_leader,
                                                                dep_name=self.department.name)  # joined를 삭제하면 fk만 넣어줘도 이게 돌아갈까?
 
-
             #### 한번만 session에 add해놓으면, 또 add할 필요는 없다.
             # db.session.add(self)
             db.session.commit()
@@ -617,7 +631,6 @@ class EmployeeDepartment(BaseModel):
                 .where(cls.department_id == dept_id)
             )
             return db.session.scalars(stmt).first()
-
 
 # 3.
 # users_and_departments = db.Table(
@@ -726,5 +739,3 @@ class EmployeeDepartment(BaseModel):
 #     permissions = db.relationship("Permission", secondary=user_permission_associate, backref="users", lazy='dynamic')
 #     roles = db.relationship("Role", secondary=user_role_associate, backref="users", lazy='dynamic')
 #     photo = db.relationship("File", lazy="joined")
-
-
