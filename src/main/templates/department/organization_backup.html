@@ -1,0 +1,85 @@
+{% extends 'admin/index.html' %}
+
+
+{% block extra_head_style %}
+    <link href="https://unpkg.com/vue2-org-tree/dist/style.css">
+
+    <script src="https://unpkg.com/vue2-org-tree/dist/index.js"></script>
+<!-- 부서변경시 부서정보 받아오기 위한 axios -->
+<script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+{% endblock extra_head_style %}
+
+{% block member %}
+<!-- 위쪽 제목 공간 -->
+<div class="is-block">
+    <!-- left 제목 -->
+    <div class="is-pulled-left">
+        <h1 class="is-size-4">
+            <span class="icon"><i class="mdi mdi-receipt-outline"></i></span>
+            조직도
+        </h1>
+    </div>
+
+    {% block button %}
+    <!--    <div class="is-pulled-right">-->
+    <!--        <a href="{{url_for('admin.employee')}}" class="button is-primary is-light">-->
+    <!--            <span class="icon"><i class="mdi mdi-plus-thick"></i></span>-->
+    <!--            <span>직원 추가</span>-->
+    <!--        </a>-->
+    <!--    </div>-->
+
+    {% endblock button %}
+
+    <div class="is-clearfix"></div>
+    <div class="dropdown-divider"></div>
+
+    <!-- 아래쪽 table의 처리에 대한 flash 메세지를 위쪽에서   -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    {% for category, message in messages %}
+    <b-message type="{{category}}">
+        <ul class=flashes>
+            <li class="{{category}}">{{ message }}</li>
+        </ul>
+    </b-message>
+    {% endfor %}
+    {% endif %}
+    {% endwith %}
+
+    <!-- form validation -->
+    {% if form and form.errors %}
+    <b-message type="is-danger">
+        <ul class="errors">
+            {% for error, v in form.errors.items() %}
+            <li>{{ error }}：{{ v[0] }}</li>
+            {% endfor %}
+        </ul>
+    </b-message>
+    {% endif %}
+</div>
+
+<!-- 위쪽 아래쪽 table or form 공간 -->
+{% block table_content %}
+
+
+<div>
+    <vue2-org-tree name="abc" :data="tree" collapsable :label-width="90" :label-class-name="labelClass"
+                   :render-content="renderContent" @on-expand="onExpand" @on-node-click="onNodeClick"
+                   @on-node-mouseover="onNodeMouseOver" @on-node-mouseout="onNodeMouseOut" @on-node-drop="onNodeDrop"
+                   selected-class-name="selected-node" selected-key="selectedKey"/>
+</div>
+{% endblock table_content %}
+
+
+{% endblock member %}
+
+
+{% block extra_foot_script %}
+
+{% endblock extra_foot_script %}
+
+{% block vue_script %}
+<script>
+
+</script>
+{% endblock vue_script %}

@@ -1749,62 +1749,62 @@ def _load_fake_data(session: Session):
     ]:
         menu.save()
 
-    c1 = Comment(text='hello1', author='alice')
-    c1.save()
-    c2 = Comment(text='hello2', author='bob')
-    c2.save()
+    # c1 = Comment(text='hello1', author='alice')
+    # c1.save()
+    # c2 = Comment(text='hello2', author='bob')
+    # c2.save()
+    #
+    # c11 = Comment(text='reply11', author='bob', parent=c1)
+    # c12 = Comment(text='reply12', author='susan', parent=c1)
+    # c111 = Comment(text='reply111', author='susan', parent=c11)
+    # c21 = Comment(text='reply21', author='alice', parent=c2)
+    #
+    # for c in [c11, c12, c111, c21]:
+    #     c.save()
+    #
+    # n1 = Notice(
+    #     is_sticky=False,
+    #     is_banner=False,
+    #     title="개원 인사드립니다.",
+    #     body="ㅎㅎㅎㅎㅎ"
+    # )
+    #
+    # n2 = Notice(
+    #     is_sticky=False,
+    #     is_banner=True,
+    #     title="개원 이벤트: 패키지 상품을 10만원에 !",
+    #     body="개원 기념 ~부터 ~까지 패키지 이벤트가 시행되었습니다.",
+    #
+    #     banner_title='우아한 11월 이벤트',
+    #     banner_type=BannerType.MAIN,
+    #     exp_start_date=datetime.datetime(2022, 11, 1, 00, 00, 00),
+    #     exp_end_date=datetime.datetime(2022, 11, 15, 23, 59, 59),
+    # )
+    #
+    # for n in [
+    #     n1, n2
+    # ]:
+    #     n.save()
 
-    c11 = Comment(text='reply11', author='bob', parent=c1)
-    c12 = Comment(text='reply12', author='susan', parent=c1)
-    c111 = Comment(text='reply111', author='susan', parent=c11)
-    c21 = Comment(text='reply21', author='alice', parent=c2)
-
-    for c in [c11, c12, c111, c21]:
-        c.save()
-
-    n1 = Notice(
-        is_sticky=False,
-        is_banner=False,
-        title="개원 인사드립니다.",
-        body="ㅎㅎㅎㅎㅎ"
-    )
-
-    n2 = Notice(
-        is_sticky=False,
-        is_banner=True,
-        title="개원 이벤트: 패키지 상품을 10만원에 !",
-        body="개원 기념 ~부터 ~까지 패키지 이벤트가 시행되었습니다.",
-
-        banner_title='우아한 11월 이벤트',
-        banner_type=BannerType.MAIN,
-        exp_start_date=datetime.datetime(2022, 11, 1, 00, 00, 00),
-        exp_end_date=datetime.datetime(2022, 11, 15, 23, 59, 59),
-    )
-
-    for n in [
-        n1, n2
-    ]:
-        n.save()
-
-    #### category
-    cate = Category(name='분류1')
-    session.add(cate)
-    session.commit()
-    cates = ['분류2', '분류3', '분류4']
-    for name in cates:
-        cate = Category(name=name)
-        session.add(cate)
-        session.commit()
-
-    #### Tag
-    tag_list = [Tag(name=f'tag_{x}') for x in range(1, 4)]
-    session.bulk_save_objects(tag_list)
-    session.commit()
-
-    ####  user
-    user = User(username='admin', password='123456')
-    session.add(user)
-    session.commit()
+    # #### category
+    # cate = Category(name='분류1')
+    # session.add(cate)
+    # session.commit()
+    # cates = ['분류2', '분류3', '분류4']
+    # for name in cates:
+    #     cate = Category(name=name)
+    #     session.add(cate)
+    #     session.commit()
+    #
+    # #### Tag
+    # tag_list = [Tag(name=f'tag_{x}') for x in range(1, 4)]
+    # session.bulk_save_objects(tag_list)
+    # session.commit()
+    #
+    # ####  user
+    # user = User(username='admin', password='123456')
+    # session.add(user)
+    # session.commit()
 
 
 

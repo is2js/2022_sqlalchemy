@@ -1,12 +1,15 @@
+import datetime
 import enum
 
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, select, func, BigInteger, Date, Text, distinct
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, select, func, BigInteger, Date, Text, distinct, \
+    case, and_, or_
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship, backref, with_parent
 
 from src.infra.config.connection import DBConnectionHandler
 from src.infra.tutorial3.common.base import BaseModel
 from src.infra.tutorial3.common.int_enum import IntEnum
+from src.main.templates.filters import format_date
 
 
 class DepartmentType(enum.IntEnum):
@@ -292,6 +295,35 @@ class Department(BaseModel):
             ).all()
             return [{'id': x.id, 'name': x.name} for x in depts]
 
+    # root부서들부터 자식들 탐색할 수 있게 먼저 호출
+    @classmethod
+    def get_roots(cls):
+        with DBConnectionHandler() as db:
+            stmt = (
+                select(cls)
+                .where(cls.status == 1)
+                .where(cls.parent_id.is_(None))
+            )
+
+            return db.session.scalars(stmt).all()
+
+    # dept_to_dict = lambda r: {c.name: getattr(r, c.name) for c in r.__table__.columns
+    #                           if c.name not in ['pub_date', 'path', 'type', ]  # 필터링 할 칼럼 모아놓기
+    #                           }
+
+    @classmethod
+    def get_all_tree(cls):
+        # root_department = cls.get_root()
+        # if root_department:
+        #     return root_department.get_self_and_children_dict()
+        root_departments = cls.get_roots()
+
+        tree_list = []
+        for root in root_departments:
+            tree_list.append(root.get_self_and_children_dict())
+
+        return dict(data=tree_list)
+
     @classmethod
     def change_sort_by_id(cls, id_a, id_b):
         with DBConnectionHandler() as db:
@@ -370,27 +402,100 @@ class Department(BaseModel):
 
     #### BaseModel의 to_dict는 inspect(self) 를 칠 때, 관계필드까지 다 조사하면서, DetachedInstanceError가 뜨니, 재귀에선 활용못한다.
     #### => 람다함수를 이용하여 객체.__table__.columns로 칼럼을 돌면서 만들어준다.
-    def to_dict(self):
-        d = super().to_dict()
-        # del d['children']  # 관계필드는 굳이 필요없다. 내가 직접 조회해서 넣어줄 것임.
-        return d
+    # def to_dict(self):
+    #     d = super().to_dict()
+    #     # del d['children']  # 관계필드는 굳이 필요없다. 내가 직접 조회해서 넣어줄 것임.
+    #     return d
 
     # print(self.__table__.columns)
     # ImmutableColumnCollection(departments.add_date, departments.pub_date, departments.id, departments.name, departments.parent_id, departments.status, departments.sort, departments.path, departments.type)
     #### => 다행이도 객체.__table__.columns는 관계필드('children') 만 조회되지 않는다.
     # row_to_dict = lambda r: {c.name: str(getattr(r, c.name)) for c in r.__table__.columns}
-    row_to_dict = lambda r: {c.name: getattr(r, c.name) for c in r.__table__.columns
-                             if c.name not in []  # 필터링 할 칼럼 모아놓기
-                             }
+    # row_to_dict = lambda r: {c.name: getattr(r, c.name) for c in r.__table__.columns
+    #                          if c.name not in []  # 필터링 할 칼럼 모아놓기
+    #                          }
+
+    def to_dict(self, delete_columns: list = []):
+        # to_dict를 r.__table__.columns로 하면 관계필드는 알아서 빠져있다.
+        data = super().to_dict()
+        for col in delete_columns:
+            if col in data:
+                del data[col]
+
+        #### 필드 Custom ####
+
+        # 부서장 존재 확인용 -> 부서장이 있따면, 부서 전체 직원 - 1을 해서 [순수 부서원 수]만 내려보낸다.
+        direct_leader_id = self.get_leader_id()
+        # [순수 부서원 수] count_xxxx 메서드는 scalar()에서 알아서 없으면 0 처리된다.
+        data['employee_count'] = self.count_employee() - (1 if direct_leader_id else 0)
+        # [순수 하위 부서 수]만 카운팅 한다.
+        data['only_children_count'] = self.count_only_children()
+        # [순수 부서원 + 하위 부서장과 부서원 수]
+        data['all_employee_count'] = self.count_self_and_children_employee() - (1 if direct_leader_id else 0)
+        # view에서 level별 color / offset 설정을 위한 변수
+        data['level'] = self.level
+
+        # [부서장이 있다면, 부서장을 / 없다면 상위부서 부서장의 정보 추출]
+        from . import Employee
+        leader_id = self.get_leader_id_recursively()
+
+        if leader_id:
+            leader: Employee = Employee.get_by_id(leader_id)
+            data['leader'] = {
+                'id': leader.id, 'name': leader.name, 'avatar': leader.user.avatar,
+                'position': leader.get_position_by_dept_id(self.id),
+                'job_status': leader.job_status.name,
+                'email': leader.user.email,
+            }
+        else:
+            data['leader'] = None
+
+        # [순수 부서원들의 정보만 추출]
+        employee_id_list = self.get_employee_id_list(except_leader=True)
+        if employee_id_list:
+            employees = Employee.get_by_ids(employee_id_list)
+            data['employees'] = []
+            for emp in employees:
+                data['employees'].append({
+                    'id': emp.id, 'name': emp.name, 'avatar': emp.user.avatar,
+                    'position': emp.get_position_by_dept_id(self.id),
+                    'job_status': emp.job_status.name,
+                })
+        else:
+            data['employees'] = None
+
+        # [부모 부서의 sort]  부모색에 대한 명도만 다른 색을 입히기 위해, 색을 결정하는 부모의 sort도 추가
+        parent_id = self.parent_id
+        if parent_id:
+            data['parent_sort'] = Department.get_by_id(parent_id).sort
+        else:
+            data['parent_sort'] = None
+
+        return data
 
     def get_self_and_children_dict(self):
-        result = self.row_to_dict()
+        # result = self.row_to_dict
+        result = self.to_dict(delete_columns=['pub_date', 'path', 'type', ])
 
-        result['children'] = list()
-        for child in self.get_children():
-            # 내 자식들을 dict로 변환한 것을 내 dict의 chilren key로 관계필드 대신 넣되, 자식들마다 다 append로 한다.
-            result['children'].append(child.get_self_and_children_dict())
+        children = self.get_children()
+
+        if len(children) > 0:
+            result['children'] = list()
+            for child in children:
+                # 내 자식들을 dict로 변환한 것을 내 dict의 chilren key로 관계필드 대신 넣되, 자식들마다 다 append로 한다.
+                result['children'].append(child.get_self_and_children_dict())
+
         return result
+
+    def count_only_children(self):
+        total_count = 0
+
+        children = self.get_children()
+        if len(children) > 0:
+            total_count += len(children)
+            for child in children:
+                total_count += child.count_only_children()
+        return total_count
 
     #### with other entity
     def count_employee(self):
@@ -406,7 +511,7 @@ class Department(BaseModel):
     #### with other entity
     #### 자식부서에 같은 사람이 취임할 수 있기 때문에, 개별count -> 단순 누적으로 하면 안된다.
     #### => EmployeeDepartment상의 employee_id를 누적한 뒤, 중복제거해서 반환하는 것으로  처리해야한다.
-    def get_employee_id_list(self):
+    def get_employee_id_list(self, except_leader=False):
         with DBConnectionHandler() as db:
             stmt = (
                 select(EmployeeDepartment.employee_id)  # id를 select한 뒤, scalars().all()하면 객체 대신 int  id list가 반환된다.
@@ -414,6 +519,8 @@ class Department(BaseModel):
 
                 .where(EmployeeDepartment.department.has(Department.id == self.id))
             )
+            if except_leader:
+                stmt = stmt.where(EmployeeDepartment.is_leader != 1)
             return db.session.scalars(stmt).all()
 
     #### with other entity
@@ -431,31 +538,35 @@ class Department(BaseModel):
         return len(set(self.get_self_and_children_emp_id_list()))
 
     #### with other entity
-    def get_leader(self):
+    def get_leader_id(self):
         # 양방향 순환참조를 해결하기 위해 메서드내에서 import
-        from .users import Employee
+        # from .users import Employee
 
         with DBConnectionHandler() as db:
             stmt = (
-                select(Employee)
-                .join(EmployeeDepartment)
+                # select(Employee)
+                # .join(EmployeeDepartment)
+                select(EmployeeDepartment.employee_id)
                 .where(EmployeeDepartment.dismissal_date.is_(None))
                 .where(EmployeeDepartment.department_id == self.id)
                 .where(EmployeeDepartment.is_leader == True)
             )
             return db.session.scalars(stmt).first()
 
-    #### 상사 찾기
-    def get_leader_recursively(self):
+    #### 부서장 id => 해당부서장 없으면 상사의 id 찾기
+    def get_leader_id_recursively(self):
         # 1) 해당 부서의 팀장을 조회한 뒤, 있으면 그 유저를 반환한다
-        leader = self.get_leader()
-        if leader:
-            return leader
-        # 2) (해당부서 팀장X) 상위 부서가 있는지 확인한 뒤, 있으면, 재귀로 다시 돌린다.
+        leader_id = self.get_leader_id()
+        if leader_id:
+            return leader_id
+        # 2) (해당부서에 팀장X) 상위 부서가 있는지 확인한 뒤, 있으면, 재귀로 다시 돌린다.
         if self.parent_id:
             with DBConnectionHandler() as db:
-                parent = db.session.scalars(select(Department).where(Department.id == self.parent_id)).first()
-                return parent.get_leader_recursively()
+                parent = db.session.scalars(
+                    select(Department)
+                    .where(Department.id == self.parent_id)
+                ).first()
+                return parent.get_leader_id_recursively()
         # 3) (팀장도X 상위부서도X) => 팀장정보가 아예 없으니 None반환
         return None
 
@@ -631,6 +742,111 @@ class EmployeeDepartment(BaseModel):
                 .where(cls.department_id == dept_id)
             )
             return db.session.scalars(stmt).first()
+
+    #     재직 = 1 => 역순 정리시 history 제일 뒤쪽에 나타날 예정
+    #     복직 = 1 => 휴직~복직 => 복직된 순간 재직 정보다?!
+    #     휴직 = 2
+    #     퇴사 = 3
+    @hybrid_property
+    def status(self):
+
+        # 휴직일, 퇴직일이 모두 안채워져있으면 -> 재직 1
+        if not self.leave_date and not self.dismissal_date:
+            # return '재직'
+            return 1
+        # (휴직일 or 퇴직일이 찬 상태)
+        # 퇴직일 차있으면 휴직/복직일 상관없이 먼저 퇴직으로 골라 내야한다.
+        if self.dismissal_date:
+            # return '퇴직'
+            return 3
+
+        # (퇴직일X ->휴직일이 차있는 상태)
+        # 휴직일은 잇는데 복직일이 없으면 휴직 상태 => 2
+        if self.leave_date and not self.reinstatement_date:
+            # return '휴직'
+            return 2
+
+        # 휴직일과 복직일 모두 있으면=> 복직 = 재직과 동일한 1
+        if self.leave_date and self.reinstatement_date:
+            # return '복직' -> '재직'과 동일
+            return 1
+
+        return 0
+
+    @status.expression
+    def status(self):
+        # 칼럼.is_(None) or isnot(None)  isnot은 _가 없다.
+        # python and 대신 조건문을 and_(, ,)로 연결한다.
+
+        return case([
+            (and_(self.dismissal_date.is_(None), self.leave_date.is_(None)), 1),  # 재직
+            (self.dismissal_date.isnot(None), 3),  # 퇴사
+            (and_(self.leave_date.isnot(None), self.reinstatement_date.is_(None)), 2),  # 휴직
+            (and_(self.leave_date.isnot(None), self.reinstatement_date.isnot(None)), 1),  # 복직
+        ],
+            else_=0
+        )
+
+    @hybrid_property
+    def status_string(self):
+        # status_string_list = ['재직', '복직', '휴직', '퇴사']
+        # return status_string_list[status]
+        # TypeError: list indices must be integers or slices, not hybrid_propertyProxy
+        if self.status == 1:
+            return '재직'
+        if self.status == 2:
+            return '휴직'
+        if self.status == 3:
+            return '퇴사'
+        return '에러'
+
+    @status_string.expression
+    def status_string(self):
+        return case([
+            (self.status == 1, '재직'),
+            (self.status == 2, '휴직'),
+            (self.status == 3, '퇴사'),
+        ],
+            else_='에러'
+        )
+
+    #### 취임정보의 status에서 따라서, start_date ~ end_date가 다르다.
+    # 시작일 (재직, 복직, 퇴사 -> 고용일 / 휴직 -> 휴직시작일 )
+    # 끝  일 (재직, 휴직, : 현재 / 복직 ->복직일 / 퇴사 -> 퇴사일 )
+    # 고용일 고정이지만 ~ 해임일(재직, 휴직: 오늘 / 복직: 복직일 / 퇴사: 퇴사일)로
+    @hybrid_property
+    def start_date(self):
+        # 휴직 -> 휴직일이 시작
+        if self.status == 2:
+            return self.leave_date
+        # 그외 재직(복직), 퇴사 -> 고용일이 시작
+        return self.employment_date
+
+    @start_date.expression
+    def start_date(self):
+        return case([
+            (self.status == 2, self.leave_date),
+        ],
+            else_=self.employment_date
+        )
+
+    @hybrid_property
+    def end_date(self):
+        # 재직(복직) or 휴직시 [현재]가 end_date
+        if self.status == 1 or self.status == 2:
+            return datetime.date.today()
+        # 퇴직시 퇴직일이 end_date
+        return self.dismissal_date
+
+    @end_date.expression
+    def end_date(self):
+        # db종류와 상관없이 func.now()는 timestamp를 제공한다..?!
+        # => date로 바꾸기 위해, fun.date()로 한번 더 싼다.
+        return case([
+            (or_(self.status == 1, self.status == 2), func.date(func.now())),
+        ],
+            else_=self.dismissal_date
+        )
 
 # 3.
 # users_and_departments = db.Table(

@@ -6,7 +6,7 @@ import uuid
 from dateutil.relativedelta import relativedelta
 from flask import url_for, g
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, select, case, and_, exists, func, DateTime, \
-    BigInteger, update, Date
+    BigInteger, update, Date, desc
 from sqlalchemy.ext.hybrid import hybrid_property, hybrid_method
 from sqlalchemy.orm import relationship, backref, aliased
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -293,7 +293,14 @@ class User(BaseModel):
                     select(Department)
                     .where(Department.id.in_(dep_ids))
                 )
-            return db.session.scalars(stmt).all()
+
+            try:
+                return db.session.scalars(
+                    stmt
+                    .order_by(Department.path)
+                ).all()
+            except ValueError:
+                return []
 
     @hybrid_property
     def is_employee_active(self):
@@ -552,6 +559,8 @@ class Employee(BaseModel):
     leave_date = Column(Date, nullable=True)
 
     reference = Column(String(128), nullable=True)
+
+
 
     # qrcode, qrcode_img: https://github.com/prameshstha/QueueMsAPI/blob/85dedcce356475ef2b4b149e7e6164d4042ffffb/bookings/models.py#L92
 
@@ -954,21 +963,76 @@ class Employee(BaseModel):
                     select(Department)
                     .where(Department.id == min_level_dept.parent_id)
                 ).first()
-            return parent_dept.get_leader_recursively()
+
+                parent_leader_id = parent_dept.get_leader_id_recursively()
+                if parent_leader_id:
+                    return Employee.get_by_id(parent_leader_id)
+                return None
         # 4) (내가 팀장이 아닐 땐) 현 부서의 가까운 팀장을 찾아서 반환한다.
-        return min_level_dept.get_leader_recursively()
+        leader_id = min_level_dept.get_leader_id_recursively()
+        if leader_id:
+            return Employee.get_by_id(leader_id)
+        return None
 
     #### with other entity
-    def get_dept_and_position_list(self):
+    def get_dept_id_and_name_and_position_list(self):
         with DBConnectionHandler() as db:
             stmt = (
-                select(Department.name, EmployeeDepartment.position)
+                select(Department.id, Department.name, EmployeeDepartment.position)
                 .where(EmployeeDepartment.dismissal_date.is_(None))
                 .where(EmployeeDepartment.employee_id == self.id)
+                # dept name정보 + 부서 active필터링를 위해 join
+                .join(EmployeeDepartment.department)
+                .where(Department.status == 1)
+                # level순으로 정렬하기 위해, path로 정렬
+                .order_by(Department.path, EmployeeDepartment.is_leader.desc())
+            )
+            return db.session.execute(stmt).all()
+
+
+    #### EmployeeDepartment의 (고용일은 당연있고) 휴직일x퇴사일x/휴직했고 복귀X/퇴사일찍힘.jobstatus로 정렬하기 위해
+    #### EmployeeDepartment에 . statushybrid_propert -> expression 완성하여 => order_by
+    ####                     .status_string을 .status로 만들어서 -> select
+
+    #### with other entity
+    def get_dept_history_row_list(self):
+        with DBConnectionHandler() as db:
+            stmt = (
+                select(Department.id, Department.name,
+                       # EmployeeDepartment.status,# 정렬에 사용하고, 따로 한글로 매핑함.
+                       EmployeeDepartment.status,
+                       EmployeeDepartment.status_string,
+                       EmployeeDepartment.position,
+                       EmployeeDepartment.is_leader,
+                       EmployeeDepartment.start_date,
+                       EmployeeDepartment.end_date,
+                       )
+                # .where(EmployeeDepartment.dismissal_date.is_(None))
+                .where(EmployeeDepartment.employee_id == self.id)
+                # dept name정보 + 부서 active필터링를 위해 join
+                .join(EmployeeDepartment.department)
+                # .where(Department.status == 1)
+                # 퇴사정보를 맨 처음, 그다음 복직정보, 그다음 휴직/재직 정보 순으로
+                #  + 같은 상태면, 종료일이 빠른 빠른 순으로 먼저
+                .order_by(desc(EmployeeDepartment.status), EmployeeDepartment.start_date, EmployeeDepartment.end_date)
+            )
+            return db.session.execute(stmt).all()
+
+    #### with other entity
+    def get_position_by_dept_id(self, dept_id):
+        with DBConnectionHandler() as db:
+            stmt = (
+                select(EmployeeDepartment.position)
+                .where(EmployeeDepartment.dismissal_date.is_(None))
+                .where(EmployeeDepartment.employee_id == self.id)
+                .where(EmployeeDepartment.department_id == dept_id)
+                # dept name정보 + 부서 active필터링를 위해 join
                 .join(EmployeeDepartment.department)
                 .where(Department.status == 1)
             )
-            return db.session.execute(stmt).all()
+            position = db.session.scalar(stmt)
+            return position if position else '(공석)'
+
 
     #### with other entity
     @hybrid_property
@@ -1020,6 +1084,18 @@ class Employee(BaseModel):
             )
 
             return db.session.scalars(stmt).first()
+
+    @classmethod
+    def get_by_ids(cls, emp_ids: list):
+        with DBConnectionHandler() as db:
+            stmt = (
+                select(cls)
+                .where(cls.id.in_(emp_ids))
+                # view에서 직원들만 나타낼 떄 입사순으로
+                .order_by(cls.join_date)
+            )
+
+            return db.session.scalars(stmt).all()
 
     @classmethod
     def get_not_resigned_by_id(cls, id):
@@ -1378,6 +1454,7 @@ class Employee(BaseModel):
     #### with other entity
     def is_demote(self, current_dept_id, after_dept_id, as_leader):
         # (0) EXECUTIVE 이상인 사람은, 강등에 해당하지 않는다.(이사급, 관리자가 STAFF되어버리는 참사 방지)
+        # => 애초에 강등은, CHIESTAFF <-> STAFF 사이에서만 일어난다.
         if self.is_executive:
             return False
 

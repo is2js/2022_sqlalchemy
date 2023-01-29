@@ -1,0 +1,333 @@
+{% extends 'admin/index.html' %}
+
+
+{% block extra_head_style %}
+<!--<script src="https://unpkg.com/vue-draggable-nested-tree@latest/dist/vue-draggable-nested-tree.js"></script>-->
+<!--<script src="https://unpkg.com/tree-helper@latest/dist/tree-helper.js"></script>-->
+<script src="{{url_for('static', filename='js/department/vue-draggable-nested-tree.js')}}"></script>
+<script src="{{url_for('static', filename='js/department/tree-helper.js')}}"></script>
+
+
+<style>
+    /* tree 공간 */
+    .he-tree {
+        /*border: 1px solid #ccc;*/
+        border-radius: 3%;
+        padding: 20px;
+        width: 300px;
+
+        /*is-light*/
+        background: #f5f5f5;
+    }
+
+    /* 개별 item */
+    .tree-node-inner {
+        border: 1px solid #ccc;
+        cursor: pointer;
+
+        background: white;
+    }
+
+    /* drag시 item */
+    .draggable-placeholder-inner {
+        border: 1px dashed #0088F8;
+        box-sizing: border-box;
+        background: rgba(0, 136, 249, 0.09);
+        color: #0088f9;
+        text-align: center;
+        padding: 0;
+        display: flex;
+        align-items: center;
+    }
+
+</style>
+{% endblock extra_head_style %}
+
+{% block member %}
+<!-- 위쪽 제목 공간 -->
+<div class="is-block">
+    <!-- left 제목 -->
+    <div class="is-pulled-left">
+        <h1 class="is-size-4">
+            <span class="icon"><i class="mdi mdi-receipt-outline"></i></span>
+            부서 관리
+        </h1>
+    </div>
+
+    {% block button %}
+    <!--    <div class="is-pulled-right">-->
+    <!--        <a href="{{url_for('admin.employee')}}" class="button is-primary is-light">-->
+    <!--            <span class="icon"><i class="mdi mdi-plus-thick"></i></span>-->
+    <!--            <span>직원 추가</span>-->
+    <!--        </a>-->
+    <!--    </div>-->
+
+    {% endblock button %}
+
+    <div class="is-clearfix"></div>
+    <div class="dropdown-divider"></div>
+
+    <!-- 아래쪽 table의 처리에 대한 flash 메세지를 위쪽에서   -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    {% for category, message in messages %}
+    <b-message type="{{category}}">
+        <ul class=flashes>
+            <li class="{{category}}">{{ message }}</li>
+        </ul>
+    </b-message>
+    {% endfor %}
+    {% endif %}
+    {% endwith %}
+
+    <!-- form validation -->
+    {% if form and form.errors %}
+    <b-message type="is-danger">
+        <ul class="errors">
+            {% for error, v in form.errors.items() %}
+            <li>{{ error }}：{{ v[0] }}</li>
+            {% endfor %}
+        </ul>
+    </b-message>
+    {% endif %}
+</div>
+
+<!-- 위쪽 아래쪽 table or form 공간 -->
+{% block table_content %}
+
+
+{% endblock table_content %}
+<small>
+    <pre>{$ elements $}</pre>
+</small>
+<div class="box">
+    <!-- 모두 접기 모두 열기 버튼   -->
+    <div class="columns ">
+        <div class="column">
+            <div class="buttons">
+                <b-button class="is-outlined is-rounded has-text-grey"
+                          size="is-small"
+                          @click="collapseAll"
+                >모두 접기
+                </b-button>
+                <b-button class="is-outlined is-dark is-rounded"
+                          size="is-small"
+                          @click="expandAll"
+                >모두 열기
+                </b-button>
+            </div>
+        </div>
+    </div>
+    <!-- tree 공간   -->
+    <div class="columns">
+        <div class="column ">
+            <!--            <tree :data="draggableTreeData"-->
+            <!--                  draggable="draggable"-->
+            <!--                  cross-tree="cross-tree">-->
+            <!--            2. 데이터를 받으려면, @change => 인자 2개를 받는 메서드를 정의해줘야한다.-->
+            <!--            <tree :data="draggableTreeData"-->
+            <!--                  draggable="draggable"-->
+            <!--                  cross-tree="cross-tree"-->
+            <!--                  @change="treeChange"-->
+
+            <!--                  ref="tree1"-->
+            <!--                  @drag="ondrag"-->
+            <!--                  @drop="ondrop"-->
+            <!--            >-->
+            <tree :data="draggableTreeData"
+                  draggable
+                  ref="tree"
+
+                  :data="treeData"
+                  :space="1"
+                  :indent="24"
+
+                  @change="treeChange"
+
+                  @drop="treeDragstart"
+            >
+
+                <div slot-scope="{data, store}">
+                    <template v-if="!data.isDragPlaceHolder">
+                        <!--  template에는 @click이 안먹어서 따로 한번 더 감싸줌.-->
+                        <div @click="curNodeClicked(data)">
+                            <span class="pl-2">
+                                [ {$ data.draggable $} ] {$ data.text $}
+                            </span>
+                            <span class="is-pulled-right pr-3"
+                                  v-if="data.children && data.children.length"
+                                  @click="store.toggleOpen(data)">
+                                <small class="has-text-grey">
+                                    {$ data.open ? '접기 ▶' : '열기 ▼' $}
+                                </small>
+                            </span>
+                        </div>
+                    </template>
+                </div>
+
+            </tree>
+        </div>
+    </div>
+</div>
+
+{% endblock member %}
+
+
+{% block extra_foot_script %}
+<script>
+</script>
+{% endblock extra_foot_script %}
+
+{% block vue_mixins %}
+<script>
+    const th = window.treeHelper
+    const {DraggableTree} = window.vueDraggableNestedTree;
+
+    // Vue.component('tree', DraggableTree);
+    const myMixin = {
+        data() {
+            return {
+
+                treeData: [],
+
+                draggableTreeData: [
+                    {text: 'node 1', open: false},
+                    {text: 'node 2', open: false},
+                    {text: 'node 3 undraggable', draggable: false, open: false},
+                    {text: 'node 4 undroppable', droppable: false, open: false},
+                    {
+                        text: 'node 5', children: [
+                            {text: 'node 6'},
+                            {text: 'node 7'},
+                        ], open: false
+                    },
+                ],
+                // 1. 넘겨준 데이터와 별개로 돌고 있는 데이터를 빈 배열로 초기화
+                elements: [],
+            };
+        },
+        // created: function () {
+        //     this.greetings();
+        // },
+        components: {
+            'tree': DraggableTree
+        },
+        methods: {
+            //3. 변화된 데이터를 change로 받아주는 메서드
+            // => 인자는 node, targetTree로 정해져있고, null초기화된 전역변수 elements에 전역변수에 할당한다
+            treeChange(node, targetTree) {
+                // this.elements = targetTree.getPureData();
+                // console.log(node._id)
+                this.treeUpdated(targetTree);
+                console.log('treeChanged');
+            },
+            treeUpdated(tree) {
+                tree = tree || this.$refs.tree;
+                this.elements = tree.getPureData();
+                this.$emit('changed');
+                console.log('treeUpdated');
+            },
+
+            ondrag() {
+                const tree = this.$refs.tree;
+                console.log(tree);
+                tree.nodesTransition = null
+            },
+            ondrop() {
+                const tree = this.$refs.tree;
+                console.log(tree);
+                tree.nodesTransition = 'fade'
+            },
+
+            curNodeClicked(data) {
+                console.log(data);
+                // active
+                // children
+                // class
+                // innerBackClass
+                // innerBackStyle
+                // innerClass
+                // innerStyle
+                // open
+                // parent
+                // style
+                // text
+                // _id
+                // _treeNodePropertiesCompleted
+            },
+            collapseAll: function () {
+                // console.log('collapseAll');
+                console.log(this.draggableTreeData)
+                th.breadthFirstSearch(this.$refs.tree, node => {
+                    node.open = true;
+                });
+            },
+            expandAll: function () {
+                // console.log('expandAll');
+                console.log(this.draggableTreeData)
+                th.breadthFirstSearch(this.$refs.tree, node => {
+                    node.open = false;
+                });
+            },
+
+        }
+    };
+</script>
+{% endblock vue_mixins %}
+
+{% block vue_script %}
+<script>
+
+
+    // app._data.draggableTree = [
+    //     {text: 'node 1'},
+    //     {text: 'node 2'},
+    //     {text: 'node 3 undraggable', draggable: false},
+    //     {text: 'node 4 undroppable', droppable: false},
+    //     {
+    //         text: 'node 5', children: [
+    //             {text: 'node 6'},
+    //             {text: 'node 7'},
+    //         ]
+    //     },
+    // ];
+
+
+    // tree1data: [
+    //     {text: 'node 1'},
+    //     {text: 'node 2'},
+    //     {text: 'node 3 undraggable', draggable: false},
+    //     {text: 'node 4 undroppable', droppable: false},
+    //     {
+    //         text: 'node 5', children: [
+    //             {text: 'node 6'},
+    //             {text: 'node 7'},
+    //         ]
+    //     },
+    // ],
+    // tree2data: [
+    //     {
+    //         text: 'node 8', children: [
+    //             {text: 'node 9'},
+    //             {
+    //                 text: 'node 10 undroppable', droppable: false, children: [
+    //                     {text: 'node 11'},
+    //                     {text: 'node 12'},
+    //                 ]
+    //             },
+    //             {
+    //                 text: 'node 13', children: [
+    //                     {text: 'node 14'},
+    //                     {text: 'node 15 undroppable', droppable: false},
+    //                 ]
+    //             },
+    //             {text: 'node 16'},
+    //             {text: 'node 17'},
+    //             {text: 'node 18'},
+    //         ]
+    //     },
+    // ]
+    // }
+    // console.log(app._data.treeData)
+</script>
+{% endblock vue_script %}

@@ -106,7 +106,7 @@
 <!-- 위쪽 아래쪽 table or form 공간 -->
 {% block table_content %}
 <div class="table-container">
-    <table class="table is-fullwidth is-hoverable is-striped is-vcentered my-3">
+    <table class="table is-fullwidth is-hoverable is-striped is-vcentered my-4">
         <thead>
         <tr>
             <th>사번</th>
@@ -204,19 +204,19 @@
             <td>
                 <span class="is-size-7">
 <!--                    <div class="tags">-->
-                    {% set dept_count = (employee.get_dept_and_position_list() | length) %}
+                    {% set dept_count = (employee.get_dept_id_and_name_and_position_list() | length) %}
                     {% if dept_count > 0  %}
                         <span class="tag is-primary is-light">
-                            {{employee.get_dept_and_position_list()[0][0]}} ({{employee.get_dept_and_position_list()[0][1]}})
+                            {{employee.get_dept_id_and_name_and_position_list()[0][1]}} ({{employee.get_dept_id_and_name_and_position_list()[0][2]}})
                         </span>
                         {% if dept_count > 1 %}
                         <b-tooltip
                                 position="is-right"
                                 type="is-primary">
                             <template v-slot:content>
-                                {% for dept_and_pos in employee.get_dept_and_position_list() %}
+                                {% for dept_id_and_name_and_pos in employee.get_dept_id_and_name_and_position_list() %}
                                             <span class="has-text-white is-size-7">
-                                                {{dept_and_pos[0]}} ({{dept_and_pos[1]}})
+                                                {{dept_id_and_name_and_pos[1]}} ({{dept_id_and_name_and_pos[2]}})
                                             </span></br>
                                 {% endfor %}
                             </template>
@@ -228,7 +228,7 @@
                     {% else %}
                         -
                     {% endif %}
-                    <!--                                                            {% for dept_and_pos in employee.get_dept_and_position_list() %}-->
+                    <!--                                                            {% for dept_and_pos in employee.get_dept_id_and_name_and_position_list() %}-->
                     <!--                                                                <span class="tag is-primary is-light">-->
                     <!--                                                                    {{dept_and_pos[0]}} ({{dept_and_pos[1]}})-->
                     <!--                                                                </span></br>-->

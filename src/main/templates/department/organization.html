@@ -1,0 +1,452 @@
+{% extends 'admin/index.html' %}
+
+
+{% block extra_head_style %}
+<link href="https://cdn.jsdelivr.net/npm/bulma-list/css/bulma-list.css" rel="stylesheet"/>
+<style>
+    /* list 안벌리게 만들기 */
+    .list-item-content {
+        flex-grow: 0;
+    }
+
+    /* figure.employee + img 태그를 겹쳐서 만들기 3단계*/
+    /* 1번째 답변 응용: https://stackoverflow.com/questions/48916431/overlapping-overlaying-multiple-inline-images */
+
+    /* 어쩌다보니, figure+img 가운데 정렬에 필요한 자식(figurE)is-inline-block + 그 부모(has-text-centered)와 맞아떨어짐 */
+    /* https://stackoverflow.com/questions/48277473/center-image-in-bulma */
+    figure.employee {
+        /*display: inline-block;*/
+        /*border-radius: 50%;*/
+        overflow: hidden;
+        /*width: 100px;*/
+
+    }
+
+    figure.employee:not(:first-child) {
+        margin-left: -10px !important;
+    }
+
+    figure.employee img {
+        border: 2px solid white;
+    }
+
+    /*  figure 여러줄에 간격 좁히기 => 자신이 모아져서, 각각을 nth-child로 취급함 기준으로 처리함. */
+    /*  2번재줄부터 처리할 건데 n+3을 해야 되더라. 왜 그런지 모름. */
+    .list-item-description.employee:nth-child(n+3) {
+        margin-top: -15px !important;
+    }
+
+
+</style>
+<!-- item template -->
+<script type="text/x-template" id="item-template">
+
+
+    <!-- 조직도만 만들거라 더블클릭으로 하위 sample 만드는 기능 제거 -->
+    <!--         @dblclick="makeFolder"-->
+    <div class="list-item p-2"
+         :style="item.level <2 ? 'border-bottom:none;' : ''"
+    >
+        <!--        <div class="list-item-image">-->
+        <!--                <span v-if="isFolder"-->
+        <!--                      @click="toggle"-->
+
+        <!--                >[{$ isOpen ? '-' : '+' $}]</span>-->
+        <!--            <div v-if="isOpen" class="dropdown-divider"></div>-->
+        <!--        </div>-->
+        <div class="list-item-content mr-3">
+            <div class="buttons">
+                <!--                <div class="button is-small is-rounded">-->
+                <!--                                      <span class="icon">-->
+                <!--                                        <i class="mdi mdi-account-edit-outline"></i>-->
+                <!--                                      </span>-->
+                <!--                    <span>정보</span>-->
+                <!--                </div>-->
+                <!--                level대신 앞에 자리자지하게 둘려고 visibility로 변경-->
+                <!--                        v-if="isFolder"-->
+                <button class="button is-small is-rounded ml-4"
+                        :style="{visibility: isFolder ? 'visible' : 'hidden'}"
+                        @click="toggle"
+                >
+                      <span class="icon"
+                      >
+                        <i class="mdi" :class="isOpen ? 'mdi-minus' : 'mdi-plus'"></i>
+                        {$ isOpen ? '' : item.only_children_count $}
+                      </span>
+                </button>
+            </div>
+        </div>
+
+        <div class="list-item-image is-primary">
+            <div class="container has-text-centered has-background-light" style="border-radius: 5%; width: 100px;">
+                <!--                     :class="{-->
+                <!--                 'is-primary is-light ': item.level === 0,-->
+                <!--                 'is-info is-light ': item.level === 1,-->
+                <!--                 'is-success is-light ': item.level === 2,-->
+                <!--                 'is-warning is-light ': item.level === 3,-->
+                <!--                 'is-danger is-light ': item.level === 4,-->
+                <!--                 }"-->
+                <div class="list-item-title mb-1 py-1 tag has-text-centered is-block is-size-7"
+                     :class="getColorToLevelAndSort(item.level, item.parent_sort, item.sort)"
+
+                >
+                    {$ item.name $}
+                </div>
+                <!-- root에서는 상사 leader가 없을 수 있기 때문에 조건문 걸어줘야 한다. -->
+                <figure class="image is-inline-block py-0 " style="height: 40px; width: 40px;margin-right: -2px;">
+                    <img class="is-rounded has-background-white" style="height: 40px; width: 100%;"
+                         :src="item.leader ? '../uploads/'+item.leader.avatar : '/static/img/user/default_avatar.svg'"
+                         :alt="item.leader ? item.leader.name : ''">
+                </figure>
+
+                <div class="is-size-7 pb-1">
+                    <small>{$ item.leader ? item.leader.position : ''$}</small>
+                    </br>
+                    <span class="has-text-weight-bold"
+                          style="color:black">{$ item.leader ? item.leader.name : '(공석)' $}</span>
+                </div>
+
+            </div>
+            <div class="container has-text-centered">
+                <!-- 총괄직원은 .children가 있는 상위부서일 때만 나타나도록 -->
+                <div class="tag is-rounded" :class="getColorToLevelAndSort(item.level, item.parent_sort, item.sort)"
+                     v-if="item.children"
+                >
+                    <small>
+                        총괄 직원 : {$ item.all_employee_count $}
+                    </small>
+                </div>
+            </div>
+        </div>
+
+        <div class="list-item-content">
+
+            <!--            <div class="list-item-title"-->
+            <!--                 :class="{-->
+            <!--                 'has-text-primary-dark': item.level === 0,-->
+            <!--                 'has-text-info-dark': item.level === 1,-->
+            <!--                 'has-text-success-dark': item.level === 2,-->
+            <!--                 'has-text-warning-dark': item.level === 3,-->
+            <!--                 'has-text-danger-dark': item.level === 4,-->
+            <!--                 }"-->
+
+            <!--            >-->
+            <!--                {$ item.name $}-->
+            <!--            </div>-->
+
+            <!--            <div class="list-item-description">-->
+            <!--                <div class="tag is-rounded">{$ item.leader.email $}</div>-->
+            <!--            </div>-->
+            <div class="list-item-description mb-1">
+
+                <!--                        type="is-dark"-->
+                <b-tooltip
+                        position="is-right"
+                        :type="getColorToLevelAndSort(item.level, item.parent_sort, item.sort)"
+                        v-if="item.employee_count"
+                >
+                    <template v-slot:content
+                    >
+                        <span class="is-size-7"
+                                v-if="item.employee_count"
+                                v-for="(employee, index) in item.employees"
+                        >
+
+                                <small>
+                                    {$ index + 1 $}. {$ employee.name $} {$ employee.position$}
+                                </small>
+                            <br/>
+                        </span>
+                    </template>
+
+                    <div class="tag is-rounded"
+                         :class="getColorToLevelAndSort(item.level, item.parent_sort, item.sort)">
+                        <small>
+                            관리 직원 : {$ item.employee_count $}
+                        </small>
+                    </div>
+
+                </b-tooltip>
+                <!--                <div class="tag is-light is-rounded">하위 부서 수: {$ item.only_children_count $}</div>-->
+            </div>
+
+
+            <!--            <div class="list-item-description has-text-centered "-->
+            <!--            >-->
+            <!-- 4명만 사진 표시 + 외1명 -->
+            <!--                <figure class="image employee is-inline-block py-0 m-1" style="height: 28px; width: 28px;"-->
+            <!--                        v-for="(employee, index) in item.employees"-->
+            <!--                        v-if="index < 4"-->
+            <!--                >-->
+            <!--                    <img class="is-rounded is-primary" style="height: 28px; width: 100%;"-->
+            <!--                         :src="employee.avatar ? '../uploads/' + employee.avatar : '../static/img/user/default_avatar.svg'"-->
+            <!--                         alt="employee ? employee.name : ''">-->
+            <!--                <p class="is-size-7" v-if="item.employee_count >= 5">외 {$ item.employee_count - 4 $}명</p>-->
+
+            <!--  1줄당 4명씩 표기              -->
+            <!--  https://stackoverflow.com/questions/41924476/vuejs-v-for-add-bootstrap-row-every-5-items              -->
+            <div class="list-item-description employee has-text-centered "
+                 v-for="i in Math.ceil(item.employee_count / 4)"
+            >
+                <figure class="image employee is-inline-block py-0 m-1" style="height: 28px; width: 28px;"
+                        v-for="employee in item.employees.slice((i - 1) * 4, i * 4)"
+                >
+                    <img class="is-rounded is-primary has-background-white" style="height: 28px; width: 100%;"
+                         :src="employee.avatar ? '../uploads/' + employee.avatar : '../static/img/user/default_avatar.svg'"
+                         alt="employee ? employee.name : '기본 avatar'">
+                </figure>
+
+            </div>
+            <!--            <div class="list-item p-0" style="border-bottom:none;" v-for="employee in item.employees">-->
+            <!--                <div class="list-item-image">-->
+            <!--                    <figure class="image py-0 m-0" style="height: 24px; width: 24px;">-->
+            <!--                        <img class="is-rounded is-primary" style="height: 24px; width: 100%;"-->
+            <!--                             :src="employee ? '../uploads/'+employee.avatar : {{url_for('static', filename='/img/user/default_avatar.svg')}}"-->
+            <!--                             alt="employee ? employee.name : ''">-->
+            <!--                    </figure>-->
+            <!--                </div>-->
+            <!--                <div class="list-item-content">-->
+            <!--                    <div class="list-item-description">-->
+            <!--                        <div class="is-size-7 is-dark">-->
+            <!--                            {$ employee.name $} {$ employee.position $}님-->
+            <!--                        </div>-->
+            <!--                    </div>-->
+            <!--                </div>-->
+            <!--            </div>-->
+        </div>
+
+        <!--        <div class="list-item-controls">-->
+
+
+        <!-- 자식 -->
+        <div class="list" v-show="isOpen" v-if="isFolder">
+            <tree-item
+                    class="item"
+                    v-for="(child, index) in item.children"
+                    :key="index"
+                    :item="child"
+                    @make-folder="$emit('make-folder', $event)"
+                    @add-item="$emit('add-item', $event)"
+            ></tree-item>
+            <!--                <li class="add" @click="$emit('add-item', item)">+</li>-->
+        </div>
+
+
+    </div>
+
+    <!--        <div class="list-item">-->
+
+
+    <!--            <div class="columns">-->
+
+    <!--                <div class="column is-2 ">-->
+    <!--                    &lt;!&ndash; 부서명 &ndash;&gt;-->
+    <!--                    <div class="list-item-content">-->
+    <!--                        <h1 class="title tag is-5 is-primary mb-2">{$ item.name $}</h1>-->
+    <!--                    </div>-->
+    <!--                    &lt;!&ndash; 부서장 이미지 &ndash;&gt;-->
+    <!--                    <div class="list-item-image">-->
+    <!--                        <figure class="image is-48x48 ">-->
+    <!--                            <img class="is-rounded "-->
+    <!--                                 :src="item.leader ? '../uploads/'+item.leader.avatar : {{url_for('static', filename='/img/user/default_avatar.svg')}}"-->
+    <!--                                 alt="item.leader ? item.leader.name : ''">-->
+    <!--                        </figure>-->
+    <!--                    </div>-->
+    <!--                </div>-->
+
+    <!--                <div class="column">-->
+    <!--                    <div class="list-item-title py-2">{$ item.leader ? item.leader.name : '' $}</div>-->
+    <!--                    <div class="list-item-description">-->
+    <!--                        <div class="tag is-rounded">{$ item.employee_count $}명</div>-->
+    <!--                        <div class="tag is-rounded">-->
+
+    <!--                        </div>-->
+    <!--                    </div>-->
+
+    <!--                    {$ item.name $} ({$ item.leader.name $})-->
+    <!--                    <span v-if="isFolder"-->
+    <!--                          @click="toggle"-->
+
+    <!--                    >[{$ isOpen ? '-' : '+' $}]</span>-->
+    <!--                    <div v-if="isOpen" class="dropdown-divider"></div>-->
+    <!--                </div>-->
+    <!--            </div>-->
+
+
+</script>
+{% endblock extra_head_style %}
+
+{% block member %}
+<!-- 위쪽 제목 공간 -->
+<div class="is-block">
+    <!-- left 제목 -->
+    <div class="is-pulled-left">
+        <h1 class="is-size-4">
+            <span class="icon"><i class="mdi mdi-receipt-outline"></i></span>
+            조직도
+        </h1>
+    </div>
+
+    {% block button %}
+    <!--    <div class="is-pulled-right">-->
+    <!--        <a href="{{url_for('admin.employee')}}" class="button is-primary is-light">-->
+    <!--            <span class="icon"><i class="mdi mdi-plus-thick"></i></span>-->
+    <!--            <span>직원 추가</span>-->
+    <!--        </a>-->
+    <!--    </div>-->
+
+    {% endblock button %}
+
+    <div class="is-clearfix"></div>
+    <div class="dropdown-divider"></div>
+
+    <!-- 아래쪽 table의 처리에 대한 flash 메세지를 위쪽에서   -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    {% for category, message in messages %}
+    <b-message type="{{category}}">
+        <ul class=flashes>
+            <li class="{{category}}">{{ message }}</li>
+        </ul>
+    </b-message>
+    {% endfor %}
+    {% endif %}
+    {% endwith %}
+
+    <!-- form validation -->
+    {% if form and form.errors %}
+    <b-message type="is-danger">
+        <ul class="errors">
+            {% for error, v in form.errors.items() %}
+            <li>{{ error }}：{{ v[0] }}</li>
+            {% endfor %}
+        </ul>
+    </b-message>
+    {% endif %}
+</div>
+
+<!-- 위쪽 아래쪽 table or form 공간 -->
+{% block table_content %}
+
+<!-- the demo root element -->
+<div class="box">
+    <div class="list"
+         v-for="(tree, index) in treeData.data"
+         :key="index"
+    >
+        <tree-item
+                class="item"
+                :item="tree"
+                @make-folder="makeFolder"
+                @add-item="addItem"
+        ></tree-item>
+    </div>
+</div>
+
+
+{% endblock table_content %}
+
+
+{% endblock member %}
+
+
+{% block extra_foot_script %}
+<script>
+    // 전역 컴포넌트(Vue.component("tree-item", {})로 사용한다면, new Vue (부모컴포넌트) 전에 전역으로 등록만 해주면 된다.
+
+    // 컴포넌트는 항상 사용되는 부모인 new Vue 컴포넌트 보다 더 뒤에서 등록
+    Vue.component("tree-item", {
+        template: "#item-template",
+        delimiters: ['{$', '$}'],  // jinja와 같이 쓸 vue 변수
+        props: {
+            item: Object
+        },
+        data: function () {
+            return {
+                // isOpen: false,
+                isOpen: true,
+            };
+        },
+        computed: {
+            isFolder: function () {
+                if (this.item && this.item.children) {
+                    return this.item.children && this.item.children.length;
+                }
+                return false;
+            }
+        },
+        methods: {
+            toggle: function () {
+                if (this.isFolder) {
+                    this.isOpen = !this.isOpen;
+                }
+            },
+            makeFolder: function () {
+                if (!this.isFolder) {
+                    this.$emit("make-folder", this.item);
+                    this.isOpen = true;
+                }
+            },
+            getColorToLevelAndSort(level, parentSort, sort) {
+                let softColors = [
+                    'is-primary is-light ',
+                    'is-info is-light ',
+                    'is-success is-light ',
+                    'is-warning is-light ',
+                    'is-danger is-light ',
+                    'is-grey is-light ',
+                    'is-white is-light ',
+                    'is-dark is-light ',
+                ];
+
+                softColors = softColors.concat(...softColors);
+
+                let hardColors = [
+                    'is-primary ',
+                    'is-info  ',
+                    'is-success  ',
+                    'is-warning  ',
+                    'is-danger  ',
+                    'is-grey  ',
+                    'is-white  ',
+                    'is-dark  ',
+                ];
+
+                hardColors = hardColors.concat(...hardColors);
+
+                // level 0 / level1의 sort 1~n까지는 연한색에서 가져간다.
+                if (level === 0) {
+                    // level 0만, level값으로 0번째 색을 쓴다.
+                    // 그외는 sort로 인덱싱하여, 1번부터 색을 가져간다.
+                    return softColors[level]
+                } else if (level === 1) {
+                    return softColors[sort]
+
+                // level 2부터는 부모의 연한색과 동일한, 진한색을 가져간다.
+                // 이 때, 연한/진한 반복주기를 준다. level 2 짝수가 진한색이므로, level3는 연한색을 가져가게 한다.
+                } else {
+                    if (level % 2 === 0) {
+                        return hardColors[parentSort]
+                    } else {
+                        return softColors[parentSort]
+                    }
+                }
+            },
+
+        },
+        created() {
+            // console.log(this.$options.name);
+        }
+
+    });
+</script>
+{% endblock extra_foot_script %}
+
+{% block vue_script %}
+<script>
+
+    // app._data.treeData = JSON.parse('{{ tree | tojson}}');
+    app._data.treeData = JSON.parse('{{ tree | tojson}}');
+    // console.log(app._data.treeData)
+</script>
+{% endblock vue_script %}

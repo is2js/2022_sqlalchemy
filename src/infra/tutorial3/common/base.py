@@ -8,6 +8,7 @@ from sqlalchemy.orm import declared_attr
 
 from src.infra.config.base import Base
 from src.infra.tutorial3.common.int_enum import IntEnum
+from src.main.templates.filters import format_date, format_datetime
 
 
 class BaseModel(Base):
@@ -17,12 +18,27 @@ class BaseModel(Base):
     pub_date = Column(DateTime, nullable=False, default=datetime.datetime.now, onupdate=datetime.datetime.now)
 
     def to_dict(self):
-        # inspect(self)시 관계필드까지 조회하는데, form이나 front에서 DetachedError난다.
+        # (1) inspect(self)시 관계필드까지 조회하는데, form이나 front에서 DetachedError난다.
         # <-> 반면 self.__table__.columns는 관계필드를 조회안한다.
-        return {c.name: getattr(self, c.name) for c in self.__table__.columns
-                if c.name not in []  # 필터링 할 칼럼 모아놓기
-                }
         # return {c: getattr(self, c) for c in inspect(self).attrs.keys()}
+        # (2) dict comp쓰지말고, for문으로 돌면서, date/datetime 변환하기
+        # return {c.name: getattr(self, c.name) for c in self.__table__.columns
+        #         if c.name not in []  # 필터링 할 칼럼 모아놓기
+        #         }
+        data = dict()
+
+        for col in self.__table__.columns:
+            _key = col.name
+            _value = getattr(self, _key)
+
+            if isinstance(_value, datetime.datetime):
+                _value = format_datetime(_value)
+            elif isinstance(_value, datetime.date):
+                _value = format_date(_value)
+
+            data[_key] = _value
+
+        return data
 
     @staticmethod
     def to_dict_list(l):

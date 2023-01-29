@@ -18,7 +18,7 @@
 div.box 안쪽으로  block box /endblock을 추가한다-->
 
 {% block box %}
-<div class="columns">
+<div class="columns ">
     <!-- admin의 왼쪽메뉴 column 2칸 -->
     <div class="column is-2">
         <div class="card is-shadowless" style="border-right:solid 1px #eee">
@@ -36,7 +36,15 @@ div.box 안쪽으로  block box /endblock을 추가한다-->
                             <a class="{% if request.path == '/admin/' %}is-active{% endif %}"
                                href="{{ url_for('admin.index') }}">
                                 <span class="icon"><i class="mdi mdi-home-variant-outline"></i></span>
-                                DashBoard
+                                Content 통계
+                            </a>
+                        </li>
+                        <li>
+<!--                            <a class="{% if request.path == '/admin/' %}is-active{% endif %}"-->
+                            <a class=""
+                               href="{{ url_for('admin.index') }}">
+                                <span class="icon"><i class="mdi mdi-flask-empty-plus"></i></span>
+                                직원 통계
                             </a>
                         </li>
                     </ul>
@@ -124,9 +132,35 @@ div.box 안쪽으로  block box /endblock을 추가한다-->
                         <li>
                             <a class="{% if 'employee' in request.path %}is-active{% endif %}"
                                href="{{ url_for('admin.employee') }}">
-<!--                                <span class="icon"><i class="mdi mdi-lock-outline"></i></span>-->
-                                <span class="icon"><i class="mdi mdi-graph-outline"></i></span>
+                                <!--                                <span class="icon"><i class="mdi mdi-lock-outline"></i></span>-->
+                                <span class="icon"><i class="mdi mdi-account-group-outline"></i></span>
                                 직원 관리
+                            </a>
+                        </li>
+                        {% endif %}
+                    </ul>
+
+
+                    <p class="menu-label">
+                        <span class="icon"><i class="mdi mdi-graph-outline"></i></span>
+                        DEPARTMENT
+                    </p>
+                    <ul class="menu-list">
+                        <!-- 조직도 for all -->
+                        <li>
+                            <a class="{% if 'organization' in request.path %}is-active{% endif %}"
+                               href="{{ url_for('department.organization') }}">
+                                <span class="icon"><i class="mdi mdi-graph-outline"></i></span>
+                                조직도
+                            </a>
+                        </li>
+                        <!-- 부서관리 for executive -->
+                        {% if g.user.is_executive %}
+                        <li>
+                            <a class="{% if 'departments' in request.path %}is-active{% endif %}"
+                               href="{{ url_for('department.management') }}">
+                                <span class="icon"><i class="mdi mdi-lock-outline"></i></span>
+                                부서 관리
                             </a>
                         </li>
                         {% endif %}
@@ -452,6 +486,7 @@ div.box 안쪽으로  block box /endblock을 추가한다-->
     };
 
     // pyecharts 사용시,option을 backend에서 받은 것을 |safe로
+    //user_count_bar_options | safe
     //user_count_bar_options | safe
     userChart1.setOption({{user_count_bar_options | safe}})
     //user_sex_pie_options | safe

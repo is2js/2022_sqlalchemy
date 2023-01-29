@@ -1,0 +1,989 @@
+{% extends 'admin/index.html' %}
+
+
+{% block extra_head_style %}
+<!--<script src="https://unpkg.com/vue-draggable-nested-tree@latest/dist/vue-draggable-nested-tree.js"></script>-->
+<!--<script src="https://unpkg.com/tree-helper@latest/dist/tree-helper.js"></script>-->
+<script src="{{url_for('static', filename='js/department/vue-draggable-nested-tree.js')}}"></script>
+<script src="{{url_for('static', filename='js/department/tree-helper.js')}}"></script>
+
+
+<style>
+    /* tree 공간 */
+    .he-tree {
+        /*border: 1px solid #ccc;*/
+        border-radius: 3%;
+        padding: 20px;
+        /*width: 300px;*/
+
+        /*is-light*/
+        background: #f5f5f5;
+    }
+
+    /* 개별 node */
+    .tree-node-inner {
+        border: 1px solid #ccc;
+        cursor: pointer;
+
+        background: white;
+    }
+
+    /* 선택된 node에 표시 */
+    .tree-node-inner > .active {
+        border: solid 1px;
+    }
+
+    /* drag시 item */
+    .draggable-placeholder-inner {
+        border: 1px dashed #0088F8;
+        box-sizing: border-box;
+        background: rgba(0, 136, 249, 0.09);
+        color: #0088f9;
+        text-align: center;
+        padding: 0;
+        display: flex;
+        align-items: center;
+    }
+
+</style>
+{% endblock extra_head_style %}
+
+{% block member %}
+<!-- 위쪽 제목 공간 -->
+<div class="is-block">
+    <!-- left 제목 -->
+    <div class="is-pulled-left">
+        <h1 class="is-size-4">
+            <span class="icon"><i class="mdi mdi-receipt-outline"></i></span>
+            부서 관리
+        </h1>
+    </div>
+
+    {% block button %}
+    <!--    <div class="is-pulled-right">-->
+    <!--        <a href="{{url_for('admin.employee')}}" class="button is-primary is-light">-->
+    <!--            <span class="icon"><i class="mdi mdi-plus-thick"></i></span>-->
+    <!--            <span>직원 추가</span>-->
+    <!--        </a>-->
+    <!--    </div>-->
+
+    {% endblock button %}
+
+    <div class="is-clearfix"></div>
+    <div class="dropdown-divider"></div>
+
+    <!-- 아래쪽 table의 처리에 대한 flash 메세지를 위쪽에서   -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    {% for category, message in messages %}
+    <b-message type="{{category}}">
+        <ul class="flashes">
+            <li class="{{category}}">{{ message }}</li>
+        </ul>
+    </b-message>
+    {% endfor %}
+    {% endif %}
+    {% endwith %}
+
+    <!-- form validation -->
+    {% if form and form.errors %}
+    <b-message type="is-danger">
+        <ul class="errors">
+            {% for error, v in form.errors.items() %}
+            <li>{{ error }}：{{ v[0] }}</li>
+            {% endfor %}
+        </ul>
+    </b-message>
+    {% endif %}
+</div>
+
+<!-- 위쪽 아래쪽 table or form 공간 -->
+{% block table_content %}
+
+
+{% endblock table_content %}
+
+<div class="box">
+    <!-- 모두 접기 모두 열기 버튼   -->
+    <div class="columns ">
+        <div class="column">
+            <div class="buttons">
+                <b-button class="is-outlined is-rounded has-text-grey"
+                          size="is-small"
+                          @click="collapseAll"
+                >모두 접기
+                </b-button>
+                <b-button class="is-outlined is-dark is-rounded"
+                          size="is-small"
+                          @click="expandAll"
+
+                >모두 열기
+                </b-button>
+            </div>
+        </div>
+    </div>
+    <!-- tree 공간   -->
+    <div class="columns">
+        <div class="column is-two-fifths">
+
+            <tree
+                    draggable
+                    :class="'is-size-7'"
+                    ref="tree"
+                    :data="treeData"
+
+                    @change="treeChanged"
+
+                    :ondragstart="onDragStart"
+
+                    @drag="nodeDragged"
+
+                    :ondragend="onDragEnd"
+
+
+                    @change-dept="changeDept"
+
+                    @edit-page="editDept"
+            >
+                <!-- tree-branch -->
+                <!--  <template>에는 @click이 안먹어서 따로 한번 더 감싸줌.-->
+                <!--                @click="dept.active = !dept.active;"-->
+                <!--                :class="{'active': dept.active}"-->
+                <div class="p-2"
+
+                     slot-scope="{data: dept, store, vm}"
+                     ref="node"
+                     @click="selectNode(dept.id)"
+                     :class="{'active is-bordered has-text-primary has-text-weight-bold': dept.id === selectedDeptId}"
+
+
+
+                     @drag="emitDrag( dept, vm.level, store, $event)"
+
+                     @edit="$emit('edit-dept', dept, vm, store, $event)"
+                     @removed="deptRemoved"
+                     @dblclick="showNameInput(dept.id)"
+                >
+                    <template v-if="!dept.isDragPlaceHolder">
+                        <div>
+                            [{$ dept.id $}]
+                            <!-- display:none; 이후 공간차지 없으려면  inline-block으로 바깥에 한번 씌워서 2개를 한꺼번에 집어넣어준다 -->
+                            <span class="pl-2 is-inline-block">
+                                <span :id="'node-' + dept.id">
+                                    {$ dept.text $}
+                                </span>
+                                <input class="is-size-7"
+                                       type="text"
+                                       :id="'name-' + dept.id"
+                                       :value="dept.text"
+                                       :size="dept.text.length + 3"
+                                       style="display: none;"
+
+                                       @blur="hideNameInput(dept.id)"
+                                       @keydown.esc="hideNameInput(dept.id)"
+                                       @click.stop
+
+                                       @keypress.enter="validateName(dept)"
+                                >
+                            </span>
+
+                            <!-- 열기 접기 -->
+                            <div class="is-pulled-right pr-2"
+                                 v-if="dept.children && dept.children.length"
+                                 @click.stop="store.toggleOpen(dept)"
+                                 @dblclick.stop
+                            >
+                                <small class="has-text-grey">
+                                    {$ dept.open ? '접기 ▶' : '열기 ▼' $}
+                                </small>
+                            </div>
+                            <div class="is-clearfix"></div>
+
+                        </div>
+                    </template>
+                </div>
+            </tree>
+        </div>
+    </div>
+
+    <small>
+        this.depts
+        <pre>{$ depts $}</pre>
+    </small>
+</div>
+
+{% endblock member %}
+
+
+{% block extra_foot_script %}
+<script>
+</script>
+{% endblock extra_foot_script %}
+
+{% block vue_mixins %}
+<script>
+    const th = window.treeHelper
+    const {DraggableTree} = window.vueDraggableNestedTree;
+
+    // Vue.component('tree', DraggableTree);
+    const myMixin = {
+            components: {
+                'tree': DraggableTree
+            },
+
+            data() {
+                return {
+
+                    depts: [], // 외부 => treeData에 공급할 변수
+                    treeData: [], // tree 자체 변수
+                    initialDepts: [], // 외부공급 depts를 받을 때 백업 변수
+                    isLoading: false, // getDepts요청시 로딩처리 flag
+
+                    selectedDeptId: null,
+
+
+                    deptIds: [],
+
+                    //input관련
+                    deptName: "",
+
+
+                };
+            },
+
+            created() {
+                console.log('created()--------')
+                // this.getDepts()
+                //     .then(() => {
+                //         this.initialDepts = this.depts;
+                //     });
+                this.getDepts();
+                this.initialDepts = this.depts;
+                console.log('created()========')
+            },
+
+
+            // 부모가 넘겨중 정보
+            watch: {
+                depts: {
+                    deep: true,
+                    handler(depts) {
+                        // this.treeData = this.depts;
+                        // this.$refs.tree.rootData = this.depts;
+                        // console.log('watch!!!  depts, in handler(depts)')
+                        // this.deptIds = this.getDeptIds(depts);
+                        // console.log('this.getDeptIds(depts) -> this.deptIds', this.deptIds);
+                        //
+                        // console.log('this.initialDepts의 ids', this.getDeptIds(this.initialDepts));
+                        // console.log('this.getDeptIds', this.getDeptIds(depts));
+                        // console.log('this.initialDepts의 levels', this.getDeptLevels(this.initialDepts));
+                        // console.log('this.getDeptLevels', this.getDeptLevels(depts));
+                        //
+                        // let initIds = this.getDeptIds(this.initialDepts);
+                        // let currIds = this.getDeptIds(depts);
+                        // let diffIdIndexs = [];
+                        // for (var i = 0; i < initIds.length; i++) {
+                        //     if (initIds[i] !== currIds[i]) {
+                        //         diffIdIndexs.push(i);
+                        //     }
+                        // }
+
+
+                        // console.log('diffIdIndexs', diffIdIndexs)
+                        //diffIdIndexs (2) [0, 1]
+
+
+                        // let initIds = this.getDeptIds(this.initialDepts);
+                        // let currIds = this.getDeptIds(depts);
+                        // let diffIdIndexs = [];
+                        // for (var i = 0; i < initIds.length; i++) {
+                        //     if(initIds[i] !== currIds[i]) {
+                        //         diffIdIndexs.push(i);
+                        //     }
+                        // }
+                        //
+                        // console.log('diffIdIndexs', diffIdIndexs)
+                    }
+                },
+                deptIds(ids) {
+                    this.$emit('dept-ids-updated', ids);
+                },
+            },
+
+
+            methods: {
+                getDepts() {
+                    console.log('getDepts')
+                    // this.loading = true;
+                    // const url = `${this.getDeptsUrl}?page=${this.page}`;
+                    //
+                    // return this.$axios.get(url).then(response => {
+                    //     this.depts = response.data.depts;
+                    //     this.updateTreeData();
+                    //     this.loading = false;
+                    // })
+                    this.depts = [
+                        {id: 1, parent_id: null, level: 0, sort: 1, text: '병원장', open: false},
+                        {id: 2, parent_id: null, level: 0, sort: 2, text: '이사회', open: false},
+                        {
+                            id: 3,
+                            parent_id: null,
+                            level: 0,
+                            sort: 3,
+                            text: 'node 3 undraggable',
+                            draggable: false,
+                            open: false
+                        },
+                        {
+                            id: 4,
+                            parent_id: null,
+                            level: 0,
+                            sort: 4,
+                            text: 'node 4 undroppable',
+                            droppable: false,
+                            open: false
+                        },
+                        {
+                            id: 5, level: 0, sort: 5,
+                            text: 'node 5', children: [
+                                {id: 6, parent_id: 5, level: 1, sort: 1, text: 'node 6'},
+                                {id: 7, parent_id: 5, level: 1, sort: 2, text: 'node 7'},
+                            ], open: false
+                        },
+                    ];
+                    // console.log('this.depts >> ', this.depts);
+                    this.updateTreeData();
+                },
+
+                updateTreeData() {
+                    console.log("updateTreeData")
+
+                    this.treeData = th.clone(this.depts);
+
+                    // console.log('this.treeData >> ', this.treeData);
+                },
+
+                treeChanged(node, tree) {
+                    console.log('treeChanged----')
+                    // 제자리에 둘 땐 호출되지 않는다.
+
+                    // 유효하지 않으면, 유효X내부 tree데이터를 <- 기존 공급된 depts데이터로 덮어써서 없앰
+                    // if (!this.validateFirstNotParent()) {
+                    if (!this.validateSameParent(node)) {
+                        this.toast('동일한 부모 부서아래 순서이동만 가능합니다.', 'is-danger')
+                        this.updateTreeData();
+                        return;
+                    }
+
+                    // 유효한 경우, 유효O내부 tree데이터를 -> 외부공급 this.depts로 가져옮
+                    this.toast('유효한 treeChanged.')
+                    this.treeUpdated(tree);
+
+                    // console.log('treeChanged====')
+                },
+
+                validateFirstNotParent() {
+                    console.log('validateFirstNotParent----')
+                    let isValid = true;
+
+                    th.depthFirstSearch(this.treeData, (childNode) => {
+                        const index = childNode.parent.children.indexOf(childNode);
+
+                        const level = childNode._vm.level;
+
+                        // 최상레벨이 첫시작인 1개의 root인데, 자식이 있다면, 유효하지 않다.
+                        // const isRoot = this.expectsRoot && level === 1 && index === 0;
+                        const isRoot = level === 1 && index === 0;
+                        if (isRoot && childNode.children.length > 0) {
+                            isValid = false;
+                            this.toast('첫번째는 root는 자식이 있을 경우 유효하지 않습니다.', 'is-danger');
+                        }
+                    });
+
+                    // console.log('validateFirstNotParent====')
+                    return isValid;
+                },
+
+                validateNotSamePosition(node) {
+                    console.log('validateNotSamePosition')
+
+                    let beforeLevel = node.level - 1;
+                    let beforeSort = node.sort;
+
+                    let currentLevel = node._vm.level;
+                    let currentSort = node.parent.children.indexOf(node) + 1;
+                    console.log(beforeLevel, beforeSort, currentLevel, currentSort,)
+                    return (beforeLevel === currentLevel) && (beforeSort === currentSort);
+
+                },
+
+                validateSameParent(node) {
+                    console.log('validateSameParent----')
+                    let isValid = true;
+
+                    // 원래 root는 null로 들어오는데, 자식이 있는 root는 undefine으로 뜬다.
+                    // let before_parent_id = node.parent_id;
+                    let before_parent_id = null;
+                    if (node.parent_id) {
+                        before_parent_id = node.parent_id;
+                    }
+
+
+                    let after_parent_id = null; // db에 root의 parent_id는 null;이라고 기본값으로 줌.
+                    // node.parent로만 검사하면 level0에서도 parent는 존재하는 것으로 검사됨.
+                    if (node.parent.id) {
+                        after_parent_id = node.parent.id;
+                    }
+
+                    if (before_parent_id !== after_parent_id) {
+                        isValid = false;
+                    }
+
+                    console.log('validateSameParent====')
+                    return isValid;
+                },
+
+                treeUpdated(tree) {
+                    console.log('treeUpdated(tree -> this.depts)----')
+                    tree = tree || this.$refs.tree;
+                    // 연동데이터 this.treeData(.parent, _vm.level 등 자동 생성)과 달리 순수 데이터만 뽑아낸다.
+                    this.depts = tree.getPureData();
+
+                    // console.log('this.depts >> ', this.depts);
+                    console.log('treeUpdated======================')
+                },
+
+                // node관련
+                selectNode(deptId) {
+                    // 선택되지 않은 dept라면, 할당 -> 선택됬다면 null로 선택 풀기
+                    if (this.selectedDeptId !== deptId) {
+                        this.selectedDeptId = deptId;
+                        return;
+                    }
+                    this.selectedDeptId = null;
+                },
+                getNodeElement(deptId) {
+                    return document.querySelector("#node-" + deptId);
+                },
+
+                getNameInput(deptId) {
+                    return document.querySelector("#name-" + deptId);
+                },
+
+                showNameInput(deptId) {
+                    let nodeElement = this.getNodeElement(deptId);
+                    nodeElement.style.display = 'none';
+
+                    let nameInput = this.getNameInput(deptId);
+                    nameInput.style.display = 'block';
+
+                    this.$nextTick(() => nameInput.focus());
+                },
+
+                hideNameInput(deptId) {
+                    let nodeElement = this.getNodeElement(deptId);
+                    nodeElement.style.display = 'block';
+
+                    let nameInput = this.getNameInput(deptId);
+                    nameInput.style.display = 'none';
+                    // 수정 취소이므로 안보이게 되는 input에 원본 값으로 재할당해주기
+                    nameInput.value = nodeElement.innerText;
+                },
+                checkInvalidNameLength: function (targetName) {
+                    return targetName.length > 10 || targetName.length < 2;
+                },
+                checkNotSameName: function (targetName, dept) {
+                    return targetName !== dept.text;
+                },
+                existNameInTree: function (targetName) {
+                    let isValid = false;
+                    th.breadthFirstSearch(this.treeData, node => {
+                        if (targetName === node.text) {
+                            isValid = true;
+                            // bfs handler(익명함수)에, return false하면 멈춘다.
+                            return false;
+                        }
+                    });
+                    return isValid;
+                },
+
+
+                // dept의 필드를 변경해야하기 때문에, 연동(객체 및 tree까지)되는 객체를 인자로받는다.
+                validateName(dept) {
+                    console.log('validateName----')
+
+                    // console.log('event.target.value >> ', event.target.value);
+                    let nodeElement = this.getNodeElement(dept.id);
+                    let nameInput = this.getNameInput(dept.id);
+                    let targetName = nameInput.value.trim();
+
+                    // 글자수 체크
+                    if (this.checkInvalidNameLength(targetName)) {
+                        this.toast('이름은 2~10자로 입력해주세요.', 'is-danger');
+                        this.hideNameInput(dept.id);
+                        return;
+                    }
+
+                    // 같은 값으로 변경
+                    if (!this.checkNotSameName(targetName, dept)) {
+                        this.toast('같은 이름으로 변경할 수 없습니다.', 'is-danger');
+                        this.hideNameInput(dept.id);
+                        return;
+                    }
+
+                    // 이미 존재하는 명칭으로 변경 => bfs로 하나씩 돌면서 찾아본다.
+                    if (this.existNameInTree(targetName)) {
+                        this.toast('이미 존재하는 이름으로 변경할 수 없습니다.', 'is-danger');
+                        this.hideNameInput(dept.id);
+                        return;
+                    }
+
+                    // 원래는 변화된 dept를 메인에게 emit으로 던져줘서, 부모가 @emit="처리메서드(el)"로 tree데이터 및 공급데이터를 처리해야하는데
+                    // validateTitle() {
+                    //   let el = this.el;
+                    //   this.$emit("update:el", el); // 부모가 @update:el로 받는게 아니라, props로 줬던 el자체를 바꿔서 반환하는 듯?
+                    //   // vue2.2부터 v-mdodle vue2.3부터 [:자식에게 건네줄 props.sync="부모변수 "] => 자식은 props 정의 -> 컴포넡트정의시 사용 + $emit시 ('update:props명', 달라진 props값 ) 으로 넘기면, 부모는 알아서 업뎃 된다.
+                    ///  // https://devtimothy.tistory.com/135
+                    //   this.showel = true;
+                    // },
+
+                    // 여기는 컴포넌트사용 메인이므로 바로 처리한다. 넘어오는 개별node(dept)를 수정해도
+                    // (1) tree 내부의 this.treeData(트리연동데이터)와 연동 됨!
+                    // (2) but drag시 발생하는 treeChanged는 호출안된다. => 직접 처리하는 메서드를 호출해야한다.
+                    // 나중에 text => name으로 변경
+                    dept.text = targetName;
+
+                    nodeElement.style.display = 'block';
+                    nameInput.style.display = 'none';
+
+                    // this.treeData만 연동변경되고, this.depts는 그대로다
+                    // => 여기선 tree데이터를 넘길 수 없기 때문에 ref를 쓴다.
+                    // console.log('dept >> ', dept);
+                    // this.treeUpdated(this.$refs.tree)
+                    // => 메서드 내부에서 default || 로서 this.$refs.tree를 최후수단으로 쓰고 있기 때문에
+                    // => node에서 tree를 찾는 node._vm.store ( tree는 .getPureData()등의 메서드를 쓸 수 있는 것을 말한다)
+                    // => tree란, this.treeData와는 다른, 컴포넌트 자체를 말하며, tree에 의한 업데이트시 이걸 쓰면 된다.
+                    // console.log('dept._vm.store >> ', dept._vm.store);
+                    this.treeUpdated(dept._vm.store)
+
+                    console.log('validateName====')
+                },
+
+                emitClick(dept, level, store, $event) {
+                    console.log('emitClick');
+                    console.log('depthdepthdepthdepthdepth', level.level);
+                    this.$emit('change-dept', dept, level, store, $event);
+                    console.log("dept, level, store, $event")
+                    console.log(dept, level, store, $event)
+                },
+                emitChange(dept, level, store, $event) {
+                    console.log('emitChange');
+                    console.log('depthdepthdepthdepthdepth', level.level);
+                    this.$emit('change-dept', dept, level, store, $event);
+                    console.log("dept, level, store, $event")
+                    console.log(dept, level, store, $event)
+                },
+                emitDrag(dept, level, store, $event) {
+                    console.log('emitDrag');
+                    console.log('depthdepthdepthdepthdepth', level.level);
+                    this.$emit('drag-dept', dept, level, store, $event);
+                    console.log("dept, level, store, $event")
+                    console.log(dept, level, store, $event)
+                },
+
+                onDragStart(node, draggableHelperInfo) {
+                    // console.log(' onDragStart');
+                    // console.log(draggableHelperInfo)
+                    // console.log('node, draggableHelperInfo =>', node, draggableHelperInfo)
+                    //
+                    // return false;
+
+                },
+                onDragEnd(node, draggableHelperInfo) {
+                    // console.log(' onDragEnd');
+                    // (1) Drag 하는 원래 node
+                    // let current_parent_id = node.parent.id;
+                    // console.log('node.parent.id', current_parent_id)
+
+                    // console.log(' draggableHelperInfo.store', draggableHelperInfo.store);
+
+                    // (2) tree정보인데, 인자에는 안넘어와서
+                    //     => 컴포넌트 내부에 ref="tree" 설정하여 전역변수 this.$ref로 해당 객체에 접근하게 한다.
+                    // console.log('this.$refs.tree', this.$refs.tree)
+
+                    // (3) tree가 필요한게 아니라 drag된 node의 정보를 알고 어디 위치했는지 알아야하는데
+                    //     tree.dplh로  [drag도착하는 placeholder node]를 얻을 수 있다.
+                    // console.log('this.$refs.tree.dplh', this.$refs.tree.dplh)
+                    // active: false // parent: children:(...) isRoot:true // class: "draggable-placeholder"
+
+                    // console.log('this.$refs.tree.dplh.parent', this.$refs.tree.dplh.parent)
+                    // active:(...) children:Array(1) class:(...) id: 2 level:0
+                    // => root에 위치할 경우, .parent node객체는 children: Array(4) isRoot :true
+                    //    isRoot여부와 자식들에게 접근할 수 있따.
+                    // console.log('this.$refs.tree.dplh.parent.isRoot', this.$refs.tree.dplh.parent.isRoot)
+                    // => true  or   undefine => 부모가 tree의 root가 아닐 경우 isRoot 정보가 안들어가있다.
+
+                    // let after_parent_id = this.$refs.tree.dplh.parent.id;
+                    // console.log('this.$refs.tree.dplh.parent', after_parent_id)
+
+                    // (4) 이동끝난 node정보를 못받는다. => ref="node"를 걸어 받는다.
+                    // console.log('this.$refs.node', this.$refs.node)
+                    // console.log('인자 node', node)
+                    //<div dept="[object Object]" depth="1" vm="[object Object]"></div>
+                    // console.log('this.$refs.node.getAttribute(\'depth\')', this.$refs.node.getAttribute('depth'))
+                    // this.$refs.node.getAttribute('depth') 1
+                    // console.log('this.$refs.node.getAttribute(\'dept\')', this.$refs.node.getAttribute('dept'))
+                    // this.$refs.node.getAttribute('dept') [object Object] => 사용X
+                    // console.log('this.$refs.node.getAttribute(\'vm\')', this.$refs.node.getAttribute('vm'))
+                    // this.$refs.node.getAttribute('vm') [object Object] => 사용X
+
+
+                    // (5) 이동은 같은 level == 부모의 level이 같아야하며
+                    //     부모도 같은 곳에서만 이동가능하게 하려면,
+                    //     => level비교없이 node vs dplh의 부모가 같은지만 확인하면 된다.
+                    //        부모가 없는 root의 경우, 값 비교를 위해 0으로 놔야한다?
+                    let before_parent = node.parent;
+                    let after_parent = this.$refs.tree.dplh.parent;
+                    // console.log('before_parent', before_parent)
+                    // console.log('after_parent', after_parent)
+
+                    // (6) 부모.id를 비교할 때, undefined로 서로 같다고 떠서, 따로 처리 안해줘도 될 것 같다.
+                    if (before_parent.id === after_parent.id) {
+
+                        this.toast('같은 부모' + after_parent.id + '에요!')
+                    } else {
+                        // this.$refs.tree.dplh.innerClass += ' has-background-danger-light'
+                        this.toast('다른 부모' + before_parent.id + '<->' + after_parent.id + '에요!', 'is-danger')
+                        // return false;
+                    }
+
+
+                    // // 둘다 isRoot가 true로 존재하면 부모가 없다면 같은 부모다.
+                    // if (before_parent.isRoot && after_parent.isRoot) {
+                    //     this.toast('같은 부모(ROOT) 에요!')
+                    // } else {
+                    //     // 둘 중에 하나라도 root가 아닌 경우 다른 부모이다. 둘다 null일 경우 비교해야한다.
+                    //     // 자바스크립트 자료형에서 false로 반환되는 값은 "", null, undefined, 0, NaN
+                    //     // => !value로 true일때를 비교해준다. 비교해준다.
+                    //     if (before_parent.id === after_parent.id ) {
+                    //         this.toast('같은 부모' + after_parent.id + '에요!')
+                    //     } else {
+                    //         this.toast('다른 부모' + before_parent.id + '<->' +after_parent.id + '에요!')
+                    //
+                    //     }
+                    // }
+
+                    // let currentLevel = node.level;
+                    // console.log('node.level', currentLevel);
+                    // let afterLevel = node._vm.level - 1 ;
+                    // console.log('node._vm.level - 1', afterLevel);
+                    // if (currentLevel !== afterLevel) {
+                    //     this.toast('같은 선상의 순서만 변경가능 합니다.', 'is-danger');
+                    //
+                    //     return false;
+                    // }
+                    //
+                    // else {
+                    //     console.log('같은 선상이라 drag완료')
+                    // }
+
+                },
+                nodeChanged(dept, vm, store, $event) {
+                    console.log('level을 가진 nodeChanged');
+                    console.log('id, name, level =>', dept.id, dept.text, vm.level)
+                    console.log('$event =>', $event)
+                },
+
+                changeDept(dept, vm, store, $event) {
+                    console.log('changeDept')
+                    console.log(dept)
+                    console.log(vm)
+                    console.log(store)
+                },
+                editDept(dept, vm, store, $event) {
+                    console.log(dept)
+                    console.log(vm)
+                    console.log(store)
+                },
+
+
+                getDeptIds(depts) {
+                    let ids = [];
+                    depts.forEach(dept => {
+                        ids.push(dept.id);
+                        if (dept.children && dept.children.length) {
+                            ids = [...ids, ...this.getDeptIds(dept.children)];
+                        }
+                    })
+                    return ids;
+                },
+
+                getDeptLevels(depts) {
+                    let levels = [];
+                    depts.forEach(dept => {
+                        levels.push(dept.level);
+                        if (dept.children && dept.children.length) {
+                            levels = [...levels, ...this.getDeptLevels(dept.children)];
+                        }
+                    })
+                    return levels;
+                },
+
+                nodeDragged(node) {
+                    // console.log('nodeDragged')
+                    // console.log(this.$refs.tree.dplh);
+                    // this.$refs.tree.dplh.innerBackClass = 'has-background-danger-light';
+                    // this.$refs.tree.dplh.innerClass += ' has-background-danger-light'
+
+                    // console.log('기존level', node.level)
+                    // console.log('현재level', node._vm.level - 1)
+                    // if (node.level !== node._vm.level - 1) {
+                    //     console.log('레벨이 달라 this.isSameLevel = false;!')
+                    //     // node.droppable = false;
+                    //     this.isSameLevel = false;
+                    //     return
+                    // }
+                    // console.log('레벨이 같아 this.isSameLevel = true;!')
+                    // this.isSameLevel = true;
+
+
+                },
+
+
+                save() {
+                    this.saving = true;
+                    // const payload = {
+                    //     pages: this.pages,
+                    //     site: this.site,
+                    //     expectsRoot: this.expectsRoot, ...this.submitParameters
+                    // };
+                    // return this.$axios.post(this.submitUrl, payload).then(response => {
+                    this.$emit('saved');
+                    // this.$toast.success(__('Saved'));
+                    console.log('save()')
+                    this.initialDepts = JSON.parse(JSON.stringify(this.depts));
+
+                    // return response;
+                    // }).catch(e => {
+                    //     this.$toast.error(e.response ? e.response.data.message : __('Something went wrong'));
+                    //     return Promise.reject(e);
+                    // }).finally(() => this.saving = false);
+                },
+
+                addPages(depts, targetParent) {
+                    const parent = targetParent
+                        ? targetParent.data.children
+                        : this.treeData;
+                    depts.forEach(selection => {
+                        parent.push({
+                            id: selection.id,
+                            title: selection.title,
+                            slug: selection.slug,
+                            url: selection.url,
+                            edit_url: selection.edit_url,
+                            children: []
+                        });
+                    });
+                    this.treeUpdated();
+                },
+
+                clone(source) {
+                    var target = [];
+                    for (let i in source) {
+                        if (source[i] != null && typeof source[i] === "object") {
+                            target[i] = clone(source[i]); // recursion
+                        } else {
+                            target[i] = source[i];
+                        }
+                    }
+                    return target;
+                },
+
+                // updateTreeData() {
+                //     console.log("updateTreeData")
+                //     console.log('this.depts', this.depts);
+                //     this.treeData = this.clone(this.depts);
+                //     console.log('updateTreeData', this.treeData);
+                // },
+
+                deptRemoved(tree) {
+                    this.depts = tree.getPureData();
+                    this.$emit('changed');
+                },
+                cancel() {
+                    if (!confirm(__('Are you sure?'))) return;
+                    this.depts = this.initialDepts;
+                    this.updateTreeData();
+                    this.$emit('canceled');
+                },
+                treeDragstart(node) {
+                    console.log("treeDragstart")
+                    console.log("node.level", node.level)
+                    // Support for maxDepth.
+                    // Adapted from https://github.com/phphe/vue-draggable-nested-tree/blob/a5bcf2ccdb4c2da5a699bf2ddf3443f4e1dba8f9/src/examples/MaxLevel.vue#L56-L75
+                    // let nodeLevels = 1;
+                    // th.depthFirstSearch(node, (childNode) => {
+                    //     if (childNode._vm.level > nodeLevels) {
+                    //         nodeLevels = childNode._vm.level;
+                    //     }
+                    // });
+                    // nodeLevels = nodeLevels - node._vm.level + 1;
+                    // const childNodeMaxLevel = this.maxDepth - nodeLevels;
+                    // th.depthFirstSearch(this.treeData, (childNode) => {
+                    //     if (childNode === node) return;
+                    //     const index = childNode.parent.children.indexOf(childNode);
+                    //     const level = childNode._vm.level;
+                    //     const isRoot = this.expectsRoot && level === 1 && index === 0;
+                    //     const isBeyondMaxDepth = level > childNodeMaxLevel;
+                    //     let droppable = true;
+                    //     if (isRoot || isBeyondMaxDepth) droppable = false;
+                    //     this.$set(childNode, 'droppable', droppable);
+                    // });
+                },
+                deptUpdated(tree) {
+                    this.depts = tree.getPureData();
+                    this.$emit('changed');
+                },
+
+                curNodeClicked(data) {
+                    console.log(data);
+                    // active
+                    // children
+                    // class
+                    // innerBackClass
+                    // innerBackStyle
+                    // innerClass
+                    // innerStyle
+                    // open
+                    // parent
+                    // style
+                    // text
+                    // _id
+                    // _treeNodePropertiesCompleted
+                }
+                ,
+                collapseAll: function () {
+                    console.log('collapseAll');
+
+                    th.breadthFirstSearch(this.treeData, node => {
+                        if (node.children && node.children.length) {
+                            node.open = false;
+                        }
+                    });
+
+                }
+                ,
+                expandAll: function () {
+                    // th의 내부에 hp.isArray => Array.isArray로 모두 수정
+                    console.log('expandAll');
+
+                    th.breadthFirstSearch(this.treeData, node => {
+                        if (node.children && node.children.length) {
+                            node.open = true;
+                        }
+                    });
+                },
+
+                clone: function (source) {
+                    var target = [];
+                    for (let i in source) {
+                        if (source[i] != null && typeof source[i] === "object") {
+                            target[i] = this.clone(source[i]); // resursion
+                        } else {
+                            target[i] = source[i];
+                        }
+                    }
+                    return target;
+                }
+
+            },
+            // created() {
+            //
+            //
+            //     console.log('created')
+            //     console.log('this.draggableTreeData 클론 => this.initialDepts')
+
+            // let initData = JSON.parse(JSON.stringify(this.draggableTreeData));
+
+
+            // function clone(source) {
+            //     var target = [];
+            //     for (let i in source) {
+            //         if (source[i] != null && typeof source[i] === "object") {
+            //             target[i] = clone(source[i]); // resursion
+            //         } else {
+            //             target[i] = source[i];
+            //         }
+            //     }
+            //     return target;
+            // }
+
+
+            //     let initData = this.clone(this.draggableTreeData);
+            //     this.initialDepts = initData;
+            //     // this.depts = initData;
+            //     // console.log(this.depts)
+            //     this.updateTreeData()
+            //
+            // },
+        }
+    ;
+</script>
+{% endblock vue_mixins %}
+
+{% block vue_script %}
+<script>
+
+
+    // app._data.draggableTree = [
+    //     {text: 'node 1'},
+    //     {text: 'node 2'},
+    //     {text: 'node 3 undraggable', draggable: false},
+    //     {text: 'node 4 undroppable', droppable: false},
+    //     {
+    //         text: 'node 5', children: [
+    //             {text: 'node 6'},
+    //             {text: 'node 7'},
+    //         ]
+    //     },
+    // ];
+
+
+    // tree1data: [
+    //     {text: 'node 1'},
+    //     {text: 'node 2'},
+    //     {text: 'node 3 undraggable', draggable: false},
+    //     {text: 'node 4 undroppable', droppable: false},
+    //     {
+    //         text: 'node 5', children: [
+    //             {text: 'node 6'},
+    //             {text: 'node 7'},
+    //         ]
+    //     },
+    // ],
+    // tree2data: [
+    //     {
+    //         text: 'node 8', children: [
+    //             {text: 'node 9'},
+    //             {
+    //                 text: 'node 10 undroppable', droppable: false, children: [
+    //                     {text: 'node 11'},
+    //                     {text: 'node 12'},
+    //                 ]
+    //             },
+    //             {
+    //                 text: 'node 13', children: [
+    //                     {text: 'node 14'},
+    //                     {text: 'node 15 undroppable', droppable: false},
+    //                 ]
+    //             },
+    //             {text: 'node 16'},
+    //             {text: 'node 17'},
+    //             {text: 'node 18'},
+    //         ]
+    //     },
+    // ]
+    // }
+    // console.log(app._data.treeData)
+</script>
+{% endblock vue_script %}

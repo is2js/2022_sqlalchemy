@@ -294,14 +294,28 @@
 
 <script src="{{url_for('static', filename='js/vue.js')}}"></script>
 <script src="{{url_for('static', filename='js/buefy.min.js')}}"></script>
-{% block extra_foot_script %}{% endblock extra_foot_script %}
+
+{% block extra_foot_script %}
+{% endblock extra_foot_script %}
+
+{% block vue_mixins %}
+<script>
+    let myMixin = {};
+</script>
+{% endblock vue_mixins %}
+
 {% block vue_init_script %}
 <script>
-
-    var app = new Vue({
+    Vue.config.productionTip = false;
+    // console.log(treeItem)
+    let app = new Vue({
         el: '#app',
         delimiters: ['{$', '$}'],  // jinja와 같이 쓸 vue 변수
-        components: {},
+        // components: {
+        //     tree-item: treeItem
+        // },
+        mixins: [myMixin],
+
         data: {
             // file: {}, // admin/banner_form에서 b-upload에 쓰이는 변수
             // carousels: [], // main/index에서 b-carousel-item에 test
@@ -339,6 +353,13 @@
             currentDeptId: null,
             selectableDeptList: null,
             selectedDeptId: null,
+
+            //department/organization.html
+            treeData: false,
+
+            //department/부서관리용 DraggableTree .html의 컴포넌트 주입용 데이터 변수 초기화
+            // treeTest: false,
+
         },
         watch: {
             // admin/banner_form , auth/userinfo_form 에서 쓰는 b-upload v-model변수
@@ -359,6 +380,43 @@
             },
         },
         methods: {
+            // departments/organization.html의 조직도용
+            makeFolder: function (item) {
+                Vue.set(item, "children", []);
+                this.addItem(item);
+            },
+            addItem: function (item) {
+                item.children.push(
+                    {
+                        'add_date': '2022-12-29',
+                        'all_employee_count': 0,
+                        'employee_count': 0,
+                        'id': 8,
+                        'leader': {
+                            'avatar': 'avatar/4a50c77bb8164dfb85cfb92ab7ee99a0.png',
+                            'id': 8,
+                            'job_status': '재직',
+                            'name': '123'
+                        },
+                        'level': 2,
+                        'name': 'new부서',
+                        'parent_id': 3,
+                        'sort': 2,
+                        'status': true
+                    }
+                );
+            },
+
+            // 공통
+            toast(message, type = 'is-info', position = 'is-top') {
+                this.$buefy.toast.open({
+                    duration: 5000,
+                    message: message,
+                    position: position,
+                    type: type
+                });
+            },
+
             // main/index에서 props.i 정보 -> banner_list[i]로 banner객체를 얻게해주는 메서드
             getBannerImg(value) {
                 return `${this.banner_list[value].img}`
@@ -583,6 +641,48 @@
                     });
                     // console.log(err.response.data.message)
                 });
+            },
+
+            // department/organization.html 의 tree컨트롤 용
+            labelClass(data) {
+                return "bg_node";
+            },
+            renderContent(h, data) {
+                return data.label;
+            },
+            onExpand(e, data) {
+                if ('expand' in data) {
+                    data.expand = !data.expand
+                    if (!data.expand && data.children) {
+                        this.collapse(data.children)
+                    }
+                } else {
+                    this.$set(data, 'expand', true)
+                }
+            },
+            collapse(nodes) {
+                nodes.forEach(node => {
+                    if (node.expand) {
+                        node.expand = false
+                    }
+
+                    node.children && this.collapse(node.children)
+                })
+            },
+            onNodeClick(e, data) {
+                console.log('CLICK', e);
+                this.$set(data, 'selectedKey', !data['selectedKey']);
+            },
+            onNodeMouseOver(e, data) {
+                console.log('MOUSE OVER', e, data);
+            },
+            onNodeMouseOut(e, data) {
+                console.log('MOUSE OUT', e);
+            },
+            onNodeDrop(e, drag, drop) {
+                console.log('DROP', e);
+                console.log('drag:', drag);
+                console.log('drop:', drop);
             },
 
         },
