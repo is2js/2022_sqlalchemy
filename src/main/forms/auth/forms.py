@@ -212,6 +212,18 @@ class EmployeeForm(UserInfoForm):
     # 연차계산등을 위해, DateTime으로 해야한다? Date면 충분
     #### form의 default시간은 자신의 컴퓨터시간인 datetime.datetime.now()로 들어가게 하고, 백엔드에서 utc로 바꿔서 저장해야한다.
     # https://github.com/rmed/akamatsu/blob/0dbcd2a67ce865d29fb7d7049e627d322ea8e361/akamatsu/views/admin/pages.py#L127
+    # employee_form 수정시 rendering에러 => v-model로 인해, string이 채워진체로 form이 렌더링 될 시 문제가 된다.
+    # => filter를 통해, 혹시 string이 form의 value에 들어가더라도, 필터링을 거친 value(date)로만 렌더링 되게 한다.
+    # ---- datefield는 외부에서 값을 받을 땐, 자기고유 format yyyy-m-d 형식의  자기고유타입 string만 받더라. -->
+    # ----  fix: forms.py에서 deafult로 date값이 들어가 -> date로 rendering OK-->
+    # ----       view에서 stringDate를 넣어서 보내는 것 OK-->
+    # ----  BUT  이미 DB에 date로 전달됬는데, watch -> v-model에 stringDate가 들어가 렌더링 => ERROR -->
+    # ----   => forms.py에서 filter를 걸어주면, value에 string이 차있어도, filter를 거친 뒤, date로 채워 렌더링 된다?! -->
+    def convert_to_date(date):
+        if not isinstance(date, (datetime.datetime, datetime.date, datetime.time)):
+            return datetime.datetime.strptime(date, '%Y-%m-%d').date()
+        return date
+
     join_date = DateField('입사일',
                           description='Will be stored as UTC',
                           # format='%Y-%m-%d %H:%M',
@@ -219,7 +231,12 @@ class EmployeeForm(UserInfoForm):
                           # 이것은 wtf datepicker가 올려주는 형식과 동일해야해서 고정이다. 받는 것도 string만 받는다. 하지만 return는 filter없이도 date로 가져간다.
                           # default=datetime.datetime.now().date(),  # default는 vue에서 알아서 준다.
                           default=datetime.date.today(),  # default는 vue에서 알아서 준다.
+                          filters=(convert_to_date,) # 필수! 수정시 v-model에 string을 value에 채운체로 rendering되면 에러난다.
                           )
+
+
+
+
 
     # resign_date는 입력x
 
