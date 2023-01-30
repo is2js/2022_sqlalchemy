@@ -34,6 +34,7 @@
     /* 선택된 node에 표시 */
     .tree-node-inner > .active {
         border: solid 1px;
+        border-style: dotted;
     }
 
     /* drag시 item */
@@ -385,7 +386,6 @@
             },
 
 
-
             methods: {
                 getDepts() {
                     console.log('getDepts')
@@ -430,30 +430,70 @@
                     this.updateTreeData();
                 },
                 updateTreeData() {
-                    console.log("updateTreeData")
-
+                    console.log("updateTreeData(this.depts --th.clone--> this.treeData)")
                     this.treeData = th.clone(this.depts);
-
-                    // console.log('this.treeData >> ', this.treeData);
                 },
                 treeChanged(node, tree) {
                     console.log('treeChanged----') // 제자리에 둘 땐 호출되지 않는다.
 
                     // 유효하지 않으면, 유효X내부 tree데이터를 <- 기존 공급된 depts데이터로 덮어써서 없앰
                     // if (!this.validateFirstNotParent()) {
+                    // if (!this.validateSameParent(node)) { // => treeChanged는 sort안변하면 여기가 호출안되서 생략함.
                     if (!this.validateSameParent(node)) {
                         this.toast('동일한 부모 부서아래 순서이동만 가능합니다.', 'is-danger')
-                        this.updateTreeData(); // 기존 this.depts -> this.treeData 덮어쓰기
+                        // [cancel 1] 검증 실패 => tree변경 취소 (기존 this.depts -> this.treeData 덮어쓰기)
+                        this.updateTreeData();
                         return;
                     }
 
-                    // 유효한 경우, 유효O내부 tree데이터를 -> 외부공급 this.depts로 가져옮
-                    this.toast('유효한 treeChanged.')
+                    // 유효한 경우 => DB에서변경 => 성공시 바뀐 tree데이터를 -> 외부공급 this.depts로 가져옮
+                    // (1) 유효한 순서변경 => 변경할 route에 가서 순서를 변경하고 온다.
+                    // console.log(this.treeData)
+
+                    const payload = {
+                        deptId: node.id,
+                        beforeSort: node.sort,
+                        afterSort: node.parent.children.indexOf(node) + 1
+                    }
+
+                    console.log('payload >> ', payload);
+
+                    axios({
+                        url: '{{ url_for("department.change_sort") }}',
+                        method: 'put',
+                        data: payload,
+                        headers: {'Content-type': 'application/json;charset=utf-8'},
+                    }).then(res => {
+                        // 통신성공 but 로직 실패(200대 외) -> tree되돌려야함.
+                        // TODO: 부서 순서 변경실패(통신은 됬는데 DB실패) => 이미 tree가 바뀌었다면, cancel해야함.
+                        if (res.status >= 300) {
+                            this.toast(res.data.message)
+                            // [cancel 2] 통신성공 BUT 로직실패  => tree변경 취소(기존 this.depts -> this.treeData)
+                            this.updateTreeData();
+                            return;
+                        }
+
+                        // 통신 성공 + (DB 순서변경)로직 성공 -> 그제서야 실제 tree도 변해야함.  =
+                        // TODO: 부서 순서 변경되었음 => 이미 tree가 바뀌었다면, 아무것도 안해도됨(차후 성공시 tree변경 -> this.depts + 초기데이터도 변경해줘야함.)
+
+                        this.treeUpdated(tree); // tree 자체 ----getPureData------> this.depts
+                        this.initialDepts = this.depts; // this.depts -------> this.initialDepts
+
+                        this.toast(res.data.message)
+                        // this.toast('순서변경에 성공하였습니다.')
+
+                    }).catch(err => {
+                        // TODO: 부서 순서 변경실패(통신은 됬는데 DB실패) => 이미 tree가 바뀌었다면, cancel해야함.
+                        console.log(err)
+                        this.toast(err.response ? err.response.data.message : '서버와 연결이 올바르지 않습니다.');
+                        // [cancel 3] 통신실패  => tree변경 취소(기존 this.depts -> this.treeData)
+                        this.updateTreeData();
+
+                    }).finally(() => {
+                    });
 
 
-                    this.treeUpdated(tree); // tree(vm) ---> this.depts
-
-                    // console.log('treeChanged====')
+                    console.log('treeChanged====')
                 },
 
                 validateFirstNotParent() {
@@ -478,14 +518,15 @@
                     return isValid;
                 },
                 validateNotSamePosition(node) {
-                    console.log('validateNotSamePosition')
+                    console.log('validateNotSamePosition----')
 
                     let beforeLevel = node.level - 1;
                     let beforeSort = node.sort;
 
                     let currentLevel = node._vm.level;
                     let currentSort = node.parent.children.indexOf(node) + 1;
-                    console.log(beforeLevel, beforeSort, currentLevel, currentSort,)
+                    // console.log(beforeLevel, beforeSort, currentLevel, currentSort,)
+                    console.log('validateNotSamePosition====')
                     return (beforeLevel === currentLevel) && (beforeSort === currentSort);
 
                 },
@@ -494,25 +535,25 @@
                     let isValid = true;
 
                     // 원래 root는 null로 들어오는데, 자식이 있는 root는 undefine으로 뜬다.
-                    // let before_parent_id = node.parent_id;
-                    let before_parentId = null;
+                    let beforeParentId = null;
                     if (node.parentId) {
-                        before_parentId = node.parentId;
+                        beforeParentId = node.parentId;
                     }
-                    console.log('node, node.parentId >> ', node, node.parentId);
+                    // console.log('node, node.parentId >> ', node, node.parentId);
 
 
-                    let after_parentId = null; // db에 root의 parentId는 null;이라고 기본값으로 줌.
+                    let afterParentId = null; // db에 root의 parentId는 null;이라고 기본값으로 줌.
                     // node.parent로만 검사하면 level0에서도 parent는 존재하는 것으로 검사됨.
                     if (node.parent.id) {
-                        after_parentId = node.parent.id;
+                        afterParentId = node.parent.id;
                     }
 
-                    if (before_parentId !== after_parentId) {
+                    if (beforeParentId !== afterParentId) {
                         isValid = false;
                     }
-                    console.log('before_parentId, after_parentId', before_parentId, after_parentId)
+                    console.log('beforeParentId, afterParentId', beforeParentId, afterParentId)
                     console.log('validateSameParent====')
+
                     return isValid;
                 },
                 treeUpdated(tree) {
@@ -537,11 +578,9 @@
                 getNodeElement(deptId) {
                     return document.querySelector("#node-" + deptId);
                 },
-
                 getNameInput(deptId) {
                     return document.querySelector("#name-" + deptId);
                 },
-
                 showNameInput(deptId) {
                     let nodeElement = this.getNodeElement(deptId);
                     nodeElement.style.display = 'none';
@@ -551,7 +590,6 @@
 
                     this.$nextTick(() => nameInput.focus());
                 },
-
                 hideNameInput(deptId) {
                     let nodeElement = this.getNodeElement(deptId);
                     nodeElement.style.display = 'block';
@@ -691,11 +729,12 @@
                         this.initialDepts = this.depts; // this.depts -------> this.initialDepts
 
 
-                        this.toast(res.data.message)
-
                         // 성공시에만 (1) 모달끄기 (2) form데이터 초기화
                         this.isDepartmentModalActive = false; // 로직 성공시에만 모달창 닫기
                         this.initObject(this.form); // 로직 성송시에만 form속 데이터 초기화
+
+
+                        this.toast(res.data.message)
 
                     }).catch(err => {
                         console.log(err)
@@ -738,8 +777,10 @@
                     // return false;
 
                 },
-                onDragEnd(node, draggableHelperInfo) {
-                    // console.log(' onDragEnd');
+                onDragEnd(beforeNode, draggableHelperInfo) {
+                    console.log(' onDragEnd----');
+
+
                     // (1) Drag 하는 원래 node
                     // let current_parentId = node.parent.id;
                     // console.log('node.parent.id', current_parent_id)
@@ -777,25 +818,21 @@
                     // this.$refs.node.getAttribute('vm') [object Object] => 사용X
 
 
-                    // (5) 이동은 같은 level == 부모의 level이 같아야하며
-                    //     부모도 같은 곳에서만 이동가능하게 하려면,
-                    //     => level비교없이 node vs dplh의 부모가 같은지만 확인하면 된다.
-                    //        부모가 없는 root의 경우, 값 비교를 위해 0으로 놔야한다?
-                    let before_parent = node.parent;
-                    let after_parent = this.$refs.tree.dplh.parent;
-                    // console.log('before_parent', before_parent)
-                    // console.log('after_parent', after_parent)
-
-                    // (6) 부모.id를 비교할 때, undefined로 서로 같다고 떠서, 따로 처리 안해줘도 될 것 같다.
-                    if (before_parent.id === after_parent.id) {
-
-                        this.toast('같은 부모' + after_parent.id + '에요!')
-                    } else {
-                        // this.$refs.tree.dplh.innerClass += ' has-background-danger-light'
-                        this.toast('다른 부모' + before_parent.id + '<->' + after_parent.id + '에요!', 'is-danger')
-                        // return false;
-                    }
-
+                    // let before_parent = node.parent;
+                    // let after_parent = this.$refs.tree.dplh.parent;
+                    // // console.log('before_parent', before_parent)
+                    // // console.log('after_parent', after_parent)
+                    //
+                    // // (6) 부모.id를 비교할 때, undefined로 서로 같다고 떠서, 따로 처리 안해줘도 될 것 같다.
+                    // if (before_parent.id === after_parent.id) {
+                    //
+                    //     this.toast('같은 부모' + after_parent.id + '에요!')
+                    // } else {
+                    //     // this.$refs.tree.dplh.innerClass += ' has-background-danger-light'
+                    //     this.toast('다른 부모' + before_parent.id + '<->' + after_parent.id + '에요!', 'is-danger')
+                    //     // return false;
+                    // }
+                    //
 
                     // // 둘다 isRoot가 true로 존재하면 부모가 없다면 같은 부모다.
                     // if (before_parent.isRoot && after_parent.isRoot) {
@@ -826,6 +863,7 @@
                     //     console.log('같은 선상이라 drag완료')
                     // }
 
+                    console.log(' onDragEnd====');
                 },
                 nodeChanged(dept, vm, store, $event) {
                     console.log('level을 가진 nodeChanged');
@@ -1040,6 +1078,12 @@
             computed: {
                 idOfSelectedDept() {
                     return this.selectedDept ? this.selectedDept.id : null
+                },
+                currentDplhParentId() {
+                    return this.$refs.tree.dplh.parent.id ? this.$refs.tree.dplh.parent.id : null
+                },
+                currentDplhParent() {
+                    return this.$refs.tree.dplh.parent
                 }
             },
 
