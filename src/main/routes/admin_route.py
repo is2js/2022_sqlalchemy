@@ -1182,6 +1182,8 @@ def employee_edit(id):
     # 항상 수정form을 만드는 user / employform의 수정form인 employee= / role이 1개가 아니라, g.user이하의 role을 만드는 employer=
     form = EmployeeForm(employee.user, employee=employee, employer=g.user)
 
+    # print("form.join_date.data >>>", form.join_date.data)
+
     if form.validate_on_submit():
         #### user ####
         user_info = {
@@ -1201,6 +1203,7 @@ def employee_edit(id):
             f.save(avatar_path)
             delete_uploaded_file(directory_and_filename=user.avatar)
             user.avatar = f'avatar/{filename}'
+
 
         #### employee ####
         employee_info = {

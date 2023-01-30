@@ -194,7 +194,11 @@
                             </b-datepicker>
                         </b-field>
                         <!-- datefield는 외부에서 값을 받을 땐, 자기고유 format yyyy-m-d 형식의  자기고유타입 string만 받더라. -->
-                        {{form.join_date(class='input', type='hidden',  **{'v-model':'stringDate'})}}
+                        <!--  fix: forms.py에서 deafult로 date값이 들어가 -> date로 rendering OK-->
+                        <!--       view에서 stringDate를 넣어서 보내는 것 OK-->
+                        <!--  BUT  이미 DB에 date로 전달됬는데, watch -> v-model에 stringDate가 들어가 렌더링 => ERROR -->
+                        <!--   => forms.py에서 filter를 걸어주면, value에 string이 차있어도, filter를 거친 뒤, date로 채워 렌더링 된다?! -->
+                        {{  form.join_date(class='input', type='hidden',  **{'v-model': 'stringDate'}   )}}
                     </div>
                 </div>
             </div>
@@ -225,5 +229,6 @@
 {% block vue_script %}
 <script>
     app._data.date = new Date('{{ form.join_date.data or today_date() }}')
+    // console.log(app._data.date);
 </script>
 {% endblock vue_script %}
