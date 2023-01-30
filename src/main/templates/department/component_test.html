@@ -474,7 +474,29 @@
                         }
 
                         // 통신 성공 + (DB 순서변경)로직 성공 -> 그제서야 실제 tree도 변해야함.  =
-                        // TODO: 부서 순서 변경되었음 => 이미 tree가 바뀌었다면, 아무것도 안해도됨(차후 성공시 tree변경 -> this.depts + 초기데이터도 변경해줘야함.)
+                        // TODO: 부서 순서 변경되었음 => 이미 tree가 바뀌었다면, (1) 관련된 모든 놈들의 .sort값 변경 (2) this.depts 변경 + this.initialDepts 변경)
+                        node.sort = payload.afterSort;
+                        // TODO: 관련 node들도 DB에서 받아서 다 sort바꿔주기 -> 어차피 같은 부모(level)에서만 달라지기 때문에, BFS말고 해당부모의 node만 바꿔주면 된다?!
+                        // th.breadthFirstSearch(this.treeData, node => {
+                        //     let myParentChildren = node.parent ? node.parent.children : this.treeData;
+                        //     let mySort = myParentChildren.indexOf(node) + 1;
+                        //     if (mySort !== node.sort) {
+                        //         console.log(`원래sort(${node.sort})와 현재sort${mySort}가 달라요.`)
+                        //         node.sort =  mySort;
+                        //     }
+                        // });
+                        let myParentChildren = node.parent ? node.parent.children : this.treeData;
+                        for (const [index, node] of myParentChildren.entries()) {
+                            const mySort = index + 1;
+                            if (mySort !== node.sort) {
+                                console.log(`원래sort(${node.sort})와 현재sort${mySort}가 달라요.`)
+                                node.sort = mySort;
+                            }
+                        }
+
+
+
+                        console.log('this.treeData, payload.afterSort >> ', this.treeData, payload.afterSort);
 
                         this.treeUpdated(tree); // tree 자체 ----getPureData------> this.depts
                         this.initialDepts = this.depts; // this.depts -------> this.initialDepts
