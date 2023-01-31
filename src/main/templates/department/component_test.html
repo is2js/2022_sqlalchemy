@@ -718,7 +718,6 @@
                     console.log('validateName----')
 
                     // console.log('event.target.value >> ', event.target.value);
-                    let nodeElement = this.getNodeElement(dept.id);
                     let nameInput = this.getNameInput(dept.id);
                     let targetName = nameInput.value.trim();
 
@@ -743,35 +742,52 @@
                         return;
                     }
 
-                    // 원래는 변화된 dept를 메인에게 emit으로 던져줘서, 부모가 @emit="처리메서드(el)"로 tree데이터 및 공급데이터를 처리해야하는데
-                    // validateTitle() {
-                    //   let el = this.el;
-                    //   this.$emit("update:el", el); // 부모가 @update:el로 받는게 아니라, props로 줬던 el자체를 바꿔서 반환하는 듯?
-                    //   // vue2.2부터 v-mdodle vue2.3부터 [:자식에게 건네줄 props.sync="부모변수 "] => 자식은 props 정의 -> 컴포넡트정의시 사용 + $emit시 ('update:props명', 달라진 props값 ) 으로 넘기면, 부모는 알아서 업뎃 된다.
-                    ///  // https://devtimothy.tistory.com/135
-                    //   this.showel = true;
-                    // },
+                    this.changeName(dept, targetName);
 
-                    // 여기는 컴포넌트사용 메인이므로 바로 처리한다. 넘어오는 개별node(dept)를 수정해도
-                    // (1) tree 내부의 this.treeData(트리연동데이터)와 연동 됨!
-                    // (2) but drag시 발생하는 treeChanged는 호출안된다. => 직접 처리하는 메서드를 호출해야한다.
-                    // 나중에 text => name으로 변경
-                    dept.text = targetName;
-
-                    nodeElement.style.display = 'block';
-                    nameInput.style.display = 'none';
-
-                    // this.treeData만 연동변경되고, this.depts는 그대로다
-                    // => 여기선 tree데이터를 넘길 수 없기 때문에 ref를 쓴다.
-                    // console.log('dept >> ', dept);
-                    // this.treeUpdated(this.$refs.tree)
-                    // => 메서드 내부에서 default || 로서 this.$refs.tree를 최후수단으로 쓰고 있기 때문에
-                    // => node에서 tree를 찾는 node._vm.store ( tree는 .getPureData()등의 메서드를 쓸 수 있는 것을 말한다)
-                    // => tree란, this.treeData와는 다른, 컴포넌트 자체를 말하며, tree에 의한 업데이트시 이걸 쓰면 된다.
-                    // console.log('dept._vm.store >> ', dept._vm.store);
-                    this.treeUpdated(dept._vm.store)
 
                     console.log('validateName====')
+                },
+
+                changeName(dept, targetName) {
+                    console.log('changeName----')
+
+                    const payload = {
+                        deptId: dept.id,
+                        targetName: targetName
+                    }
+                    axios({
+                        url: '{{ url_for("department.change_name") }}',
+                        method: 'put',
+                        data: payload,
+                        headers: {'Content-type': 'application/json;charset=utf-8'},
+                    }).then(res => {
+                        // 통신성공 but 로직 실패(200대 외)
+                        if (res.status >= 300) {
+                            this.toast(res.data.message)
+                            return;
+                        }
+
+                        // 통신 성공 + (name변경)로직 성공
+                        dept.text = targetName;
+                        // 성공시 해당 input을 안보이게 + view는 보이게 다시 변경
+                        this.hideNameInput(dept.id);
+
+                        this.treeUpdated(dept._vm.store); // tree(vm) 자체 ----getPureData------> this.depts
+                        this.initialDepts = this.depts; // this.depts -------> this.initialDepts
+
+                        this.toast(res.data.message)
+
+                    }).catch(err => {
+                        console.log(err)
+                        // 특별히 err에 response가 내려온다면. 거기서 메세지를 꺼내서
+                        this.toast(err.response ? err.response.data.message : '서버와 연결이 올바르지 않습니다.');
+
+                    }).finally(() => {
+
+                    });
+
+
+                    console.log('changeName====')
                 },
 
                 // modal용 form변수(Object들 모두) 초기화 메서드
@@ -930,7 +946,7 @@
                         // 통신 성공 + (status변경)로직 성공 -> tree에 생성된 자식 push -> 공급/초기데이터도 업뎃
                         dept.status = !dept.status
 
-                        this.treeUpdated(); // tree(vm) 자체 ----getPureData------> this.depts
+                        this.treeUpdated(dept._vm.store); // tree(vm) 자체 form node._vm.store ----getPureData------> this.depts
                         this.initialDepts = this.depts; // this.depts -------> this.initialDepts
 
                         this.toast(res.data.message)

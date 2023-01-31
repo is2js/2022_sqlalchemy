@@ -40,7 +40,6 @@ def add():
     if dept_info['parentId']:
         dept_info['parentId'] = int(dept_info['parentId'])
 
-
     # TODO: 예시데이터 -> 생성된 부서데이터 to_dict()로 내려보내고 + 예외처리하기
     id_ = random.randint(100, 199)
     sample = {
@@ -49,7 +48,7 @@ def add():
         'level': 0,
         'sort': 1,
         'text': dept_info['name'],
-        'open': False,
+        'status': True,
     }
 
     return make_response(dict(dept=sample, message='부서가 추가되었습니다.'))
@@ -65,6 +64,7 @@ def change_sort():
 
     return make_response(dict(message='부서 순서 변경에 성공했습니다.'))
 
+
 @dept_bp.route("/status", methods=['PUT'])
 def change_status():
     payload = request.get_json()
@@ -72,5 +72,14 @@ def change_status():
     # {'deptId': 1}
     # TODO : dept status 변경
 
-
     return make_response(dict(message='부서 활성여부 변경을 성공했습니다.'))
+
+
+@dept_bp.route("/name", methods=['PUT'])
+def change_name():
+    payload = request.get_json()
+    # print(payload)
+    # {'deptId': 1, 'targetName': '병원장2'}
+    # TODO : dept name 변경
+
+    return make_response(dict(message='부서 이름 변경을 성공했습니다.'))
