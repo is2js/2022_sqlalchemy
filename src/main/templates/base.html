@@ -360,6 +360,10 @@
             //department/부서관리용 DraggableTree .html의 컴포넌트 주입용 데이터 변수 초기화
             // treeTest: false,
 
+
+            // 공통 dialog 동의 받기
+            isConfirmed: false,
+
         },
         watch: {
             // admin/banner_form , auth/userinfo_form 에서 쓰는 b-upload v-model변수
@@ -410,10 +414,21 @@
             // 공통
             toast(message, type = 'is-info', position = 'is-top') {
                 this.$buefy.toast.open({
+                    type: type,
                     duration: 5000,
                     message: message,
                     position: position,
-                    type: type
+                });
+            },
+
+             confirm(message, _function=(()=>{}), type = 'is-primary', confirmText = '예', cancelText = '아니오') {
+                this.$buefy.dialog.confirm({
+                    type: type,
+                    size: 'is-small',
+                    message: message,
+                    confirmText: confirmText,
+                    cancelText: cancelText,
+                    onConfirm: _function,
                 });
             },
 

@@ -33,8 +33,8 @@
 
     /* 선택된 node에 표시 */
     .tree-node-inner > .active {
-        border: solid 1px;
-        border-style: dotted;
+        border: solid 2px;
+        border-style: dashed;
     }
 
     /* drag시 item */
@@ -128,25 +128,47 @@
                     <small>모두 열기</small>
                 </b-button>
 
+
+                <!-- 부서 추가-->
                 <b-button class=" is-primary is-rounded is-pulled-right mr-2"
                           size="is-small"
                           @click="isDepartmentModalActive = true;">
                     <span class="icon">
                          <i class="mdi mdi mdi-plus-thick mr-1"> </i>
                     </span>
-                    {$ selectedDept ? '하위 부서 추가' : '부서 추가' $}
+                    {$ selectedDept ? '하위 부서 추가' : '최상위 부서 추가' $}
                 </b-button>
+                <!-- 부서 삭제-->
+                <b-button v-if="selectedDept"
+                          class="is-primary is-light is-rounded is-pulled-right mr-2"
+                          size="is-small"
+                          @click="validateDelete"
+                >
+                    <span class="icon">
+                         <i class="mdi mdi mdi-trash-can-outline mr-1"> </i>
+                    </span>
+                    삭제
+                </b-button>
+
+
             </div>
 
             <div class="is-clearfix"></div>
             <div class="dropdown-divider"></div>
 
+            <div v-if="!treeData || !treeData.length "
+                 class="container"
+            >
+                <span class="is-size-6 has-text-primary has-text-weight-bold"> 부서가 없습니다. 최상위 부서를 생성해주세요.</span>
+            </div>
+
+
             <tree
                     draggable
                     :class="'is-size-7'"
+                    :style="{visibility: treeData.length ? 'visible' : 'hidden'}"
                     ref="tree"
                     :data="treeData"
-
                     @change="treeChanged"
 
                     :ondragstart="onDragStart"
@@ -160,6 +182,7 @@
 
                     @edit-page="editDept"
             >
+
                 <!-- tree-branch -->
                 <!--  <template>에는 @click이 안먹어서 따로 한번 더 감싸줌.-->
                 <!--                @click="dept.active = !dept.active;"-->
@@ -177,6 +200,7 @@
                      @removed="deptRemoved"
                      @dblclick="showNameInput(dept.id)"
                 >
+
                     <template v-if="!dept.isDragPlaceHolder">
                         <div>
                             [{$ dept.id $}]
@@ -210,7 +234,6 @@
                                     {$ dept.open ? '접기 ▶' : '열기 ▼' $}
                                 </small>
                             </div>
-                            <div class="is-clearfix"></div>
 
                         </div>
                     </template>
@@ -495,7 +518,6 @@
                         }
 
 
-
                         console.log('this.treeData, payload.afterSort >> ', this.treeData, payload.afterSort);
 
                         this.treeUpdated(tree); // tree 자체 ----getPureData------> this.depts
@@ -580,8 +602,9 @@
                 },
                 treeUpdated(tree) {
                     console.log('treeUpdated(tree -> this.depts)----')
+
                     tree = tree || this.$refs.tree;
-                    // 연동데이터 this.treeData(.parent, _vm.level 등 자동 생성)과 달리 순수 데이터만 뽑아낸다.
+
                     this.depts = tree.getPureData();
 
                     // console.log('this.depts >> ', this.depts);
@@ -746,8 +769,10 @@
 
                         let newDept = res.data.dept;
                         parentChildren.push(newDept);
+                        // console.log('push대상 >> parentChildren >>', parentChildren);
+                        // console.log('push후 this.treeData >> ', this.treeData);
 
-                        this.treeUpdated(); // tree 자체 ----getPureData------> this.depts
+                        this.treeUpdated(); // tree(vm) 자체 ----getPureData------> this.depts
                         this.initialDepts = this.depts; // this.depts -------> this.initialDepts
 
 
@@ -766,6 +791,56 @@
                     }).finally(() => {
                         this.isLoading = false; // 로딩 끄기
                     });
+
+                },
+
+                // node 삭제
+                validateDelete() {
+                    // 삭제 진행 전 검증하기
+                    const targetDept = this.selectedDept;
+                    // [검증1] 하위 부서 존재여부
+                    // 일단 자식없는 node라도 .children는 빈 어레이로 가지고 있음.
+                    if (targetDept.children.length) {
+                        this.toast('하위 부서가 존재할 경우 삭제할 수 없습니다.', 'is-danger')
+                        return;
+                    }
+
+                    // TODO: [검증2] (하위부서X)부서의 직원이 존재할 경우, [있다면 해임시키게 될 건데] confirm받기
+                    // this.confirm('삭제할 경우, 해당 부서원들은 금일부 해임됩니다. 진행하시겠습니까?', async () => await this.deleteSelectedNode() );
+
+                    // [검증3] 정말 삭제할 것인지 confirm 받기
+                    this.confirm('정말 삭제하시겠습니까?', () => this.deleteSelectedNode() );
+                },
+
+                deleteSelectedNode(e) {
+                    //1. tree VM으로 선택node 삭제
+                    const targetDept = this.selectedDept;
+
+                    let tree = targetDept._vm.store;
+                    tree.deleteNode(targetDept);
+
+                    // console.log('this.treeData >> ', this.treeData); // 연동되어, 해당node만 삭제
+                    // console.log('this.selectedDept >> ', this.selectedDept);// 유지 + .parent에선 사라진 현재 tree연동됨.
+
+                    //2. 선택node보다 더 뒤에 sort를 1칸씩 당긴다.
+                    const standardSort = targetDept.sort;
+                    let myParentChildren = targetDept.parent ? targetDept.parent.children : this.treeData;
+
+                    // for (const node in myParentChildren) {
+                    // [조심!] 일반 for in 으로 돌면 -> key값만 도는 것이다.
+                    for (const node of myParentChildren) {
+                        // 여기서는 index로 sort를 만들면 안된다. 이미 트리에서 1개가 빠진 상태에서 순회하기 때문
+                        if (node.sort > standardSort) {
+                            // console.log(`현재sort${node.sort}를 한칸씩 -1 합니다.`)
+                            node.sort = node.sort - 1;
+                        }
+                    }
+                    // 3. selected된거 없으니 비워주기
+                    this.selectedDept = null;
+
+                    //4. 변경된 tree를 -> this.depts -> this.initialDepts에 반영
+                    this.treeUpdated(tree);
+                    this.initialDepts = this.depts;
 
                 },
 
