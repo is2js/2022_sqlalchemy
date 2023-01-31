@@ -297,13 +297,15 @@ class Department(BaseModel):
 
     # root부서들부터 자식들 탐색할 수 있게 먼저 호출
     @classmethod
-    def get_roots(cls):
+    def get_roots(cls, with_inactive=False):
         with DBConnectionHandler() as db:
             stmt = (
                 select(cls)
-                .where(cls.status == 1)
                 .where(cls.parent_id.is_(None))
+                .order_by(cls.path) # view에선 sort순이 중요함.
             )
+            if not with_inactive:
+                stmt = stmt.where(cls.status == 1)
 
             return db.session.scalars(stmt).all()
 
@@ -312,11 +314,8 @@ class Department(BaseModel):
     #                           }
 
     @classmethod
-    def get_all_tree(cls):
-        # root_department = cls.get_root()
-        # if root_department:
-        #     return root_department.get_self_and_children_dict()
-        root_departments = cls.get_roots()
+    def get_all_tree(cls, with_inactive=False):
+        root_departments = cls.get_roots(with_inactive=with_inactive)
 
         tree_list = []
         for root in root_departments:
@@ -421,8 +420,8 @@ class Department(BaseModel):
         for col in delete_columns:
             if col in data:
                 del data[col]
-
-        #### 필드 Custom ####
+        # 커스텀 영역 ##########
+        #### Organization ####
 
         # 부서장 존재 확인용 -> 부서장이 있따면, 부서 전체 직원 - 1을 해서 [순수 부서원 수]만 내려보낸다.
         direct_leader_id = self.get_leader_id()
@@ -431,6 +430,7 @@ class Department(BaseModel):
         # [순수 하위 부서 수]만 카운팅 한다.
         data['only_children_count'] = self.count_only_children()
         # [순수 부서원 + 하위 부서장과 부서원 수]
+        # => view에선 부서장 외 N명이 됨.
         data['all_employee_count'] = self.count_self_and_children_employee() - (1 if direct_leader_id else 0)
         # view에서 level별 color / offset 설정을 위한 변수
         data['level'] = self.level
@@ -471,14 +471,17 @@ class Department(BaseModel):
         else:
             data['parent_sort'] = None
 
+
         return data
 
     def get_self_and_children_dict(self):
         # result = self.row_to_dict
-        result = self.to_dict(delete_columns=['pub_date', 'path', 'type', ])
+        result = self.to_dict(delete_columns=['pub_date', 'path', ])
 
         children = self.get_children()
 
+        #### view의 tree컴포넌트는 항상 children을 가지고 있고, children.length로 자식여부를 판단하므로
+        #### => 항상 children을 빈list라도 만들어서 반환하도록 수정
         if len(children) > 0:
             result['children'] = list()
             for child in children:

@@ -165,7 +165,7 @@
             <div class="is-clearfix"></div>
             <div class="dropdown-divider"></div>
 
-            <div v-if="!treeData || !treeData.length "
+            <div v-if="!treeData || (treeData && !treeData.length) "
                  class="container"
             >
                 <span class="is-size-6 has-text-primary has-text-weight-bold">
@@ -177,7 +177,7 @@
             <tree
                     draggable
                     :class="'is-size-7'"
-                    :style="{visibility: treeData.length ? 'visible' : 'hidden'}"
+                    :style="{visibility: (treeData && treeData.length) ? 'visible' : 'hidden'}"
                     ref="tree"
                     :data="treeData"
                     @change="treeChanged"
@@ -219,19 +219,27 @@
                             <span class="pl-2 is-inline-block">
                                 <!-- Name or Input-->
                                 <span :id="'node-' + dept.id"
-                                      :class="{'has-text-primary' : dept.id !== idOfSelectedDept, 'has-text-weight-bold': dept.status,  'has-text-grey-light': !dept.status}"
+                                      :class=" dept.id !== idOfSelectedDept ? getTextColorToLevelAndSort(dept.level, dept.parent_sort, dept.sort) : 'abc' "
                                 >
-                                     <!-- id -->
-                                    [{$ dept.id $}]
                                     <!-- name -->
-                                    {$ dept.text $}
+                                    {$ dept.name $}
+                                    <span class="has-text-weight-light ml-1"
+                                          :class="dept.id !== idOfSelectedDept ? 'has-text-grey' : 'has-text-white'"
+                                    >
+
+                                        <!-- 부서장 외 (부서장 제외 직원 + 하위부서장 + 하위직원 수) : all_employee_count-->
+                                        <small> {$ dept.leader.name $}</small>
+                                        <small v-if="dept.all_employee_count"> 외 {$ dept.all_employee_count $}명</small>
+
+
+                                    </span>
                                 </span>
                                 <!-- 더블클릭시 나타나는 이름변경 input -->
                                 <input class="is-size-7"
                                        type="text"
                                        :id="'name-' + dept.id"
-                                       :value="dept.text"
-                                       :size="dept.text.length + 3"
+                                       :value="dept.name"
+                                       :size="dept.name.length + 3"
                                        style="display: none;"
 
                                        @blur="hideNameInput(dept.id)"
@@ -265,7 +273,7 @@
                                  @dblclick.prevent.stop
                             >
                                 <small :class="dept.id !== idOfSelectedDept ? 'has-text-grey' : 'has-text-white'">
-                                    {$ dept.open ? '접기 ▶' : '열기 ▼' $}
+                                    {$ dept.open ? '접기 ▶' : '열기(' + dept.only_children_count+ ') ▼' $}
                                 </small>
                             </div>
                         </div>
@@ -304,7 +312,7 @@
             </header>
             <section class="modal-card-body">
                 <!-- INPUT1: hidden에 부모부서를 넣어줘야하는데, v-model과 연동시키려면 :value가 불가능 => v-model에 할당문으로 넣어준다.-->
-                <input type="hidden" v-model="form.parentId = idOfSelectedDept">
+                <input type="hidden" v-model="form.parent_id = idOfSelectedDept">
 
                 <!-- INPUT2: 부서 타입 고르기 -->
                 <div class="columns">
@@ -414,7 +422,7 @@
                     isDepartmentModalActive: false, // 부서추가시 띄울 모달
                     // form에 입력되는 input을 v-model로 받아줄 form object
                     form: {
-                        parentId: null,
+                        parent_id: null,
                         type: null,
                         name: '',
                     },
@@ -453,55 +461,10 @@
                     //     this.updateTreeData();
                     //     this.loading = false;
                     // })
-                    this.depts = [
-                        {id: 1, parentId: null, level: 0, sort: 1, text: '병원장', status: true},
-                        {id: 2, parentId: null, level: 0, sort: 2, text: '이사회', status: true},
-                        {
-                            id: 3,
-                            parentId: null,
-                            level: 0,
-                            sort: 3,
-                            text: 'node 3 undraggable',
-                            draggable: false,
-                            status: true
-                        },
-                        {
-                            id: 4,
-                            parentId: null,
-                            level: 0,
-                            sort: 4,
-                            text: 'node 4 undroppable',
-                            droppable: false,
-                            status: true
-                        },
-                        {
-                            id: 5,
-                            level: 0,
-                            sort: 5,
-                            text: 'node 5',
-                            children: [
-                                {
-                                    id: 6,
-                                    parentId: 5,
-                                    level: 1,
-                                    sort: 1,
-                                    text: 'node 6',
-                                    status: false
-                                },
-                                {
-                                    id: 7,
-                                    parentId: 5,
-                                    level: 1,
-                                    sort: 2,
-                                    text: 'node 7',
-                                    status: false
-
-                                },
-                            ], status: true
-                        },
-                    ];
+                    this.depts = JSON.parse('{{ tree.data | tojson }}')
                     // console.log('this.depts >> ', this.depts);
                     this.updateTreeData();
+                    // 초기화데이터에 넣는 것은 밖에서 따로 함.
                 },
                 updateTreeData() {
                     console.log("updateTreeData(this.depts --th.clone--> this.treeData)")
@@ -550,6 +513,11 @@
                         // 통신 성공 + (DB 순서변경)로직 성공 -> 그제서야 실제 tree도 변해야함.  =
                         // TODO: 부서 순서 변경되었음 => 이미 tree가 바뀌었다면, (1) 관련된 모든 놈들의 .sort값 변경 (2) this.depts 변경 + this.initialDepts 변경)
                         node.sort = payload.afterSort;
+                        // 자식들 색을 위해 자식들의 .parent_sort도 다 바꿔주기
+                        for (let child of node.children) {
+                            child.parent_sort = node.sort;
+                        }
+
                         // TODO: 관련 node들도 DB에서 받아서 다 sort바꿔주기 -> 어차피 같은 부모(level)에서만 달라지기 때문에, BFS말고 해당부모의 node만 바꿔주면 된다?!
                         // th.breadthFirstSearch(this.treeData, node => {
                         //     let myParentChildren = node.parent ? node.parent.children : this.treeData;
@@ -562,9 +530,14 @@
                         let myParentChildren = node.parent ? node.parent.children : this.treeData;
                         for (const [index, node] of myParentChildren.entries()) {
                             const mySort = index + 1;
+                            // 순서가 달라 바뀌는 놈들
                             if (mySort !== node.sort) {
-                                console.log(`원래sort(${node.sort})와 현재sort${mySort}가 달라요.`)
+                                // console.log(`원래sort(${node.sort})와 현재sort${mySort}가 달라요.`)
                                 node.sort = mySort;
+                                // 바뀌는 놈들은 그놈의 자식들의 .parent_sort도 같이 바꿔주기
+                                for (let child of node.children) {
+                                    child.parent_sort = node.sort;
+                                }
                             }
                         }
 
@@ -603,7 +576,7 @@
                         // 최상레벨이 첫시작인 1개의 root인데, 자식이 있다면, 유효하지 않다.
                         // const isRoot = this.expectsRoot && level === 1 && index === 0;
                         const isRoot = level === 1 && index === 0;
-                        if (isRoot && childNode.children.length > 0) {
+                        if (isRoot && childNode.children && childNode.children.length > 0) {
                             isValid = false;
                             this.toast('첫번째는 root는 자식이 있을 경우 유효하지 않습니다.', 'is-danger');
                         }
@@ -631,10 +604,10 @@
 
                     // 원래 root는 null로 들어오는데, 자식이 있는 root는 undefine으로 뜬다.
                     let beforeParentId = null;
-                    if (node.parentId) {
-                        beforeParentId = node.parentId;
+                    if (node.parent_id) {
+                        beforeParentId = node.parent_id;
                     }
-                    // console.log('node, node.parentId >> ', node, node.parentId);
+                    // console.log('node, node.parent_id >> ', node, node.parent_id);
 
 
                     let afterParentId = null; // db에 root의 parentId는 null;이라고 기본값으로 줌.
@@ -699,7 +672,7 @@
                     return targetName.length > 10 || targetName.length < 2;
                 },
                 checkNotSameName: function (targetName, dept) {
-                    return targetName !== dept.text;
+                    return targetName !== dept.name;
                 },
                 existNameInTree: function (targetName) {
                     let isValid = false;
@@ -768,7 +741,7 @@
                         }
 
                         // 통신 성공 + (name변경)로직 성공
-                        dept.text = targetName;
+                        dept.name = targetName;
                         // 성공시 해당 input을 안보이게 + view는 보이게 다시 변경
                         this.hideNameInput(dept.id);
 
@@ -835,7 +808,19 @@
                             : this.treeData;
 
                         let newDept = res.data.dept;
-                        parentChildren.push(newDept);
+                        parentChildren.push({
+
+                            add_date: '2022-12-29',
+                            all_employee_count: 0,
+                            employee_count: 0,
+                            id: 8,
+                            level: 2,
+                            name: 'new부서',
+                            parent_id: null,
+                            sort: 3,
+                            status: true
+
+                        });
                         // console.log('push대상 >> parentChildren >>', parentChildren);
                         // console.log('push후 this.treeData >> ', this.treeData);
 
@@ -867,7 +852,7 @@
                     const targetDept = this.selectedDept;
                     // [검증1] 하위 부서 존재여부
                     // 일단 자식없는 node라도 .children는 빈 어레이로 가지고 있음.
-                    if (targetDept.children.length) {
+                    if (targetDept.children && targetDept.children.length) {
                         this.toast('하위 부서가 존재할 경우 삭제할 수 없습니다.', 'is-danger')
                         return;
                     }
@@ -1082,7 +1067,7 @@
                 },
                 nodeChanged(dept, vm, store, $event) {
                     console.log('level을 가진 nodeChanged');
-                    console.log('id, name, level =>', dept.id, dept.text, vm.level)
+                    console.log('id, name, level =>', dept.id, dept.name, vm.level)
                     console.log('$event =>', $event)
                 },
 
@@ -1140,27 +1125,27 @@
 
 
                 },
-
-
-                save() {
-                    this.saving = true;
-                    // const payload = {
-                    //     pages: this.pages,
-                    //     site: this.site,
-                    //     expectsRoot: this.expectsRoot, ...this.submitParameters
-                    // };
-                    // return this.$axios.post(this.submitUrl, payload).then(response => {
-                    this.$emit('saved');
-                    // this.$toast.success(__('Saved'));
-                    console.log('save()')
-                    this.initialDepts = JSON.parse(JSON.stringify(this.depts));
-
-                    // return response;
-                    // }).catch(e => {
-                    //     this.$toast.error(e.response ? e.response.data.message : __('Something went wrong'));
-                    //     return Promise.reject(e);
-                    // }).finally(() => this.saving = false);
-                },
+                //
+                //
+                // save() {
+                //     this.saving = true;
+                //     // const payload = {
+                //     //     pages: this.pages,
+                //     //     site: this.site,
+                //     //     expectsRoot: this.expectsRoot, ...this.submitParameters
+                //     // };
+                //     // return this.$axios.post(this.submitUrl, payload).then(response => {
+                //     this.$emit('saved');
+                //     // this.$toast.success(__('Saved'));
+                //     console.log('save()')
+                //     this.initialDepts = JSON.parse(JSON.stringify(this.depts));
+                //
+                //     // return response;
+                //     // }).catch(e => {
+                //     //     this.$toast.error(e.response ? e.response.data.message : __('Something went wrong'));
+                //     //     return Promise.reject(e);
+                //     // }).finally(() => this.saving = false);
+                // },
 
                 addPages(depts, targetParent) {
                     const parent = targetParent
@@ -1275,19 +1260,6 @@
                         }
                     });
                 },
-
-                clone: function (source) {
-                    var target = [];
-                    for (let i in source) {
-                        if (source[i] != null && typeof source[i] === "object") {
-                            target[i] = this.clone(source[i]); // resursion
-                        } else {
-                            target[i] = source[i];
-                        }
-                    }
-                    return target;
-                }
-
             },
 
             computed: {
@@ -1302,82 +1274,6 @@
                 }
             },
 
-            // 부모가 넘겨중 정보
-            watch: {
-                depts: {
-                    deep: true,
-                    handler(depts) {
-                        // this.treeData = this.depts;
-                        // this.$refs.tree.rootData = this.depts;
-                        // console.log('watch!!!  depts, in handler(depts)')
-                        // this.deptIds = this.getDeptIds(depts);
-                        // console.log('this.getDeptIds(depts) -> this.deptIds', this.deptIds);
-                        //
-                        // console.log('this.initialDepts의 ids', this.getDeptIds(this.initialDepts));
-                        // console.log('this.getDeptIds', this.getDeptIds(depts));
-                        // console.log('this.initialDepts의 levels', this.getDeptLevels(this.initialDepts));
-                        // console.log('this.getDeptLevels', this.getDeptLevels(depts));
-                        //
-                        // let initIds = this.getDeptIds(this.initialDepts);
-                        // let currIds = this.getDeptIds(depts);
-                        // let diffIdIndexs = [];
-                        // for (var i = 0; i < initIds.length; i++) {
-                        //     if (initIds[i] !== currIds[i]) {
-                        //         diffIdIndexs.push(i);
-                        //     }
-                        // }
-
-
-                        // console.log('diffIdIndexs', diffIdIndexs)
-                        //diffIdIndexs (2) [0, 1]
-
-
-                        // let initIds = this.getDeptIds(this.initialDepts);
-                        // let currIds = this.getDeptIds(depts);
-                        // let diffIdIndexs = [];
-                        // for (var i = 0; i < initIds.length; i++) {
-                        //     if(initIds[i] !== currIds[i]) {
-                        //         diffIdIndexs.push(i);
-                        //     }
-                        // }
-                        //
-                        // console.log('diffIdIndexs', diffIdIndexs)
-                    }
-                },
-                deptIds(ids) {
-                    this.$emit('dept-ids-updated', ids);
-                },
-            },
-
-            // created() {
-            //
-            //
-            //     console.log('created')
-            //     console.log('this.draggableTreeData 클론 => this.initialDepts')
-
-            // let initData = JSON.parse(JSON.stringify(this.draggableTreeData));
-
-
-            // function clone(source) {
-            //     var target = [];
-            //     for (let i in source) {
-            //         if (source[i] != null && typeof source[i] === "object") {
-            //             target[i] = clone(source[i]); // resursion
-            //         } else {
-            //             target[i] = source[i];
-            //         }
-            //     }
-            //     return target;
-            // }
-
-
-            //     let initData = this.clone(this.draggableTreeData);
-            //     this.initialDepts = initData;
-            //     // this.depts = initData;
-            //     // console.log(this.depts)
-            //     this.updateTreeData()
-            //
-            // },
         }
     ;
 </script>

@@ -361,9 +361,6 @@
             // treeTest: false,
 
 
-            // 공통 dialog 동의 받기
-            isConfirmed: false,
-
         },
         watch: {
             // admin/banner_form , auth/userinfo_form 에서 쓰는 b-upload v-model변수
@@ -396,16 +393,11 @@
                         'all_employee_count': 0,
                         'employee_count': 0,
                         'id': 8,
-                        'leader': {
-                            'avatar': 'avatar/4a50c77bb8164dfb85cfb92ab7ee99a0.png',
-                            'id': 8,
-                            'job_status': '재직',
-                            'name': '123'
-                        },
+
                         'level': 2,
                         'name': 'new부서',
-                        'parent_id': 3,
-                        'sort': 2,
+                        'parentId': null,
+                        'sort': 3,
                         'status': true
                     }
                 );
@@ -430,6 +422,87 @@
                     cancelText: cancelText,
                     onConfirm: _function,
                 });
+            },
+
+            getColorToLevelAndSort(level, parentSort, sort) {
+                let softColors = [
+                    'is-primary is-light ',
+                    'is-info is-light ',
+                    'is-success is-light ',
+                    'is-warning is-light ',
+                    'is-danger is-light ',
+                    'is-grey is-light ',
+                    'is-white is-light ',
+                    'is-dark is-light ',
+                ];
+
+                softColors = softColors.concat(...softColors);
+
+                let hardColors = [
+                    'is-primary ',
+                    'is-info  ',
+                    'is-success  ',
+                    'is-warning  ',
+                    'is-danger  ',
+                    'is-grey  ',
+                    'is-white  ',
+                    'is-dark  ',
+                ];
+
+                hardColors = hardColors.concat(...hardColors);
+
+                // level 0 / level1의 sort 1~n까지는 연한색에서 가져간다.
+                if (level === 0) {
+                    // level 0만, level값으로 0번째 색을 쓴다.
+                    // 그외는 sort로 인덱싱하여, 1번부터 색을 가져간다.
+                    return softColors[level]
+                } else if (level === 1) {
+                    return softColors[sort]
+
+                // level 2부터는 부모의 연한색과 동일한, 진한색을 가져간다.
+                // 이 때, 연한/진한 반복주기를 준다. level 2 짝수가 진한색이므로, level3는 연한색을 가져가게 한다.
+                } else {
+                    if (level % 2 === 0) {
+                        return hardColors[parentSort]
+                    } else {
+                        return softColors[parentSort]
+                    }
+                }
+            },
+
+            getTextColorToLevelAndSort(level, parentSort, sort) {
+                let boldColor = [
+                    'has-text-dark has-text-weight-bold ',
+                    'has-text-primary has-text-weight-bold ',
+                    'has-text-info has-text-weight-bold ',
+                    'has-text-danger has-text-weight-bold ',
+                    'has-text-success has-text-weight-bold ',
+                ];
+
+                boldColor = boldColor.concat(...boldColor);
+
+                let normalColors = [
+                    'has-text-dark  ',
+                    'has-text-primary ',
+                    'has-text-info  ',
+                    'has-text-danger  ',
+                    'has-text-success  ',
+                ];
+
+                normalColors = normalColors.concat(...normalColors);
+
+                if (level === 0) {
+                    return boldColor[level]
+                } else if (level === 1) {
+                    return boldColor[sort]
+
+                } else {
+                    if (level % 2 === 0) {
+                        return normalColors[parentSort]
+                    } else {
+                        return boldColor[parentSort]
+                    }
+                }
             },
 
             // main/index에서 props.i 정보 -> banner_list[i]로 banner객체를 얻게해주는 메서드

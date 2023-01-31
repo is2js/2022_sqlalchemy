@@ -79,16 +79,9 @@
 
         <div class="list-item-image is-primary">
             <div class="container has-text-centered has-background-light" style="border-radius: 5%; width: 100px;">
-                <!--                     :class="{-->
-                <!--                 'is-primary is-light ': item.level === 0,-->
-                <!--                 'is-info is-light ': item.level === 1,-->
-                <!--                 'is-success is-light ': item.level === 2,-->
-                <!--                 'is-warning is-light ': item.level === 3,-->
-                <!--                 'is-danger is-light ': item.level === 4,-->
-                <!--                 }"-->
+
                 <div class="list-item-title mb-1 py-1 tag has-text-centered is-block is-size-7"
                      :class="getColorToLevelAndSort(item.level, item.parent_sort, item.sort)"
-
                 >
                     {$ item.name $}
                 </div>
@@ -221,7 +214,7 @@
         <!-- 자식 -->
         <div class="list" v-show="isOpen" v-if="isFolder">
             <tree-item
-                    class="item"
+                    class="item mb-2"
                     v-for="(child, index) in item.children"
                     :key="index"
                     :item="child"
