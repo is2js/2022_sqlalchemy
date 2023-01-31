@@ -53,3 +53,24 @@ def add():
     }
 
     return make_response(dict(dept=sample, message='부서가 추가되었습니다.'))
+
+
+@dept_bp.route("/sort", methods=['PUT'])
+def change_sort():
+    payload = request.get_json()
+    # print(payload)
+    # {'deptId': 1, 'beforeSort': 1, 'afterSort': 2}
+
+    # TODO: dept 순서변경 -> 다른부서들도 바뀌는지 확인해서 같이 변경해줘야한다.
+
+    return make_response(dict(message='부서 순서 변경에 성공했습니다.'))
+
+@dept_bp.route("/status", methods=['PUT'])
+def change_status():
+    payload = request.get_json()
+    # print(payload)
+    # {'deptId': 1}
+    # TODO : dept status 변경
+
+
+    return make_response(dict(message='부서 활성여부 변경을 성공했습니다.'))

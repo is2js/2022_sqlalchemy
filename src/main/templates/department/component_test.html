@@ -26,6 +26,7 @@
     /* 개별 node */
     .tree-node-inner {
         border: 1px solid #ccc;
+        border-radius: 5px;
         cursor: pointer;
 
         background: white;
@@ -33,8 +34,10 @@
 
     /* 선택된 node에 표시 */
     .tree-node-inner > .active {
-        border: solid 2px;
-        border-style: dashed;
+        border-color: transparent;
+        border-radius: 5px;
+        background-color: #7957d5;
+        color: #fff !important;
     }
 
     /* drag시 item */
@@ -117,37 +120,43 @@
 
         <div class="column is-two-fifths">
             <div class="buttons is-block m-0">
-                <b-button class="is-outlined is-rounded has-text-grey p-1"
-                          size="is-small"
-                          @click="collapseAll">
-                    <small>모두 접기</small>
-                </b-button>
-                <b-button class="is-outlined is-dark is-rounded p-1"
-                          size="is-small"
-                          @click="expandAll">
-                    <small>모두 열기</small>
-                </b-button>
+                <a class="is-size-7 has-text-grey"
+                   size="is-small"
+                   @click="collapseAll">
+                    <span class="icon">
+                         <i class="mdi mdi-collapse-all-outline"> </i>
+                    </span>
+                    <small>모두접기</small>
+                </a>
+                <a class="is-size-7 has-text-dark"
+                   size="is-small"
+                   @click="expandAll">
+                    <span class="icon">
+                         <i class="mdi mdi-expand-all-outline"> </i>
+                    </span>
+                    <small>모두열기</small>
+                </a>
 
 
+                <!-- 부서 삭제-->
+                <b-button v-if="selectedDept"
+                          class="is-danger is-light is-rounded is-pulled-right mr-2"
+                          size="is-small"
+                          @click="validateDelete"
+                >
+                    <span class="icon">
+                         <i class="mdi mdi-trash-can-outline mr-1"> </i>
+                    </span>
+                    삭제
+                </b-button>
                 <!-- 부서 추가-->
                 <b-button class=" is-primary is-rounded is-pulled-right mr-2"
                           size="is-small"
                           @click="isDepartmentModalActive = true;">
                     <span class="icon">
-                         <i class="mdi mdi mdi-plus-thick mr-1"> </i>
+                         <i class="mdi mdi-plus-thick mr-1"> </i>
                     </span>
                     {$ selectedDept ? '하위 부서 추가' : '최상위 부서 추가' $}
-                </b-button>
-                <!-- 부서 삭제-->
-                <b-button v-if="selectedDept"
-                          class="is-primary is-light is-rounded is-pulled-right mr-2"
-                          size="is-small"
-                          @click="validateDelete"
-                >
-                    <span class="icon">
-                         <i class="mdi mdi mdi-trash-can-outline mr-1"> </i>
-                    </span>
-                    삭제
                 </b-button>
 
 
@@ -159,7 +168,9 @@
             <div v-if="!treeData || !treeData.length "
                  class="container"
             >
-                <span class="is-size-6 has-text-primary has-text-weight-bold"> 부서가 없습니다. 최상위 부서를 생성해주세요.</span>
+                <span class="is-size-6 has-text-primary has-text-weight-bold">
+                    부서가 없습니다. 최상위 부서를 생성해주세요.
+                </span>
             </div>
 
 
@@ -191,7 +202,7 @@
                      slot-scope="{data: dept, store, vm}"
                      ref="node"
                      @click="selectNode(dept)"
-                     :class="{'active is-bordered has-text-primary has-text-weight-bold': dept.id === idOfSelectedDept}"
+                     :class="{'active': dept.id === idOfSelectedDept}"
 
 
                      @drag="emitDrag( dept, vm.level, store, $event)"
@@ -203,12 +214,19 @@
 
                     <template v-if="!dept.isDragPlaceHolder">
                         <div>
-                            [{$ dept.id $}]
-                            <!-- display:none; 이후 공간차지 없으려면  inline-block으로 바깥에 한번 씌워서 2개를 한꺼번에 집어넣어준다 -->
+
+                            <!-- display:none; 이후 공간차지 없으려면  inline-block으로 바깥에 한번 씌워서 (name or input)2개를 한꺼번에 집어넣어준다 -->
                             <span class="pl-2 is-inline-block">
-                                <span :id="'node-' + dept.id">
+                                <!-- Name or Input-->
+                                <span :id="'node-' + dept.id"
+                                      :class="{'has-text-primary' : dept.id !== idOfSelectedDept, 'has-text-weight-bold': dept.status,  'has-text-grey-light': !dept.status}"
+                                >
+                                     <!-- id -->
+                                    [{$ dept.id $}]
+                                    <!-- name -->
                                     {$ dept.text $}
                                 </span>
+                                <!-- 더블클릭시 나타나는 이름변경 input -->
                                 <input class="is-size-7"
                                        type="text"
                                        :id="'name-' + dept.id"
@@ -224,17 +242,32 @@
                                 >
                             </span>
 
-                            <!-- 열기 접기 -->
+
+                            <!-- 활성/비활성 -->
+                            <!--                                    @input="onSelectedDeptIdOrSwitchChange"-->
+                            <!--                                    v-model="isSwitchedCustom"-->
                             <div class="is-pulled-right pr-2"
-                                 v-if="dept.children && dept.children.length"
-                                 @click.stop="store.toggleOpen(dept)"
-                                 @dblclick.stop
                             >
-                                <small class="has-text-grey">
+                                <b-switch
+                                        size="is-small"
+                                        type="is-success"
+                                        v-model="dept.status"
+                                        @click.native.prevent.stop="validateStatusChange(dept)"
+                                        @dblclick.native.prevent.stop
+                                >
+                                </b-switch>
+                            </div>
+
+                            <!-- 열기 접기 -->
+                            <div class="is-pulled-right pr-4"
+                                 v-if="dept.children && dept.children.length"
+                                 @click.prevent.stop="store.toggleOpen(dept)"
+                                 @dblclick.prevent.stop
+                            >
+                                <small :class="dept.id !== idOfSelectedDept ? 'has-text-grey' : 'has-text-white'">
                                     {$ dept.open ? '접기 ▶' : '열기 ▼' $}
                                 </small>
                             </div>
-
                         </div>
                     </template>
                 </div>
@@ -421,8 +454,8 @@
                     //     this.loading = false;
                     // })
                     this.depts = [
-                        {id: 1, parentId: null, level: 0, sort: 1, text: '병원장', open: false},
-                        {id: 2, parentId: null, level: 0, sort: 2, text: '이사회', open: false},
+                        {id: 1, parentId: null, level: 0, sort: 1, text: '병원장', status: true},
+                        {id: 2, parentId: null, level: 0, sort: 2, text: '이사회', status: true},
                         {
                             id: 3,
                             parentId: null,
@@ -430,7 +463,7 @@
                             sort: 3,
                             text: 'node 3 undraggable',
                             draggable: false,
-                            open: false
+                            status: true
                         },
                         {
                             id: 4,
@@ -439,14 +472,32 @@
                             sort: 4,
                             text: 'node 4 undroppable',
                             droppable: false,
-                            open: false
+                            status: true
                         },
                         {
-                            id: 5, level: 0, sort: 5,
-                            text: 'node 5', children: [
-                                {id: 6, parentId: 5, level: 1, sort: 1, text: 'node 6'},
-                                {id: 7, parentId: 5, level: 1, sort: 2, text: 'node 7'},
-                            ], open: false
+                            id: 5,
+                            level: 0,
+                            sort: 5,
+                            text: 'node 5',
+                            children: [
+                                {
+                                    id: 6,
+                                    parentId: 5,
+                                    level: 1,
+                                    sort: 1,
+                                    text: 'node 6',
+                                    status: false
+                                },
+                                {
+                                    id: 7,
+                                    parentId: 5,
+                                    level: 1,
+                                    sort: 2,
+                                    text: 'node 7',
+                                    status: false
+
+                                },
+                            ], status: true
                         },
                     ];
                     // console.log('this.depts >> ', this.depts);
@@ -809,12 +860,14 @@
                     // this.confirm('삭제할 경우, 해당 부서원들은 금일부 해임됩니다. 진행하시겠습니까?', async () => await this.deleteSelectedNode() );
 
                     // [검증3] 정말 삭제할 것인지 confirm 받기
-                    this.confirm('정말 삭제하시겠습니까?', () => this.deleteSelectedNode() );
+                    this.confirm('정말 삭제하시겠습니까?', () => this.deleteSelectedNode());
                 },
 
-                deleteSelectedNode(e) {
+                deleteSelectedNode() {
                     //1. tree VM으로 선택node 삭제
                     const targetDept = this.selectedDept;
+
+                    // TODO: 서버에 삭제요청 보내기
 
                     let tree = targetDept._vm.store;
                     tree.deleteNode(targetDept);
@@ -843,6 +896,55 @@
                     this.initialDepts = this.depts;
 
                 },
+
+                // status 변화
+                validateStatusChange(dept) {
+                    // TODO: [검증1] (하위부서X)부서의 직원이 존재할 경우, [있다면 해임시키게 될 건데] confirm받기
+                    // this.confirm('비활성화할 경우, 해당 부서원들은 금일부 해임됩니다. 진행하시겠습니까?', async () => await this.deleteSelectedNode() );
+
+                    // 비활성 -> 활성 경우, 그냥 토글한다.
+                    if (!dept.status) {
+                        this.changeStatus(dept);
+                        return;
+                    }
+                    // [검증2] 활성상태일때만, 정말 비할성화 것인지 confirm 받기
+                    this.confirm('정말 비활성화하시겠습니까??', () => this.changeStatus(dept));
+                },
+
+                changeStatus(dept) {
+                    const payload = {
+                        deptId: dept.id
+                    }
+                    axios({
+                        url: '{{ url_for("department.change_status") }}',
+                        method: 'put',
+                        data: payload,
+                        headers: {'Content-type': 'application/json;charset=utf-8'},
+                    }).then(res => {
+                        // 통신성공 but 로직 실패(200대 외)
+                        if (res.status >= 300) {
+                            this.toast(res.data.message)
+                            return;
+                        }
+
+                        // 통신 성공 + (status변경)로직 성공 -> tree에 생성된 자식 push -> 공급/초기데이터도 업뎃
+                        dept.status = !dept.status
+
+                        this.treeUpdated(); // tree(vm) 자체 ----getPureData------> this.depts
+                        this.initialDepts = this.depts; // this.depts -------> this.initialDepts
+
+                        this.toast(res.data.message)
+
+                    }).catch(err => {
+                        console.log(err)
+                        // 특별히 err에 response가 내려온다면. 거기서 메세지를 꺼내서
+                        this.toast(err.response ? err.response.data.message : '서버와 연결이 올바르지 않습니다.');
+
+                    }).finally(() => {
+
+                    });
+                },
+
 
                 emitClick(dep, level, store, $event) {
                     console.log('emitClick');
