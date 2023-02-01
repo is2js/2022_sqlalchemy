@@ -228,8 +228,9 @@
                                     >
 
                                         <!-- 부서장 외 (부서장 제외 직원 + 하위부서장 + 하위직원 수) : all_employee_count-->
-                                        <small> {$ dept.leader.name $}</small>
-                                        <small v-if="dept.all_employee_count"> 외 {$ dept.all_employee_count $}명</small>
+                                        <small v-if="dept.leader"> {$ dept.leader.name $}</small>
+                                        <small v-else> 부서장 공석</small>
+                                        <small v-show="dept.all_employee_count"> 외 {$ dept.all_employee_count $}명</small>
 
 
                                     </span>
@@ -298,7 +299,7 @@
         aria-label="Department Add Modal"
         aria-modal
 >
-    <form method="post" @submit.prevent="submitDeptForm">
+    <form method="post" @submit.prevent="submitDeptAddForm">
         <div class="modal-card is-" style="width: auto">
             <header class="modal-card-head">
                 <p class="modal-card-title is-size-5">
@@ -783,7 +784,7 @@
                 },
 
                 // modal용 submit메서드
-                submitDeptForm(e) {
+                submitDeptAddForm(e) {
                     //1. 로딩을 띄워서 send버튼 비활성화
                     this.isLoading = true;
                     // console.log("this.form", this.form) // 부서type option을 int로 넣어줬어도, b-select가 문자열로 보냄.
@@ -797,33 +798,22 @@
                     }).then(res => {
                         // 통신성공 but 로직 실패(200대 외)
                         if (res.status >= 300) {
-                            this.toast(res.data.message)
+                            this.toast(res.data.message, 'is-danger')
                             return;
                         }
 
                         // 통신 성공 + (DB생성)로직 성공 -> tree에 생성된 자식 push -> 공급/초기데이터도 업뎃
                         // TODO: 부서생성되었으니, tree도 업뎃?!
+                        // (1) 생성된 데이터를 받는다.
+                        let newDept = res.data.new_dept;
+
+                        // (2) 연동데이터인 해당부모 or root에 push한다.
                         const parentChildren = this.selectedDept
                             ? this.selectedDept._vm.data.children
                             : this.treeData;
+                        parentChildren.push(newDept);
 
-                        let newDept = res.data.dept;
-                        parentChildren.push({
-
-                            add_date: '2022-12-29',
-                            all_employee_count: 0,
-                            employee_count: 0,
-                            id: 8,
-                            level: 2,
-                            name: 'new부서',
-                            parent_id: null,
-                            sort: 3,
-                            status: true
-
-                        });
-                        // console.log('push대상 >> parentChildren >>', parentChildren);
-                        // console.log('push후 this.treeData >> ', this.treeData);
-
+                        // (3) tree를 업뎃한다.
                         this.treeUpdated(); // tree(vm) 자체 ----getPureData------> this.depts
                         this.initialDepts = this.depts; // this.depts -------> this.initialDepts
 

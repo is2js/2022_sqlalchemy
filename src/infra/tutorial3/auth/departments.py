@@ -189,16 +189,21 @@ class Department(BaseModel):
             department = db.session.scalars(select(Department).where(Department.name == self.name)).first()
             return department  # 객체 or None
 
-    def save(self):
-        department_or_none = self.exists()
-        if department_or_none:
+    def save_backup(self):
+
+        # 검증1: 이미 존재하는 부서
+        if self.exists():
             print(f"{self.name}는 이미 존재하는 부서입니다.")
-            return department_or_none
+            return self
 
         with DBConnectionHandler() as db:
             db.session.add(self)
             #### 더이상 path구성에 id를 사용하지 않으므로, flush()나 commit()을 미리 할 필요없이 => add만 해도, 자신이 포함된다.
             # db.session.flush()
+            #### => session.add()만 한다고 parent_id 입력시 => parent객체가 연동안된다.
+            #### => parent_id로 입력된다면 미리 찾아서 넣어줘야한다?
+
+
 
             # 부모가 있으면 부모의 부모의 path에 + 생성아이디로 path를 만들어, 변경전 최초 순서?
             # my) 현재 동급레벨의 갯수로 -> sort를 동적으로 채우고, id로 path를 채우는 대신, sort번호로 path를 채우면 될 것 같다?
@@ -235,6 +240,90 @@ class Department(BaseModel):
             db.session.commit()
 
             return self
+
+    def save(self):
+
+        # 검증1: 이미 존재하는 부서
+        if self.exists():
+            # print(f"{self.name}는 이미 존재하는 부서입니다.")
+            return False, f"{self.name}는 이미 존재하는 부서입니다."
+
+        with DBConnectionHandler() as db:
+            db.session.add(self)
+            #### 더이상 path구성에 id를 사용하지 않으므로, flush()나 commit()을 미리 할 필요없이 => add만 해도, 자신이 포함된다.
+            # print(f'self.parent_id >> ', self.parent_id)
+            # print(f'self.parent >> ', self.parent)
+            # self.parent_id >>  5
+            # self.parent >> None
+
+            db.session.flush() #  flush하면, id연동 + parent_id로 parent연동이 되므로 => 실패시 rollback하도록 수정하자.
+            #### => session.add()만 한다고 parent_id 입력시 => parent객체가 연동안된다.
+            #### => parent_id로 입력된다면 미리 찾아서 넣어줘야한다?
+            # print(f'self.parent_id >> ', self.parent_id)
+            # print(f'self.parent >> ', self.parent)
+            # self.parent_id >>  5
+            # self.parent >>  Department(id=5, title='한방진료실', parent_id=2, sort=2, path='002003002')
+            #### => 확인해보니, flush()해서 id획득 + parent연동이 되었어도 맨 뒤에 rollback하면 돌아온다.
+
+
+            # 부모가 있으면 부모의 부모의 path에 + 생성아이디로 path를 만들어, 변경전 최초 순서?
+            # my) 현재 동급레벨의 갯수로 -> sort를 동적으로 채우고, id로 path를 채우는 대신, sort번호로 path를 채우면 될 것 같다?
+            # my) # 6 부모가 있으면 where에 with_parent에 올려, 갯수를 센다
+
+            if self.parent:
+                # [검증2-1] 이미 해당 부모의 자식이 10명이 채워진 경우, 11번부터 생성못하게 막기
+                # =>  flush() 이후의 실패는 rollback() 달아서, 연동했던 것 취소하기
+                if len(self.parent.children) > 10 :
+                    db.session.rollback()
+                    return False, "한 부모아래 자식부서는 10개를 초과할 수 없습니다."
+
+
+
+
+                sort_count = db.session.scalar(
+                    (
+                        select(func.count(Department.id))
+                        .select_from(Department)
+                        .where(with_parent(self.parent, Department.children))
+                        # .where(with_parent(self.parent)) # TypeError: with_parent() missing 1 required positional argument: 'prop'
+                    )
+                )
+                # print(stmt)
+                # SELECT count(departments.id) AS count_1
+                # FROM departments
+                # WHERE :param_1 = departments.parent_id
+                # print(f'부모를 가졌으며, 해당부모의 자식수는 flush한 나를 포함하여 {sort_count}개로 sort가 정해집니다', sep=' / ')
+
+            else:
+                #### path를 채우기도 전에 먼저 level을 쓸 순 없다.
+                #### => 최상위를 가려내기 위해, sort -> path -> level을 채우기 전에, 먼저 level로 필터링 해야한다
+                # sort_count = db.session.scalar(select(func.count(Department.id)).where(Department.level == 0))
+                #### => 사실상 최상위 필터링은 parent_id, parent = None으로 찾아야한다.
+                sort_count = db.session.scalar(
+                    select(func.count(Department.id)).where(Department.parent_id.is_(None))
+                )
+
+                # [검증2-2] 부모 없는 경우 root부서의 갯수가 10명이 채워진 경우, 11번부터 생성못하게 막기
+                # =>  flush() 이후의 실패는 rollback() 달아서, 연동했던 것 취소하기
+                if sort_count > 10:
+                    db.session.rollback()
+                    return False, "최상위 부서는 10개를 초과할 수 없습니다."
+
+                # print(f'부모가 없어 level==0인 부서는 flush한 나를 포함하여 {sort_count}개로서 sort가 정해집니다', sep=' / ')
+            self.sort = sort_count
+
+            prefix = self.parent.path if self.parent else ''
+            self.path = prefix + f"{self.sort:0{self._N}d}"
+
+            #### level은 self.path 완성후 사용할 수 있다.
+            # [검증4] parent에 의해 결정되는 level이 7(depth8단계) 초과부터는 안받는다.
+            if self.level > 7:
+                db.session.rollback()
+                return False, "최대 깊이는 8단계 까지입니다."
+
+            db.session.commit() # 검증(flush 이후 rollback) 통과시에만 commit
+
+            return self.to_dict(delete_columns=['pub_date', 'path', ]), "부서 생성에 성공하였습니다."
 
     @hybrid_property
     def level(self):
@@ -399,6 +488,7 @@ class Department(BaseModel):
                                          x.id not in self.get_self_and_children_id_list()]
         return selectable_parent_departments
 
+
     #### BaseModel의 to_dict는 inspect(self) 를 칠 때, 관계필드까지 다 조사하면서, DetachedInstanceError가 뜨니, 재귀에선 활용못한다.
     #### => 람다함수를 이용하여 객체.__table__.columns로 칼럼을 돌면서 만들어준다.
     # def to_dict(self):
@@ -417,6 +507,7 @@ class Department(BaseModel):
     def to_dict(self, delete_columns: list = []):
         # to_dict를 r.__table__.columns로 하면 관계필드는 알아서 빠져있다.
         data = super().to_dict()
+
         for col in delete_columns:
             if col in data:
                 del data[col]
