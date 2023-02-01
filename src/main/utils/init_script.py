@@ -95,19 +95,23 @@ def init_script(app: Flask):
     def create_department():
         click.echo('예제 부서들을 python으로 생성합니다.')
         try:
-            병원장 = Department(name='병원장', type=DepartmentType.부장).save()
+            Department(name='병원장', type=DepartmentType.부장).save()
+            병원장 = Department.get_by_name('병원장')
 
-            진료부 = Department(name='진료부', type=DepartmentType.부장, parent=병원장).save()
+            Department(name='진료부', type=DepartmentType.부장, parent=병원장).save()
+            진료부 = Department.get_by_name('진료부')
             #### 진료부 하위 부서 - 팀장없이
-            한방진료실 = Department(name='한방진료실', type=DepartmentType.원장단, parent=진료부).save()
-            탕전실 = Department(name='탕전실', type=DepartmentType.실, parent=진료부).save()
+            Department(name='한방진료실', type=DepartmentType.원장단, parent=진료부).save()
+            Department(name='탕전실', type=DepartmentType.실, parent=진료부).save()
 
-            간호부 = Department(name='간호부', type=DepartmentType.부장, parent=병원장).save()
+            Department(name='간호부', type=DepartmentType.부장, parent=병원장).save()
+            간호부 = Department.get_by_name('간호부')
             #### 간호부 하위 부서 - 팀장없이
             외래 = Department(name='외래', type=DepartmentType.치료실, parent=간호부).save()
             병동 = Department(name='병동', type=DepartmentType.치료실, parent=간호부).save()
 
-            행정부 = Department(name='행정부', type=DepartmentType.부장, parent=병원장).save()
+            Department(name='행정부', type=DepartmentType.부장, parent=병원장).save()
+            행정부 = Department.get_by_name('행정부')
             #### 행정부 하위 부서 - 팀장없이
             원무 = Department(name='원무', type=DepartmentType.팀, parent=행정부).save()
             총무 = Department(name='총무', type=DepartmentType.팀, parent=행정부).save()
