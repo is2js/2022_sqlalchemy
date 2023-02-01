@@ -2,7 +2,7 @@ import datetime
 import enum
 
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, select, func, BigInteger, Date, Text, distinct, \
-    case, and_, or_
+    case, and_, or_, delete
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship, backref, with_parent
 
@@ -120,11 +120,13 @@ class Department(BaseModel):
     name = Column(String(50), nullable=False, index=True, unique=True, comment="부서 이름")
 
     # parent_id = Column(Integer, comment="상위 부서 id", nullable=True)  # 1 # 2 # 8 + nullable=True
-    parent_id = Column(Integer, ForeignKey('departments.id'), comment="상위 부서 id", nullable=True)  # 5 # parent_id에 fk입히기
+    parent_id = Column(Integer, ForeignKey('departments.id', ondelete='SET NULL'), comment="상위 부서 id",
+                       nullable=True)  # 5 # parent_id에 fk입히기
     # 5 # one인 parent의 backref에게는 subquery를 줘서, .parent는 바로 얻을 수 있게 하기?!
     children = relationship('Department', backref=backref(
         'parent', remote_side=[id], lazy='subquery',
-        cascade='all',  # 7
+        # cascade='all',  # 7
+        passive_deletes=True,
     ), order_by='Department.path')
     # 8 # children + joined backref parent 대신, parent를 정의해줄 수 도 있다.
     # parent = db.relationship('Department', remote_side=[id],  backref="subdepartment")
@@ -203,8 +205,6 @@ class Department(BaseModel):
             #### => session.add()만 한다고 parent_id 입력시 => parent객체가 연동안된다.
             #### => parent_id로 입력된다면 미리 찾아서 넣어줘야한다?
 
-
-
             # 부모가 있으면 부모의 부모의 path에 + 생성아이디로 path를 만들어, 변경전 최초 순서?
             # my) 현재 동급레벨의 갯수로 -> sort를 동적으로 채우고, id로 path를 채우는 대신, sort번호로 path를 채우면 될 것 같다?
             # my) # 6 부모가 있으면 where에 with_parent에 올려, 갯수를 센다
@@ -256,7 +256,7 @@ class Department(BaseModel):
             # self.parent_id >>  5
             # self.parent >> None
 
-            db.session.flush() #  flush하면, id연동 + parent_id로 parent연동이 되므로 => 실패시 rollback하도록 수정하자.
+            db.session.flush()  # flush하면, id연동 + parent_id로 parent연동이 되므로 => 실패시 rollback하도록 수정하자.
             #### => session.add()만 한다고 parent_id 입력시 => parent객체가 연동안된다.
             #### => parent_id로 입력된다면 미리 찾아서 넣어줘야한다?
             # print(f'self.parent_id >> ', self.parent_id)
@@ -265,7 +265,6 @@ class Department(BaseModel):
             # self.parent >>  Department(id=5, title='한방진료실', parent_id=2, sort=2, path='002003002')
             #### => 확인해보니, flush()해서 id획득 + parent연동이 되었어도 맨 뒤에 rollback하면 돌아온다.
 
-
             # 부모가 있으면 부모의 부모의 path에 + 생성아이디로 path를 만들어, 변경전 최초 순서?
             # my) 현재 동급레벨의 갯수로 -> sort를 동적으로 채우고, id로 path를 채우는 대신, sort번호로 path를 채우면 될 것 같다?
             # my) # 6 부모가 있으면 where에 with_parent에 올려, 갯수를 센다
@@ -273,12 +272,9 @@ class Department(BaseModel):
             if self.parent:
                 # [검증2-1] 이미 해당 부모의 자식이 10명이 채워진 경우, 11번부터 생성못하게 막기
                 # =>  flush() 이후의 실패는 rollback() 달아서, 연동했던 것 취소하기
-                if len(self.parent.children) > 10 :
+                if len(self.parent.children) > 10:
                     db.session.rollback()
                     return False, "한 부모아래 자식부서는 10개를 초과할 수 없습니다."
-
-
-
 
                 sort_count = db.session.scalar(
                     (
@@ -317,11 +313,11 @@ class Department(BaseModel):
 
             #### level은 self.path 완성후 사용할 수 있다.
             # [검증4] parent에 의해 결정되는 level이 7(depth8단계) 초과부터는 안받는다.
-            if self.level > 7:
+            if self.level > 5:
                 db.session.rollback()
-                return False, "최대 깊이는 8단계 까지입니다."
+                return False, "최대 깊이는 6단계 까지입니다."
 
-            db.session.commit() # 검증(flush 이후 rollback) 통과시에만 commit
+            db.session.commit()  # 검증(flush 이후 rollback) 통과시에만 commit
 
             return self.to_dict(delete_columns=['pub_date', 'path', ]), "부서 생성에 성공하였습니다."
 
@@ -391,7 +387,7 @@ class Department(BaseModel):
             stmt = (
                 select(cls)
                 .where(cls.parent_id.is_(None))
-                .order_by(cls.path) # view에선 sort순이 중요함.
+                .order_by(cls.path)  # view에선 sort순이 중요함.
             )
             if not with_inactive:
                 stmt = stmt.where(cls.status == 1)
@@ -488,7 +484,6 @@ class Department(BaseModel):
                                          x.id not in self.get_self_and_children_id_list()]
         return selectable_parent_departments
 
-
     #### BaseModel의 to_dict는 inspect(self) 를 칠 때, 관계필드까지 다 조사하면서, DetachedInstanceError가 뜨니, 재귀에선 활용못한다.
     #### => 람다함수를 이용하여 객체.__table__.columns로 칼럼을 돌면서 만들어준다.
     # def to_dict(self):
@@ -561,7 +556,6 @@ class Department(BaseModel):
             data['parent_sort'] = Department.get_by_id(parent_id).sort
         else:
             data['parent_sort'] = None
-
 
         return data
 
@@ -664,6 +658,48 @@ class Department(BaseModel):
         # 3) (팀장도X 상위부서도X) => 팀장정보가 아예 없으니 None반환
         return None
 
+    @classmethod
+    def delete_by_id(cls, dept_id):
+        with DBConnectionHandler() as db:
+            #### 검증1: 존재해야한다. => `여기서 객체를 찾아 session.delete(  only객체만 )`에 활용한다
+            target_dept = db.session.get(cls, dept_id)
+
+            if not target_dept:
+                return False, "존재하지 않는 부서를 삭제할 순 없습니다."
+
+            #### 검증2. 자식이 있는지 검사
+            # stmt = (
+            #     select(func.count(cls.id))
+            #     .where(cls.parent_id == dept_id)
+            # )
+            # children_count = db.session.scalar(stmt)
+            # if children_count:
+            #     return False, "하위부서가 존재하면 삭제할 수 없습니다."
+            if len(target_dept.children) > 0:
+                return False, "하위부서가 존재하면 삭제할 수 없습니다."
+
+            #### 검증3. 해당부서에 취임된 직원이 있는지 확인
+            # => dept.count_employee(self)와 동일하지만, id + cls method로 처리하는 방식이 다른다.
+            stmt = (
+                select(func.count(
+                    distinct(EmployeeDepartment.employee_id)))  # 직원이 혹시나 중복됬을 수 있으니 중복제거하고 카운팅(양적 숫자X)
+                .where(EmployeeDepartment.dismissal_date.is_(None))
+                .where(EmployeeDepartment.department.has(cls.id == dept_id))
+            )
+
+            employee_count = db.session.scalar(stmt)
+            # print(employee_count)
+            if employee_count:
+                return False, "재직 중인 직원이 존재하면 삭제할 수 없습니다."
+
+            #### 검증1, 2, 3  통과시 [존재검사시 사용했던 객체]로 삭제
+            # db.session.execute(delete(cls).where(cls.id == dept_id))
+            db.session.delete(target_dept)
+            # db.session.execute(delete(cls).where(cls.id == dept_id))
+            db.session.commit()
+
+            return True, "부서를 삭제했습니다."
+
 
 # 2.
 class EmployeeDepartment(BaseModel):
@@ -681,14 +717,19 @@ class EmployeeDepartment(BaseModel):
     # department_id = Column(Integer, nullable=False, index=True)
     # pickupapi # 다대다+정보도 관계테이블처럼 fk로 주기
     employee_id = Column(Integer, ForeignKey('employees.id'), nullable=False, index=True)
-    department_id = Column(Integer, ForeignKey('departments.id'), nullable=False, index=True)
+
+    # department_id = Column(Integer, ForeignKey('departments.id'), nullable=False, index=True)
+    #### session.delete( dept )시, fk테이블인 여기에서 where = dept.id update set NULL이 자동으로 이루어진다.
+    #### => (1) one이 삭제될 수도 있다면(실제 검증에서 삭제안하게 할 건데), 부가적으로 발생하는 update에 대비해서 nullable=False를 지워준다.
+    department_id = Column(Integer, ForeignKey('departments.id', ondelete='SET NULL'), index=True)
 
     # new
     employee = relationship("Employee", backref="employee_departments", foreign_keys=[employee_id],
                             # lazy='joined', # fk가 nullable하지 않으므로, joined를 줘도 된다.
                             )
 
-    department = relationship("Department", backref="employee_departments", foreign_keys=[department_id],
+    department = relationship("Department", backref=backref("employee_departments", passive_deletes=True),
+                              foreign_keys=[department_id],
                               # lazy='joined', # fk가 nullable하지 않으므로, joined를 줘도 된다.
                               )
 
