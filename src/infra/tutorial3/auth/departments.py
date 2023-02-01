@@ -511,6 +511,11 @@ class Department(BaseModel):
 
         # 부서장 존재 확인용 -> 부서장이 있따면, 부서 전체 직원 - 1을 해서 [순수 부서원 수]만 내려보낸다.
         direct_leader_id = self.get_leader_id()
+        if direct_leader_id:
+            data['has_direct_leader'] = True
+        else:
+            data['has_direct_leader'] = False
+
         # [순수 부서원 수] count_xxxx 메서드는 scalar()에서 알아서 없으면 0 처리된다.
         data['employee_count'] = self.count_employee() - (1 if direct_leader_id else 0)
         # [순수 하위 부서 수]만 카운팅 한다.

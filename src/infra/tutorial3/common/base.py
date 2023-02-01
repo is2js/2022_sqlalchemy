@@ -29,7 +29,6 @@ class BaseModel(Base):
 
         for col in self.__table__.columns:
             _key = col.name
-            print(_key)
             _value = getattr(self, _key)
 
             if isinstance(_value, datetime.datetime):

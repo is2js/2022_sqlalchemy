@@ -228,9 +228,9 @@
                                     >
 
                                         <!-- 부서장 외 (부서장 제외 직원 + 하위부서장 + 하위직원 수) : all_employee_count-->
-                                        <small v-if="dept.leader"> {$ dept.leader.name $}</small>
-                                        <small v-else> 부서장 공석</small>
-                                        <small v-show="dept.all_employee_count"> 외 {$ dept.all_employee_count $}명</small>
+                                        <small v-if="dept.has_direct_leader"> {$ dept.leader.name $}</small>
+                                        <small v-else>(부서장 공석) </small>
+                                        <small v-show="dept.all_employee_count">외 직원 {$ dept.all_employee_count $}명</small>
 
 
                                     </span>
@@ -847,7 +847,16 @@
                         return;
                     }
 
-                    // TODO: [검증2] (하위부서X)부서의 직원이 존재할 경우, [있다면 해임시키게 될 건데] confirm받기
+                    // [검증2] (하위부서X)부서의 직원이 존재할 경우, [있다면 해임시키게 될 건데] confirm받기
+                    // console.log('targetDept.has_direct_leader >> ', targetDept.has_direct_leader);
+                    if (targetDept.has_direct_leader) {
+                        this.toast('부서장이 존재할 경우 삭제할 수 없습니다.', 'is-danger')
+                        return;
+                    }
+                    if (targetDept.employees && targetDept.employees.length > 0) {
+                        this.toast('재직 중인 직원이 존재할 경우 삭제할 수 없습니다.', 'is-danger')
+                        return;
+                    }
                     // this.confirm('삭제할 경우, 해당 부서원들은 금일부 해임됩니다. 진행하시겠습니까?', async () => await this.deleteSelectedNode() );
 
                     // [검증3] 정말 삭제할 것인지 confirm 받기
@@ -859,32 +868,59 @@
                     const targetDept = this.selectedDept;
 
                     // TODO: 서버에 삭제요청 보내기
-
-                    let tree = targetDept._vm.store;
-                    tree.deleteNode(targetDept);
-
-                    // console.log('this.treeData >> ', this.treeData); // 연동되어, 해당node만 삭제
-                    // console.log('this.selectedDept >> ', this.selectedDept);// 유지 + .parent에선 사라진 현재 tree연동됨.
-
-                    //2. 선택node보다 더 뒤에 sort를 1칸씩 당긴다.
-                    const standardSort = targetDept.sort;
-                    let myParentChildren = targetDept.parent ? targetDept.parent.children : this.treeData;
-
-                    // for (const node in myParentChildren) {
-                    // [조심!] 일반 for in 으로 돌면 -> key값만 도는 것이다.
-                    for (const node of myParentChildren) {
-                        // 여기서는 index로 sort를 만들면 안된다. 이미 트리에서 1개가 빠진 상태에서 순회하기 때문
-                        if (node.sort > standardSort) {
-                            // console.log(`현재sort${node.sort}를 한칸씩 -1 합니다.`)
-                            node.sort = node.sort - 1;
-                        }
+                    const payload = {
+                        dept_id: targetDept.id
                     }
-                    // 3. selected된거 없으니 비워주기
-                    this.selectedDept = null;
+                    axios({
+                        url: '{{ url_for("department.delete") }}',
+                        method: 'delete',
+                        data: payload,
+                        headers: {'Content-type': 'application/json;charset=utf-8'},
+                    }).then(res => {
+                        // 통신성공 but 로직 실패(200대 외)
+                        if (res.status >= 300) {
+                            this.toast(res.data.message, 'is-danger');
+                            return;
+                        }
 
-                    //4. 변경된 tree를 -> this.depts -> this.initialDepts에 반영
-                    this.treeUpdated(tree);
-                    this.initialDepts = this.depts;
+                        // 통신 성공 + (status변경)로직 성공
+                        //tree에서 해당 node 삭제
+                        let tree = targetDept._vm.store; // node로부터 전체 tree얻기
+                        tree.deleteNode(targetDept);
+
+                        // console.log('this.treeData >> ', this.treeData); // 연동되어, 해당node만 삭제
+                        // console.log('this.selectedDept >> ', this.selectedDept);// 유지 + .parent에선 사라진 현재 tree연동됨.
+
+                        //2. 선택node보다 더 뒤에 sort를 1칸씩 당긴다.
+                        const standardSort = targetDept.sort;
+                        let myParentChildren = targetDept.parent ? targetDept.parent.children : this.treeData;
+                        // for (const node in myParentChildren) {
+                        // [조심!] 일반 for in 으로 돌면 -> key값만 도는 것이다.
+                        for (const node of myParentChildren) {
+                            // 여기서는 index로 sort를 만들면 안된다. 이미 트리에서 1개가 빠진 상태에서 순회하기 때문
+                            if (node.sort > standardSort) {
+                                // console.log(`현재sort${node.sort}를 한칸씩 -1 합니다.`)
+                                node.sort = node.sort - 1;
+                            }
+                        }
+                        // 3. selected된거 없으니 비워주기
+                        this.selectedDept = null;
+
+                        //4. 변경된 tree를 -> this.depts -> this.initialDepts에 반영
+                        this.treeUpdated(tree);
+                        this.initialDepts = this.depts;
+
+                        this.toast(res.data.message);
+
+                    }).catch(err => {
+                        console.log(err)
+                        // 특별히 err에 response가 내려온다면. 거기서 메세지를 꺼내서
+                        this.toast(err.response ? err.response.data.message : '서버와 연결이 올바르지 않습니다.');
+
+                    }).finally(() => {
+
+                    });
+
 
                 },
 

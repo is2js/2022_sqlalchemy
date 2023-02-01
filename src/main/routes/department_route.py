@@ -50,6 +50,14 @@ def add():
         return make_response(dict(message=message), 409)
 
 
+@dept_bp.route("/delete", methods=['DELETE'])
+def delete():
+    dept_info = request.get_json()
+    result, message = Department.delete_by_id(dept_info['dept_id'])
+
+    return make_response(dict(message=message))
+
+
 @dept_bp.route("/sort", methods=['PUT'])
 def change_sort():
     payload = request.get_json()
