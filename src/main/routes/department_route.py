@@ -1,7 +1,9 @@
 import random
 
 from flask import Blueprint, render_template, request, make_response
+from sqlalchemy import select, exists
 
+from src.infra.config.connection import DBConnectionHandler
 from src.infra.tutorial3 import Department
 
 dept_bp = Blueprint("department", __name__, url_prefix='/department')
@@ -62,28 +64,53 @@ def delete():
 def change_sort():
     payload = request.get_json()
     # print(payload)
-    # {'deptId': 1, 'beforeSort': 1, 'afterSort': 2}
+    # {'dept_id': 1, 'before_sort': 2, 'after_sort': 1}
 
-    # TODO: dept 순서변경 -> 다른부서들도 바뀌는지 확인해서 같이 변경해줘야한다.
+    result, message = Department.change_sort(payload['dept_id'], payload['after_sort'])
 
-    return make_response(dict(message='부서 순서 변경에 성공했습니다.'))
+    if result:
+        return make_response(dict(message=message), 200)
+    else:
+        return make_response(dict(message=message), 409)
+
+
+@dept_bp.route("/name", methods=['PUT'])
+def change_name():
+    payload = request.get_json()
+    print(payload)
+    # {'dept_id': 1, 'target_name': '병원장2'}
+
+    with DBConnectionHandler() as db:
+        try:
+            exists_name = db.session.scalar(
+                exists()
+                .where(Department.name == payload['target_name'])
+                .select()
+            )
+            if exists_name:
+                return make_response(dict(message='이미 해당 이름의 부서가 존재합니다.'), 409)
+
+            target_dept = db.session.get(Department, payload['dept_id'])
+            target_dept.name = payload['target_name']
+
+            db.session.commit()
+
+            return make_response(dict(message='부서 이름 변경을 성공했습니다.'), 200)
+
+        except Exception as e:
+            db.session.rollback()
+            return make_response(dict(message='부서 이름 변경에 실패했습니다.'), 409)
 
 
 @dept_bp.route("/status", methods=['PUT'])
 def change_status():
     payload = request.get_json()
     # print(payload)
-    # {'deptId': 1}
+    # {'dept_id': 1}
     # TODO : dept status 변경
+    result, message = Department.change_status(payload['dept_id'])
 
-    return make_response(dict(message='부서 활성여부 변경을 성공했습니다.'))
-
-
-@dept_bp.route("/name", methods=['PUT'])
-def change_name():
-    payload = request.get_json()
-    # print(payload)
-    # {'deptId': 1, 'targetName': '병원장2'}
-    # TODO : dept name 변경
-
-    return make_response(dict(message='부서 이름 변경을 성공했습니다.'))
+    if result:
+        return make_response(dict(message=message), 200)
+    else:
+        return make_response(dict(message=message), 409)

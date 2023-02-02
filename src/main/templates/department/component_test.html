@@ -118,7 +118,7 @@
     <!-- tree 공간   -->
     <div class="columns">
 
-        <div class="column is-two-fifths">
+        <div class="column is-half">
             <div class="buttons is-block m-0">
                 <a class="is-size-7 has-text-grey"
                    size="is-small"
@@ -137,8 +137,16 @@
                     <small>모두열기</small>
                 </a>
 
-
-                <!-- 부서 삭제-->
+                <!-- 부서 추가-->
+                <b-button class=" is-primary is-rounded is-pulled-right mr-2"
+                          size="is-small"
+                          @click="isDepartmentModalActive = true;">
+                    <span class="icon">
+                         <i class="mdi mdi-plus-thick mr-1"> </i>
+                    </span>
+                    {$ selectedDept ? '하위 부서 추가' : '최상위 부서 추가' $}
+                </b-button>
+                   <!-- 부서 삭제-->
                 <b-button v-if="selectedDept"
                           class="is-danger is-light is-rounded is-pulled-right mr-2"
                           size="is-small"
@@ -148,15 +156,6 @@
                          <i class="mdi mdi-trash-can-outline mr-1"> </i>
                     </span>
                     삭제
-                </b-button>
-                <!-- 부서 추가-->
-                <b-button class=" is-primary is-rounded is-pulled-right mr-2"
-                          size="is-small"
-                          @click="isDepartmentModalActive = true;">
-                    <span class="icon">
-                         <i class="mdi mdi-plus-thick mr-1"> </i>
-                    </span>
-                    {$ selectedDept ? '하위 부서 추가' : '최상위 부서 추가' $}
                 </b-button>
 
 
@@ -489,9 +488,9 @@
                     // console.log(this.treeData)
 
                     const payload = {
-                        deptId: node.id,
-                        beforeSort: node.sort,
-                        afterSort: node.parent.children.indexOf(node) + 1
+                        dept_id: node.id,
+                        before_sort: node.sort,
+                        after_sort: node.parent.children.indexOf(node) + 1
                     }
 
                     console.log('payload >> ', payload);
@@ -502,12 +501,12 @@
                         data: payload,
                         headers: {'Content-type': 'application/json;charset=utf-8'},
                     }).then(res => {
-                        // 통신성공 but 로직 실패(200대 외) -> tree되돌려야함.
+                        // 통신성공 but 로직 실패(200대 외) -> tree되돌려야함 by this.updateTreeData();
                         // TODO: 부서 순서 변경실패(통신은 됬는데 DB실패) => 이미 tree가 바뀌었다면, cancel해야함.
                         if (res.status >= 300) {
                             this.toast(res.data.message)
                             // [cancel 2] 통신성공 BUT 로직실패  => tree변경 취소(기존 this.depts -> this.treeData)
-                            this.updateTreeData();
+                            this.updateTreeData(); // 변경된 tree 롤백
                             return;
                         }
 
@@ -726,8 +725,8 @@
                     console.log('changeName----')
 
                     const payload = {
-                        deptId: dept.id,
-                        targetName: targetName
+                        dept_id: dept.id,
+                        target_name: targetName
                     }
                     axios({
                         url: '{{ url_for("department.change_name") }}',
@@ -738,6 +737,7 @@
                         // 통신성공 but 로직 실패(200대 외)
                         if (res.status >= 300) {
                             this.toast(res.data.message)
+
                             return;
                         }
 
@@ -755,11 +755,11 @@
                         console.log(err)
                         // 특별히 err에 response가 내려온다면. 거기서 메세지를 꺼내서
                         this.toast(err.response ? err.response.data.message : '서버와 연결이 올바르지 않습니다.');
+                        this.updateTreeData(); // 변경된 tree 롤백
 
                     }).finally(() => {
 
                     });
-
 
                     console.log('changeName====')
                 },
@@ -928,6 +928,15 @@
                 validateStatusChange(dept) {
                     // TODO: [검증1] (하위부서X)부서의 직원이 존재할 경우, [있다면 해임시키게 될 건데] confirm받기
                     // this.confirm('비활성화할 경우, 해당 부서원들은 금일부 해임됩니다. 진행하시겠습니까?', async () => await this.deleteSelectedNode() );
+                    // => delete와 같은 로직이라 복붙함.
+                     if (dept.has_direct_leader) {
+                        this.toast('부서장이 존재할 경우 비활성화 할 수 없습니다.', 'is-danger')
+                        return;
+                    }
+                    if (dept.employees && dept.employees.length > 0) {
+                        this.toast('재직 중인 직원이 존재할 경우 비활성화 할 수 없습니다.', 'is-danger')
+                        return;
+                    }
 
                     // 비활성 -> 활성 경우, 그냥 토글한다.
                     if (!dept.status) {
@@ -940,7 +949,7 @@
 
                 changeStatus(dept) {
                     const payload = {
-                        deptId: dept.id
+                        dept_id: dept.id
                     }
                     axios({
                         url: '{{ url_for("department.change_status") }}',
@@ -950,7 +959,7 @@
                     }).then(res => {
                         // 통신성공 but 로직 실패(200대 외)
                         if (res.status >= 300) {
-                            this.toast(res.data.message)
+                            this.toast(res.data.message, 'is-danger')
                             return;
                         }
 
