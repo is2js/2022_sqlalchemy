@@ -240,7 +240,19 @@ if __name__ == '__main__':
     #         child.path = new_path + child.path[len(new_path):]
     #
     #     session.commit()
-    print(f"메서드화: Department.change_sort(dept_id=9, after_sort=2, before_sort=) =>  {Department.change_sort(9, 2)}")
+    # print(f"메서드화: Department.change_sort(dept_id=9, after_sort=2, before_sort=) =>  {Department.change_sort(9, 2)}")
+    print(f"-----------------level간 변경 시도--------------------")
+
+    print(f'Department.change_sort_cross_level(4, after_parent_id=13, after_sort=1)  >> '
+          )
+          # f'{Department.change_sort_cross_level(3, after_parent_id=2, after_sort=2)}  >> ')
+          # f'{Department.change_sort_cross_level(3, after_parent_id=1, after_sort=2)}  >> ')
+          # f'{Department.change_sort_cross_level(3, after_parent_id=None, after_sort=1)}  >> ')
+          # f'{Department.change_sort_cross_level(3, after_parent_id=1, after_sort=2)}  >> ')
+          # f'{Department.change_sort_cross_level(12, after_parent_id=1, after_sort=4)}  >> ')
+          # f'{Department.change_sort_cross_level(12, after_parent_id=None, after_sort=1)}  >> ')
+
+
 
 
 

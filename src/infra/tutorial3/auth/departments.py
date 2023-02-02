@@ -712,9 +712,6 @@ class Department(BaseModel):
 
     @classmethod
     def change_sort(cls, dept_id, after_sort, before_sort=None):
-        # before_sort는 이미 객체에 .sort로 정보가 있기 때문에, 인자로 받을 필요없다.
-        # 하지만, 나중에 level별 변화가 발생할 경우, 전 level의 before_sort를 알아야, 그쪽으로 들어갈 수 있다?
-        # => 어차피 알게 될 듯.
         with DBConnectionHandler() as db:
             target_dept = db.session.get(cls, dept_id)
 
@@ -791,6 +788,128 @@ class Department(BaseModel):
                 #### 여러가지가 동시에 업뎃되므로 실패시 rollback까지
                 db.sesssion.rollback()
                 return False, f"순서변경에 실패하였습니다."
+
+    @classmethod
+    def change_sort_cross_level(cls, dept_id, after_parent_id, after_sort, before_level=None, before_sort=None):
+        with DBConnectionHandler() as db:
+            try:
+                target_dept: Department = db.session.get(cls, dept_id)
+
+                if not target_dept:
+                    raise ValueError('해당 부서는 존재하지 않습니다.')
+
+                if target_dept.parent_id == after_parent_id:
+                    raise ValueError('같은 부서내 이동은 change_sort를 이용. 로직이 다름(제거/추가가 아닌 삽입/삭제)')
+
+                if target_dept.parent_id in target_dept.get_self_and_children_id_list():
+                    raise ValueError('하위 부서로 이동은 불가능 합니다.')
+
+                if not before_sort:
+                    before_sort = target_dept.sort
+
+                if not before_level:
+                    before_level = target_dept.level
+
+                if not isinstance(after_sort, int) or not isinstance(before_level, int) or not isinstance(before_sort, int):
+                    raise ValueError('level, sort는 정수여야 합니다.')
+
+                # (1) 대상부서 + 자식들 미리 select
+                target_and_children = db.session.scalars(
+                    select(Department)
+                    .where(Department.path.like(target_dept.path + '%'))
+                    .order_by(Department.path)
+                ).all()
+                # print("target_and_children", target_and_children)
+
+                # (2) `이동 전` 부모들 아래 나보다 sort가 뒤에있는 것들 미리 select
+                # -> before level[앞에가 제거]에서 (대상의 부모의 아이들 중)대상부서 sort보다 뒤에 있는 것들 셀렉
+                before_related_depts = db.session.scalars(
+                    select(Department)
+                    .where(Department.parent_id == target_dept.parent_id)
+                    .where(Department.sort > target_dept.sort)
+                    .order_by(Department.path)
+                ).all()
+                # print("before_related_depts", before_related_depts)
+
+                # (3) `이동 후` 부모들 아래 나보다 sort가 **같거나** 뒤에있는 것들 미리 **역순** select
+                # -> afeter level[앞에서 추가]에서 after_sort부터 시작해서 더 뒤에있는 것 + 역순으로 업뎃예정 셀렉
+                after_related_depts = db.session.scalars(
+                    select(Department)
+                    .where(Department.parent_id == after_parent_id)
+                    .where(Department.sort >= after_sort)
+                    .order_by(Department.path.desc()) # 필수
+                ).all()
+
+                # print("after_related_depts", after_related_depts)
+
+                # (4) before level의 앞으로(위로) 한칸씩 밀기
+                for dept in before_related_depts:
+                    # print(f'{dept.name, dept.path}  >> ', dept.name, dept.path)
+
+                    new_sort = dept.sort + (-1)
+                    dept.sort = new_sort  # sort업뎃은 자신만 => 자식들은 path업뎃만
+
+                    path_prefix = dept.parent.path if dept.parent else ''
+                    new_path = path_prefix + f'{new_sort:0{3}d}'
+                    self_and_children = db.session.scalars(
+                        select(Department).where(Department.path.like(dept.path + '%'))).all()
+                    for child in self_and_children:
+                        child.path = new_path + child.path[len(new_path):]
+
+                    # print(f'{dept.name, dept.path}  >> ', dept.name, dept.path)
+
+                # (5) after level의 뒤로(아래로) 역순으로 한칸씩 밀기
+                for dept_ in after_related_depts:
+                    # print(f'{dept_.name, dept_.path}  >> ', dept_.name, dept_.path)
+
+                    new_sort = dept_.sort + (+1)
+                    dept_.sort = new_sort  # sort업뎃은 자신만 => 자식들은 path업뎃만
+
+                    path_prefix = dept_.parent.path if dept_.parent else ''
+                    new_path = path_prefix + f'{new_sort:0{3}d}'
+                    self_and_children = db.session.scalars(
+                        select(Department).where(Department.path.like(dept_.path + '%'))).all()
+                    for child in self_and_children:
+                        child.path = new_path + child.path[len(new_path):]
+
+                    # print(f'{dept_.name, dept_.path}  >> ', dept_.name, dept_.path)
+
+                # (6) 대상부서는 sort만 자신변경 + parent_id도 변경해야한다.
+                # (6-1) parent_id도 변경해줘야한다(같은 부모아래와 다른 점)
+                target_dept.sort = after_sort
+                target_dept.parent_id = after_parent_id
+
+                # (6-2) parent_id로 parent객체를 찾아, 새로운 path_prefix를 찾아낸다.
+                parent = db.session.get(Department, after_parent_id) if after_parent_id else None
+                prefix = parent.path if parent else ''
+                new_path = prefix + f'{after_sort:0{3}d}'
+                # print("new_path, target_dept.sort >>>", new_path, target_dept.sort)
+
+                # (6-3) child 업뎃시, 부모의 path가 바뀌기 전 before_path 길이만큼, 미리 앞에를 잘라내야한다.
+                before_path = target_dept.path
+                target_dept.path = new_path
+
+                # (6-4) 대상부서.get_children()은, status == 1만 가져오는데 여기선 다 가져와야해서, status조건없이 불러낸 것을 가져온다.
+                for child in target_and_children[1:]:
+                    # case 1)
+                    #     before: 002 001    002(s) + 001
+                    #      after: 001 001(s)        + 001  after_level이 before보다 작아지면, 그 차이만큼 뒷부분을 더 짤라내고 이어붙어ㅑㅇ햐ㅏㄴ다.
+                    #                        [    ] => 자식들은 cls._N * (b - a)만큼 path를 짜르고 new_path와 붙여야한다.
+                    # case 2) 만약, 반대상황이라면?
+                    #     before: 001 001(s)        + 001
+                    #      after: 002 001    002(s) + 001
+                    #                        [    ] 만큼 new_path의 길이보다 덜 인덱싱 해서 , 기존 path와 붙여야한다.
+                    #    => child 입장에서는, 부모의 new_path에 +  [부모의 before_path길이만큼 짜른 자신만의 path]만 있으면 된다.
+                    child.path = new_path + child.path[len(before_path):]
+
+                db.session.commit()
+                return True, "부서의 위치가 변경되었습니다."
+
+            except Exception as e:
+                # raise e
+                #### 여러가지가 동시에 업뎃되므로 실패시 rollback
+                db.session.rollback()
+                return False, f"부서의 위치가 변경에 실패하였습니다."
 
     @classmethod
     def change_status(cls, dept_id):
