@@ -711,19 +711,18 @@ class Department(BaseModel):
             return True, "부서를 삭제했습니다."
 
     @classmethod
-    def change_sort(cls, dept_id, after_sort, before_sort=None):
+    def change_sort(cls, dept_id, after_sort):
         with DBConnectionHandler() as db:
             target_dept = db.session.get(cls, dept_id)
 
             if not target_dept:
                 raise ValueError('해당 부서는 존재하지 않습니다.')
 
-            if not before_sort:
-                before_sort = target_dept.sort
 
-            if not isinstance(before_sort, int) or not isinstance(after_sort, int):
+            if  not isinstance(after_sort, int):
                 raise ValueError('sort가 정수여야 합니다.')
 
+            before_sort = target_dept.sort
             if before_sort == after_sort:
                 return False, "변경되는 전/후 순서가 같을 순 없습니다."
 
@@ -790,7 +789,7 @@ class Department(BaseModel):
                 return False, f"순서변경에 실패하였습니다."
 
     @classmethod
-    def change_sort_cross_level(cls, dept_id, after_parent_id, after_sort, before_level=None, before_sort=None):
+    def change_sort_cross_level(cls, dept_id, after_parent_id, after_sort):
         with DBConnectionHandler() as db:
             try:
                 target_dept: Department = db.session.get(cls, dept_id)
@@ -804,13 +803,7 @@ class Department(BaseModel):
                 if target_dept.parent_id in target_dept.get_self_and_children_id_list():
                     raise ValueError('하위 부서로 이동은 불가능 합니다.')
 
-                if not before_sort:
-                    before_sort = target_dept.sort
-
-                if not before_level:
-                    before_level = target_dept.level
-
-                if not isinstance(after_sort, int) or not isinstance(before_level, int) or not isinstance(before_sort, int):
+                if (after_parent_id and not isinstance(after_parent_id, int)) or not isinstance(after_sort, int) :
                     raise ValueError('level, sort는 정수여야 합니다.')
 
                 # (1) 대상부서 + 자식들 미리 select

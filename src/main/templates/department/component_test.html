@@ -146,7 +146,7 @@
                     </span>
                     {$ selectedDept ? '하위 부서 추가' : '최상위 부서 추가' $}
                 </b-button>
-                   <!-- 부서 삭제-->
+                <!-- 부서 삭제-->
                 <b-button v-if="selectedDept"
                           class="is-danger is-light is-rounded is-pulled-right mr-2"
                           size="is-small"
@@ -466,6 +466,36 @@
                     this.updateTreeData();
                     // 초기화데이터에 넣는 것은 밖에서 따로 함.
                 },
+                getUpdatedDepts() {
+                    console.log('getUpdatedDepts')
+
+                    axios({
+                        url: '{{ url_for("department.all") }}',
+                        method: 'get',
+                        headers: {'Content-type': 'application/json;charset=utf-8'},
+                    }).then(res => {
+                        // 통신성공 but 로직 실패(200대 외) -> tree되돌려야함 by this.updateTreeData();
+                        if (res.status >= 300) {
+                            this.toast(res.data.message)
+                            // [cancel 2] 통신성공 BUT 로직실패  => tree변경 취소(기존 this.depts -> this.treeData)
+                            this.updateTreeData(); // 변경된 tree 롤백
+                            return;
+                        }
+                        this.depts = res.data.tree.data;
+                        this.updateTreeData(); //  this.depts -> depts
+                        this.initialDepts = this.depts; // this.depts -------> this.initialDepts
+
+                        // this.toast(res.data.message)
+
+                    }).catch(err => {
+                        // TODO: 부서 순서 변경실패(통신은 됬는데 DB실패) => 이미 tree가 바뀌었다면, cancel해야함.
+                        console.log(err)
+                        this.toast(err.response ? err.response.data.message : '서버와 연결이 올바르지 않습니다.');
+                        // [cancel 3] 통신실패  => tree변경 취소(기존 this.depts -> this.treeData)
+                        this.updateTreeData();
+                    }).finally(() => {
+                    });
+                },
                 updateTreeData() {
                     console.log("updateTreeData(this.depts --th.clone--> this.treeData)")
                     this.treeData = th.clone(this.depts);
@@ -473,27 +503,40 @@
                 treeChanged(node, tree) {
                     console.log('treeChanged----') // 제자리에 둘 땐 호출되지 않는다.
 
-                    // 유효하지 않으면, 유효X내부 tree데이터를 <- 기존 공급된 depts데이터로 덮어써서 없앰
-                    // if (!this.validateFirstNotParent()) {
-                    // if (!this.validateSameParent(node)) { // => treeChanged는 sort안변하면 여기가 호출안되서 생략함.
-                    if (!this.validateSameParent(node)) {
-                        this.toast('동일한 부모 부서아래 순서이동만 가능합니다.', 'is-danger')
-                        // [cancel 1] 검증 실패 => tree변경 취소 (기존 this.depts -> this.treeData 덮어쓰기)
-                        this.updateTreeData();
-                        return;
-                    }
+                    // // 유효하지 않으면, 유효X내부 tree데이터를 <- 기존 공급된 depts데이터로 덮어써서 없앰
+                    // if (!this.validateSameParent(node)) {
+                    //     this.toast('동일한 부모 부서아래 순서이동만 가능합니다.', 'is-danger')
+                    //     // [cancel 1] 검증 실패 => tree변경 취소 (기존 this.depts -> this.treeData 덮어쓰기)
+                    //     this.updateTreeData();
+                    //     return;
+                    // }
+
+                    //node._vm.level에는, 바뀐후의 level이 안찍히는 버그 -> node.parent.level로, 바뀐부모의 level필드로 +1을 시켜 현재 level을 알아내자.
+
 
                     // 유효한 경우 => DB에서변경 => 성공시 바뀐 tree데이터를 -> 외부공급 this.depts로 가져옮
                     // (1) 유효한 순서변경 => 변경할 route에 가서 순서를 변경하고 온다.
                     // console.log(this.treeData)
 
-                    const payload = {
+
+                    let payload = {
                         dept_id: node.id,
-                        before_sort: node.sort,
-                        after_sort: node.parent.children.indexOf(node) + 1
+                        after_sort: node.parent.children.indexOf(node) + 1,
+
+                        is_cross_level: false, // cross_level인지 아닌지 구분하는 flag 생성
+                        after_parent_id: null,
                     }
 
-                    console.log('payload >> ', payload);
+                    // 동일부모가 아닌 경우 => cross level chang sort로서, 추가필드르 채워준다.
+                    if (!this.validateSameParent(node)) {
+                        payload.is_cross_level = true;
+                        if (!node.parent.isRoot) {
+                            payload.after_parent_id = node.parent._vm.data.id;
+                        } else {
+                            payload.after_parent_id = null;
+                        }
+                    }
+
 
                     axios({
                         url: '{{ url_for("department.change_sort") }}',
@@ -511,12 +554,18 @@
                         }
 
                         // 통신 성공 + (DB 순서변경)로직 성공 -> 그제서야 실제 tree도 변해야함.  =
+                        // 서버 -> db에 변경된 내용을 받아와, depts -> updateTreeData(this.treeData) -> initialDepts 다 업뎃이트
+                        this.getUpdatedDepts();
+
+                        this.toast(res.data.message);
+
+
                         // TODO: 부서 순서 변경되었음 => 이미 tree가 바뀌었다면, (1) 관련된 모든 놈들의 .sort값 변경 (2) this.depts 변경 + this.initialDepts 변경)
-                        node.sort = payload.afterSort;
-                        // 자식들 색을 위해 자식들의 .parent_sort도 다 바꿔주기
-                        for (let child of node.children) {
-                            child.parent_sort = node.sort;
-                        }
+                        // node.sort = payload.afterSort;
+                        // // 자식들 색을 위해 자식들의 .parent_sort도 다 바꿔주기
+                        // for (let child of node.children) {
+                        //     child.parent_sort = node.sort;
+                        // }
 
                         // TODO: 관련 node들도 DB에서 받아서 다 sort바꿔주기 -> 어차피 같은 부모(level)에서만 달라지기 때문에, BFS말고 해당부모의 node만 바꿔주면 된다?!
                         // th.breadthFirstSearch(this.treeData, node => {
@@ -527,31 +576,31 @@
                         //         node.sort =  mySort;
                         //     }
                         // });
-                        let myParentChildren = node.parent ? node.parent.children : this.treeData;
-                        for (const [index, node] of myParentChildren.entries()) {
-                            const mySort = index + 1;
-                            // 순서가 달라 바뀌는 놈들
-                            if (mySort !== node.sort) {
-                                // console.log(`원래sort(${node.sort})와 현재sort${mySort}가 달라요.`)
-                                node.sort = mySort;
-                                // 바뀌는 놈들은 그놈의 자식들의 .parent_sort도 같이 바꿔주기
-                                for (let child of node.children) {
-                                    child.parent_sort = node.sort;
-                                }
-                            }
-                        }
+                        // let myParentChildren = node.parent ? node.parent.children : this.treeData;
+                        // for (const [index, node] of myParentChildren.entries()) {
+                        //     const mySort = index + 1;
+                        //     // 순서가 달라 바뀌는 놈들
+                        //     if (mySort !== node.sort) {
+                        //         // console.log(`원래sort(${node.sort})와 현재sort${mySort}가 달라요.`)
+                        //         node.sort = mySort;
+                        //         // 바뀌는 놈들은 그놈의 자식들의 .parent_sort도 같이 바꿔주기
+                        //         for (let child of node.children) {
+                        //             child.parent_sort = node.sort;
+                        //         }
+                        //     }
+                        // }
 
 
-                        console.log('this.treeData, payload.afterSort >> ', this.treeData, payload.afterSort);
+                        // console.log('this.treeData, payload.afterSort >> ', this.treeData, payload.afterSort);
 
-                        this.treeUpdated(tree); // tree 자체 ----getPureData------> this.depts
-                        this.initialDepts = this.depts; // this.depts -------> this.initialDepts
+                        // this.treeUpdated(tree); // tree 자체 ----getPureData------> this.depts
+                        // this.initialDepts = this.depts; // this.depts -------> this.initialDepts
 
-                        this.toast(res.data.message)
+
                         // this.toast('순서변경에 성공하였습니다.')
 
+
                     }).catch(err => {
-                        // TODO: 부서 순서 변경실패(통신은 됬는데 DB실패) => 이미 tree가 바뀌었다면, cancel해야함.
                         console.log(err)
                         this.toast(err.response ? err.response.data.message : '서버와 연결이 올바르지 않습니다.');
                         // [cancel 3] 통신실패  => tree변경 취소(기존 this.depts -> this.treeData)
@@ -929,7 +978,7 @@
                     // TODO: [검증1] (하위부서X)부서의 직원이 존재할 경우, [있다면 해임시키게 될 건데] confirm받기
                     // this.confirm('비활성화할 경우, 해당 부서원들은 금일부 해임됩니다. 진행하시겠습니까?', async () => await this.deleteSelectedNode() );
                     // => delete와 같은 로직이라 복붙함.
-                     if (dept.has_direct_leader) {
+                    if (dept.has_direct_leader) {
                         this.toast('부서장이 존재할 경우 비활성화 할 수 없습니다.', 'is-danger')
                         return;
                     }

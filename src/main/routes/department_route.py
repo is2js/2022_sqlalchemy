@@ -26,6 +26,16 @@ def management():
                            tree=tree)
 
 
+@dept_bp.route("/all", methods=['GET'])
+def all():
+    tree = Department.get_all_tree(with_inactive=True)
+
+    if tree:
+        return make_response(dict(tree=tree, message='서버에서 데이터를 성공적으로 받았습니다.'), 200)
+    else:
+        return make_response(dict(message='데이터 전송 실패'), 409)
+
+
 @dept_bp.route("/add", methods=['POST'])
 def add():
     #### HTML FORM으로 보낼 때 ####
@@ -64,9 +74,16 @@ def delete():
 def change_sort():
     payload = request.get_json()
     # print(payload)
-    # {'dept_id': 1, 'before_sort': 2, 'after_sort': 1}
+    # is_cross_level Flag를 확인해서 서로 다른 메서드를 호출한다.
+    # {'dept_id': 13, 'after_sort': 1, 'is_cross_level': True, 'after_parent_id': None}
+    # {'dept_id': 6, 'after_sort': 2, 'is_cross_level': False, 'after_parent_id': None}
 
-    result, message = Department.change_sort(payload['dept_id'], payload['after_sort'])
+    if payload['is_cross_level']:
+        result, message = Department.change_sort_cross_level(dept_id=payload['dept_id'],
+                                                             after_parent_id=payload['after_parent_id'],
+                                                             after_sort=payload['after_sort'])
+    else:
+        result, message = Department.change_sort(dept_id=payload['dept_id'], after_sort=payload['after_sort'])
 
     if result:
         return make_response(dict(message=message), 200)
@@ -77,7 +94,7 @@ def change_sort():
 @dept_bp.route("/name", methods=['PUT'])
 def change_name():
     payload = request.get_json()
-    print(payload)
+    # print(payload)
     # {'dept_id': 1, 'target_name': '병원장2'}
 
     with DBConnectionHandler() as db:
