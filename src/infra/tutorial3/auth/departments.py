@@ -179,7 +179,7 @@ class Department(BaseModel):
     def __repr__(self):
         info: str = f"{self.__class__.__name__}" \
                     f"(id={self.id!r}," \
-                    f" title={self.name!r}," \
+                    f" name={self.name!r}," \
                     f" parent_id={self.parent_id!r}," \
                     f" sort={self.sort!r}," \
                     f" path={self.path!r})" \
@@ -194,9 +194,11 @@ class Department(BaseModel):
     def save_backup(self):
 
         # 검증1: 이미 존재하는 부서
-        if self.exists():
+        department_or_none = self.exists()
+        if department_or_none:
             print(f"{self.name}는 이미 존재하는 부서입니다.")
-            return self
+
+            return department_or_none
 
         with DBConnectionHandler() as db:
             db.session.add(self)
@@ -209,6 +211,7 @@ class Department(BaseModel):
             # my) 현재 동급레벨의 갯수로 -> sort를 동적으로 채우고, id로 path를 채우는 대신, sort번호로 path를 채우면 될 것 같다?
             # my) # 6 부모가 있으면 where에 with_parent에 올려, 갯수를 센다
             if self.parent:
+
                 sort_count = db.session.scalar(
                     (
                         select(func.count(Department.id))
@@ -409,13 +412,13 @@ class Department(BaseModel):
         return dict(data=tree_list)
 
     @classmethod
-    def change_sort_by_id(cls, id_a, id_b):
+    def exchange_sort_by_id(cls, id_a, id_b):
         with DBConnectionHandler() as db:
             dep_a = db.session.get(cls, id_a)  # get으로 찾앗으면 이미 add된 상태라서 commit만 하면 바뀐다? => execute때문에 자동 커밋 되는 듯.
             dep_b = db.session.get(cls, id_b)
 
             #### 같은 레벨 내의 sort 교환이어햐만 한다 => 아닐시 에러 추가
-            if dep_a.leve != dep_b.level:
+            if dep_a.level != dep_b.level:
                 raise ValueError('같은 level의 부서만 순서변경이 가능합니다.')
 
             dep_a.sort, dep_b.sort = dep_b.sort, dep_a.sort
@@ -439,6 +442,88 @@ class Department(BaseModel):
                 b_or_sub.path = new_b_path + b_or_sub.path[len(new_b_path):]
 
             db.session.commit()
+
+    @classmethod
+    def change_sort(cls, dept_id, after_sort, before_sort=None):
+        # before_sort는 이미 객체에 .sort로 정보가 있기 때문에, 인자로 받을 필요없다.
+        # 하지만, 나중에 level별 변화가 발생할 경우, 전 level의 before_sort를 알아야, 그쪽으로 들어갈 수 있다?
+        # => 어차피 알게 될 듯.
+        with DBConnectionHandler() as db:
+            target_dept = db.session.get(cls, dept_id)
+
+            if not target_dept:
+                raise ValueError('해당 부서는 존재하지 않습니다.')
+
+            if not before_sort:
+                before_sort = target_dept.sort
+
+            if not isinstance(before_sort, int) or not isinstance(after_sort, int):
+                raise ValueError('sort가 정수여야 합니다.')
+
+            if before_sort == after_sort:
+                return False, "변경되는 전/후 순서가 같을 순 없습니다."
+
+            #### before -> after로 갈 때, 작은데서 큰데로 VS 큰데서 작은데로 갈때 로직이 달라진다.
+            # case1: 2->4 번째로 간다면, (3, 4) 번을 순서대로(order_by .path) 위로 1칸(-1) 올려야한다
+            # case2: 4->2 번째로 간다면, (2, 3) 번을 밑에서부터 (order_by .path.desc() ) 아래로 1칸(+1) 내려야한다
+            if before_sort < after_sort:
+                condition = and_(before_sort < Department.sort, Department.sort <= after_sort)
+                added_value_for_new_sort = - 1
+                order_by = Department.path
+            else:
+                condition = and_(after_sort <= Department.sort, Department.sort < before_sort)
+                added_value_for_new_sort = 1  # 위로 올라올땐, 중간것들이 내려간다.
+                order_by = Department.path.desc()  # 위로 올라와, 한칸씩 내려갈땐, 큰 것부터 내려지게 역순으로 진행하게 한다.
+
+            try:
+                #### 순차적으로 업뎃할 때, 서로 영향을 끼치는 (다른놈과 같은 sort + path로 덮어쓰기 상황) 경우
+                #    -> select를 미리 다 해놓고, update도 순서대로 해야한다.
+                # (1) 2->4번으로 가는 [target_dept + 자식]와  3,4한칸씩 올라가는 [related_depts]를 나눠서, 미리 select해둔다
+                target_and_children = db.session.scalars(
+                    select(Department)
+                    .where(Department.path.like(target_dept.path + '%'))
+                ).all()
+
+                related_depts = db.session.scalars(
+                    select(Department)
+                    .where(Department.parent_id == target_dept.parent_id)
+                    .where(condition)
+                    .order_by(order_by)
+                ).all()
+
+                # (2) 대상부서 update전에, 관련부서들은 -> 자식들과 [조회 + 덮어쓰기 업뎃]을 동시에 해야해서, [대상부서를 뺀 순서가 중요]하다
+                #     순회하면서 각 dept마다 자식들을 1칸씩 내려주거나 올려줄 때,
+                #   -> 위로 올라갈경우, path(sort)정순 / 내려갈 경우, 밑에서부터 path(sort)역순으로 조회 + update해야한다.
+                #      (만약, 올라가는데, 아래것부터 올리면, 아래1칸 올린 것 + 바로 윗칸의 조회가 겹치게 된다.
+                #   -> 조회 + 업뎃을 순차적으로 할 땐, 덮어쓰기를 대비해서, [마지막에 하는 대상부서에 가까운 순으로] 순차적 [조회+덮어쓰기업뎃]
+                for dept in related_depts:
+                    # (3) 자신의 sort업뎃
+                    new_sort = dept.sort + added_value_for_new_sort
+                    dept.sort = new_sort  # sort업뎃은 자신만 => 자식들은 path업뎃만
+
+                    # (4) 자신 + 자식의 path업뎃
+                    path_prefix = dept.parent.path if dept.parent else ''
+                    new_path = path_prefix + f'{new_sort:0{3}d}'
+                    self_and_children = db.session.scalars(
+                        select(Department).where(Department.path.like(dept.path + '%'))).all()
+                    for child in self_and_children:
+                        child.path = new_path + child.path[len(new_path):]
+
+                # (5) 관련부서들이 한칸씩 다 땡겼으면, 미리 select해둔 대상부서를 옮기기
+                target_dept.sort = after_sort
+                prefix = target_dept.parent.path if target_dept.parent else ''
+                new_path = prefix + f'{after_sort:0{3}d}'
+                for child in target_and_children:
+                    # new_path + 자식들은 그만큼 기존path를 짜르고 나머지 자신 path를 이어붙임
+                    child.path = new_path + child.path[len(new_path):]
+
+                db.session.commit()
+                return True, "순서 변경에 성공하였습니다."
+
+            except:
+                #### 여러가지가 동시에 업뎃되므로 실패시 rollback까지
+                db.sesssion.rollback()
+                return False, f"순서변경에 실패하였습니다."
 
     def get_children(self):
         with DBConnectionHandler() as db:
