@@ -89,21 +89,21 @@ if __name__ == '__main__':
     executives = Employee.get_by_user_role(Roles.EXECUTIVE)
     # [<Employee 8>, <Employee 10>]
 
-    병원장 = Department(name='병원장', type=DepartmentType.부장).save()
+    병원장 = Department(name='병원장', type=DepartmentType.부장).save_backup()
 
-    진료부 = Department(name='진료부', type=DepartmentType.부장, parent=병원장).save()
-    간호부 = Department(name='간호부', type=DepartmentType.부장, parent=병원장).save()
-    행정부 = Department(name='행정부', type=DepartmentType.부장, parent=병원장).save()
+    진료부 = Department(name='진료부', type=DepartmentType.부장, parent=병원장).save_backup()
+    간호부 = Department(name='간호부', type=DepartmentType.부장, parent=병원장).save_backup()
+    행정부 = Department(name='행정부', type=DepartmentType.부장, parent=병원장).save_backup()
 
     #### 진료부 하위 부서 - 팀장없이
-    한방진료실 = Department(name='한방진료실', type=DepartmentType.원장단, parent=진료부).save()
-    탕전실 = Department(name='탕전실', type=DepartmentType.실, parent=진료부).save()
+    한방진료실 = Department(name='한방진료실', type=DepartmentType.원장단, parent=진료부).save_backup()
+    탕전실 = Department(name='탕전실', type=DepartmentType.실, parent=진료부).save_backup()
     #### 간호부 하위 부서 - 팀장없이
-    외래 = Department(name='외래', type=DepartmentType.치료실, parent=간호부).save()
-    병동 = Department(name='병동', type=DepartmentType.치료실, parent=간호부).save()
+    외래 = Department(name='외래', type=DepartmentType.치료실, parent=간호부).save_backup()
+    병동 = Department(name='병동', type=DepartmentType.치료실, parent=간호부).save_backup()
     #### 행정부 하위 부서 - 팀장없이
-    원무 = Department(name='원무', type=DepartmentType.팀, parent=행정부).save()
-    총무 = Department(name='총무', type=DepartmentType.팀, parent=행정부).save()
+    원무 = Department(name='원무', type=DepartmentType.팀, parent=행정부).save_backup()
+    총무 = Department(name='총무', type=DepartmentType.팀, parent=행정부).save_backup()
 
     #### (2) 부서에 부임
     #### => 한 사람은 (다른)여러부서에 [user의 role과 상관없이 오로지 팀원으로만] 입사한다 & 팀장은 부서정보에서 수정해서 넣어줄 것이다.
@@ -175,7 +175,7 @@ if __name__ == '__main__':
     #### 진료부장을 current_user로 생각해서, 부서+자식부서들 선택 / 나보다 하위직원 뽑기
     # Employee.get_by_user_id('')
     # current_employee_id = 진료부장_취임.employee_id
-    current_employee_id = EmployeeDepartment.get_by_dept_id(Department.get_by_name('진료부').id).employee_id
+    current_employee_id = EmployeeDepartment.get_by_dept_id(Department.get_by_name('진료부').id)[0].employee_id
     stmt = (
         select(User)
         .where(User.employee.any(Employee.id == current_employee_id))

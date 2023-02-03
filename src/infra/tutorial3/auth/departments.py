@@ -753,6 +753,7 @@ class Department(BaseModel):
                     .where(condition)
                     .order_by(order_by)
                 ).all()
+                # print("related_depts", related_depts)
 
                 # (2) 대상부서 update전에, 관련부서들은 -> 자식들과 [조회 + 덮어쓰기 업뎃]을 동시에 해야해서, [대상부서를 뺀 순서가 중요]하다
                 #     순회하면서 각 dept마다 자식들을 1칸씩 내려주거나 올려줄 때,

@@ -77,12 +77,15 @@ def change_sort():
     # is_cross_level Flag를 확인해서 서로 다른 메서드를 호출한다.
     # {'dept_id': 13, 'after_sort': 1, 'is_cross_level': True, 'after_parent_id': None}
     # {'dept_id': 6, 'after_sort': 2, 'is_cross_level': False, 'after_parent_id': None}
+    # print(payload['is_cross_level'], "payload['is_cross_level']")
 
     if payload['is_cross_level']:
+        # print("change_sort_cross_level")
         result, message = Department.change_sort_cross_level(dept_id=payload['dept_id'],
                                                              after_parent_id=payload['after_parent_id'],
                                                              after_sort=payload['after_sort'])
     else:
+        # print("change_sort")
         result, message = Department.change_sort(dept_id=payload['dept_id'], after_sort=payload['after_sort'])
 
     if result:

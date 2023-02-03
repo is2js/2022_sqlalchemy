@@ -555,7 +555,11 @@
 
                         // 통신 성공 + (DB 순서변경)로직 성공 -> 그제서야 실제 tree도 변해야함.  =
                         // 서버 -> db에 변경된 내용을 받아와, depts -> updateTreeData(this.treeData) -> initialDepts 다 업뎃이트
-                        this.getUpdatedDepts();
+                        // 아니다. tree는 이미 changed되었으니, 새로 this.treeData받지말고, this.depts와 this.initial만 수정하자. 실패시 롤백만
+                        // this.getUpdatedDepts();
+                        this.treeUpdated(tree); // tree 자체 ----getPureData------> this.depts
+                        this.initialDepts = this.depts; // this.depts -------> this.initialDepts
+
 
                         this.toast(res.data.message);
 
