@@ -10,6 +10,8 @@
 <!-- axios js-->
 <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
 
+<!-- bulma list css -->
+<link href="https://cdn.jsdelivr.net/npm/bulma-list/css/bulma-list.css" rel="stylesheet"/>
 
 <style>
     /* tree 공간 */
@@ -117,7 +119,7 @@
     </div>
     <!-- tree 공간   -->
     <div class="columns">
-
+        <!-- 부서 tree       -->
         <div class="column is-half">
             <div class="buttons is-block m-0">
                 <a class="is-size-7 has-text-grey"
@@ -281,6 +283,144 @@
                 </div>
             </tree>
         </div>
+        <!-- 부서 상세정보       -->
+        <!-- block요소는 margin auto로 가운데정렬한다.       -->
+        <div class="column mx-auto mt-4">
+            <!-- 내부 요소들을 가로배치하려면 또다시 is-inline-flex or is-flex로 가로 배치 -->
+            <!--  flex: 내부요소들이 가로배치 / inline-flex: 컨테이너들도 가로 배치 -->
+            <!-- https://wooncloud.tistory.com/10-->
+
+            <div class="container is-flex is-justify-content-center">
+                <!-- 직원 검색  -->
+                <!--                <p> employeeName : {$ employeeName $}<br/>-->
+                <!--                    employees : {$ employees $}<br/>-->
+                <!--                    selectedEmployee : {$ selectedEmployee $}<br/>-->
+                <!--                </p>-->
+                <b-field
+                        custom-class="is-small"
+                        label="직원 검색"
+                        label-position="on-border"
+                >
+                    <b-autocomplete
+                            size="is-small"
+                            rounded
+                            icon="account"
+                            placeholder="빈칸 입력시 전체직원"
+                            clearable
+                            v-model="employeeName"
+                            :data="employees"
+                            @select="option => selectedEmployee = option"
+                            @typing="getEmployees"
+                            :loading="isFetching"
+                            field="name"
+                            group-field="job_status"
+                    >
+                        <template #empty>
+                            No results found
+                        </template>
+                    </b-autocomplete>
+                </b-field>
+                <!-- 부서장 여부  -->
+                <b-field class="pt-1 ml-4"
+                >
+                    <b-checkbox size="is-small"
+                                :disabled.navite="!selectedEmployee"
+                    >
+                        부서장
+                    </b-checkbox>
+                </b-field>
+                <!--                    v-if="selectedDept"-->
+                <b-button class="is-primary is-light is-rounded is-pulled-right ml-2"
+                          size="is-small"
+                          @click="validateDelete"
+                          :disabled="!selectedEmployee"
+                >
+                    <span class="icon">
+                         <i class="mdi mdi-plus-thick mr-1"> </i>
+                    </span>
+                    직원 추가
+                </b-button>
+            </div>
+
+            <div class="container has-text-centered has-background-light mt-4"
+                 style="border-radius: 5%; width: 150px;">
+
+                <!--                     :class="getColorToLevelAndSort(item.level, item.parent_sort, item.sort)"-->
+                <div class="list-item-title mb-1 py-1 tag has-text-centered is-block is-size-7"
+                >
+                    부서명
+                </div>
+                <!-- root에서는 상사 leader가 없을 수 있기 때문에 조건문 걸어줘야 한다. -->
+                <figure class="image is-inline-block py-0 "
+                        style="height: 40px; width: 40px;margin-right: -2px;">
+                    <!--                         :src="item.leader ? '../uploads/'+item.leader.avatar : '/static/img/user/default_avatar.svg'"-->
+                    <!--                         :alt="item.leader ? item.leader.name : ''"-->
+                    <img class="is-rounded has-background-white" style="height: 40px; width: 100%;"
+                    >
+                </figure>
+
+                <div class="is-size-7 pb-1">
+                    <small>직위</small>
+                    </br>
+                    <span class="has-text-weight-bold"
+                          style="color:black">부서장</span>
+                </div>
+            </div>
+
+            <div class="container has-text-centered mt-2">
+                <!-- 총괄직원은 .children가 있는 상위부서일 때만 나타나도록 -->
+                <!--                     :class="getColorToLevelAndSort(item.level, item.parent_sort, item.sort)"-->
+                <!--                     v-if="item.children"-->
+                <div class="tag is-rounded"
+                >
+                    <small>
+                        총괄 직원 : 0
+                    </small>
+                </div>
+                <div class="tag is-rounded"
+                >
+                    <small>
+                        직원 수 : 0
+                    </small>
+                </div>
+            </div>
+
+
+            <!--  직원 list          -->
+            <!--  flex로서 세로 배치(is-flex-direction-column) 한다면, 가운데 정렬은 is-align-items-center로 해야한다 -->
+            <div class="container is-flex is-flex-direction-column is-align-items-center mt-2 ">
+                <div class="list has-visible-pointer-controls has-hoverable-list-items">
+                    <div class="list-item">
+                        <div class="list-item-image is-primary">
+                            <figure class="image"
+                                    style="height: 30px; width: 30px;">
+                                <!--                                 :src="item.leader ? '../uploads/'+item.leader.avatar : '/static/img/user/default_avatar.svg'"-->
+                                <!--                                 :alt="item.leader ? item.leader.name : ''"-->
+                                <img class="is-rounded has-background-white" style="height: 30px; width: 100%;"
+                                     src="/static/img/user/default_avatar.svg"
+                                >
+                            </figure>
+                        </div>
+                        <div class="list-item-content is-size-7">
+                            <div class="list-item-title ">List item</div>
+                            <div class="list-item-description ">List item description</div>
+                        </div>
+                        <div class="list-item-controls ml-4 is-size-7">
+                            <div class="tags is-right">
+                                <a href=""
+                                   class="tag is-warning is-light">
+                                    휴직
+                                </a>
+                                <a href=""
+                                   class="tag is-danger is-light">
+                                    해임
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <small>
@@ -426,6 +566,12 @@
                         type: null,
                         name: '',
                     },
+
+                    // 직원 검색 autocomplete
+                    employeeName: '', // 입력될 값 -> v-model
+                    employees: [], // 입력된 값에 따라 검색 값 -> :data or 필터링 -> field=특정필드값만 나타내기 가능
+                    selectedEmployee: null, // <- 선택된 값
+                    isFetching: false, // get요청시 isLoading flag
 
 
                     deptIds: [],
@@ -1033,6 +1179,44 @@
 
                     });
                 },
+                // autocomplte시 타이핑 name으로 get 요청
+                getEmployees(name) {
+                    console.log('getEmployees====')
+
+                    this.isFetching = true;
+
+                    const myParams = {
+                        emp_name: name.trim()
+                    }
+
+                    axios({
+                        url: '{{ url_for("department.employees") }}',
+                        method: 'get',
+                        params: myParams,
+                        headers: {'Content-type': 'application/json;charset=utf-8'},
+                    }).then(res => {
+                        // 통신성공 but 로직 실패(200대 외)
+                        if (res.status >= 300) {
+                            this.toast(res.data.message)
+                            this.employees = [];
+                            return;
+                        }
+
+                        console.log('res.data >> ', res.data);
+                        // this.toast(res.data.employees)
+                        // this.toast(res.data.message)
+
+                        this.employees = res.data.employees;
+
+                    }).catch(err => {
+                        // 통신실패
+                        console.log(err)
+                        this.toast(err.response ? err.response.data.message : '서버와 연결이 올바르지 않습니다.');
+                        this.employees = [];
+                    }).finally(() => {
+                        this.isFetching = false;
+                    });
+                },
 
 
                 emitClick(dep, level, store, $event) {
@@ -1354,6 +1538,7 @@
                 idOfSelectedDept() {
                     return this.selectedDept ? this.selectedDept.id : null
                 },
+
                 currentDplhParentId() {
                     return this.$refs.tree.dplh.parent.id ? this.$refs.tree.dplh.parent.id : null
                 },

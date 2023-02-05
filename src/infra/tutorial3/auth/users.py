@@ -1495,6 +1495,34 @@ class Employee(BaseModel):
 
         return True
 
+    @classmethod
+    def get_by_name_as_dict(cls, name):
+
+        with DBConnectionHandler() as db:
+            employees = db.session.scalars(
+                select(Employee)
+                .where(Employee.job_status != JobStatusType.퇴사)
+                .where(Employee.name.like('%' + name + '%'))
+                .order_by(Employee.join_date)
+            ).all()
+
+            # view에 보내기 전에 처리해주기
+            results = []
+            for emp in employees:
+                emp_dict = emp.to_dict()
+                ## 민감정보 삭제
+                del emp_dict['birth']
+                ## value -> enum(valuee)-> .name으로 변환
+                # emp_dict['job_status'] = JobStatusType[emp_dict['job_status']].name
+                #### job_status에는 이미 enum이 들어가 있다.
+                emp_dict['job_status'] = emp_dict['job_status'].name
+
+                results.append( emp_dict)
+
+            return results
+
+
+
     # #### with other entity
     # def is_demote(self, as_leader, current_dept_id):
     #

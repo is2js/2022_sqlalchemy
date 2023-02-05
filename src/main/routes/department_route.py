@@ -1,10 +1,10 @@
 import random
 
-from flask import Blueprint, render_template, request, make_response
+from flask import Blueprint, render_template, request, make_response, jsonify
 from sqlalchemy import select, exists
 
 from src.infra.config.connection import DBConnectionHandler
-from src.infra.tutorial3 import Department
+from src.infra.tutorial3 import Department, Employee
 
 dept_bp = Blueprint("department", __name__, url_prefix='/department')
 
@@ -134,3 +134,14 @@ def change_status():
         return make_response(dict(message=message), 200)
     else:
         return make_response(dict(message=message), 409)
+
+
+@dept_bp.route("/employees", methods=['GET'])
+def employees():
+    # args = request.args # ImmutableMultiDict([('myParams[emp_name]', '조ㅈ')])
+    params = request.args.to_dict()
+
+    employees = Employee.get_by_name_as_dict(params.get('emp_name'))
+
+    # return jsonify(employees=employees, message='직원 조회 성공')
+    return jsonify(employees=employees)
