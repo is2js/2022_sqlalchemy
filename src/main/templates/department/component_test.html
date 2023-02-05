@@ -120,7 +120,7 @@
     <!-- tree 공간   -->
     <div class="columns">
         <!-- 부서 tree       -->
-        <div class="column is-half">
+        <div class="column is-two-fifths">
             <div class="buttons is-block m-0">
                 <a class="is-size-7 has-text-grey"
                    size="is-small"
@@ -224,17 +224,17 @@
                                 >
                                     <!-- name -->
                                     {$ dept.name $}
-                                    <span class="has-text-weight-light ml-1"
-                                          :class="dept.id !== idOfSelectedDept ? 'has-text-grey' : 'has-text-white'"
-                                    >
+                                    <!--                                    <span class="has-text-weight-light ml-1"-->
+                                    <!--                                          :class="dept.id !== idOfSelectedDept ? 'has-text-grey' : 'has-text-white'"-->
+                                    <!--                                    >-->
 
-                                        <!-- 부서장 외 (부서장 제외 직원 + 하위부서장 + 하위직원 수) : all_employee_count-->
-                                        <small v-if="dept.has_direct_leader"> {$ dept.leader.name $}</small>
-                                        <small v-else>(부서장 공석) </small>
-                                        <small v-show="dept.all_employee_count">외 직원 {$ dept.all_employee_count $}명</small>
+                                    <!--                                        &lt;!&ndash; 부서장 외 (부서장 제외 직원 + 하위부서장 + 하위직원 수) : all_employee_count&ndash;&gt;-->
+                                    <!--                                        <small v-if="dept.has_direct_leader ">-->
+                                    <!--                                            {$ dept.leader.name $}-->
+                                    <!--                                        </small>-->
+                                    <!--                                        <small v-else>(부서장 공석) </small>-->
 
-
-                                    </span>
+                                    <!--                                    </span>-->
                                 </span>
                                 <!-- 더블클릭시 나타나는 이름변경 input -->
                                 <input class="is-size-7"
@@ -285,12 +285,69 @@
         </div>
         <!-- 부서 상세정보       -->
         <!-- block요소는 margin auto로 가운데정렬한다.       -->
-        <div class="column mx-auto mt-4">
+        <div class="column mx-auto mt-4"
+             v-if="selectedDept"
+        >
             <!-- 내부 요소들을 가로배치하려면 또다시 is-inline-flex or is-flex로 가로 배치 -->
             <!--  flex: 내부요소들이 가로배치 / inline-flex: 컨테이너들도 가로 배치 -->
             <!-- https://wooncloud.tistory.com/10-->
 
-            <div class="container is-flex is-justify-content-center">
+
+            <!-- 선택 부서 정보   -->
+            <div class="container has-text-centered is-bordered has-background-light mt-4"
+                 style="border-radius: 5%; width: 150px;">
+                <div class="list-item-title mb-1 py-1 tag has-text-centered is-block is-size-6"
+                     :class="getTextColorToLevelAndSort(selectedDept.level, selectedDept.parent_sort, selectedDept.sort)"
+                >
+                    {$ selectedDept.name $}
+                </div>
+                <!-- root에서는 상사 leader가 없을 수 있기 때문에 조건문 걸어줘야 한다. -->
+                <figure class="image is-inline-block py-0 "
+                        style="height: 50px; width: 50px;margin-right: -2px;">
+                    <img class="is-rounded has-background-white" style="height: 50px; width: 100%;"
+                         :src="selectedDept.has_direct_leader && selectedDept.leader ? '../uploads/' + selectedDept.leader.avatar : '/static/img/user/default_avatar.svg'"
+                         :alt="selectedDept.has_direct_leader && selectedDept.leader ? selectedDept.leader.name : ''"
+                    >
+                </figure>
+
+                <div class="pb-1 is-size-7">
+                    <small>{$ selectedDept.has_direct_leader && selectedDept.leader ? selectedDept.leader.position : ''
+                        $}</small>
+                    <br/>
+                    <span class="has-text-weight-bold"
+                          style="color:black">
+                        {$ selectedDept.has_direct_leader && selectedDept.leader ? selectedDept.leader.name : '부서장 공석' $}
+                    </span>
+                    <br/>
+                    <a
+                            v-if="selectedDept.has_direct_leader && selectedDept.leader"
+                            class="tag is-danger is-light mt-1"
+                            @click.prevent="dismissEmployee(selectedDept.leader.id, true)">
+                        <small>해임</small>
+                    </a>
+                </div>
+            </div>
+
+            <div class="container has-text-centered mt-2">
+                <!-- 총괄직원은 .children가 있는 상위부서일 때만 나타나도록 -->
+                <div class="tag is-rounded"
+                     :class="getTextColorToLevelAndSort(selectedDept.level, selectedDept.parent_sort, selectedDept.sort)"
+                     v-if="selectedDept.children.length"
+                >
+                    <small>
+                        하위 부서 수 : {$ selectedDept.children.length $}
+                    </small>
+                </div>
+                <div class="tag is-rounded"
+                     :class="getTextColorToLevelAndSort(selectedDept.level, selectedDept.parent_sort, selectedDept.sort)"
+                     v-if="selectedDept.employees"
+                >
+                    <small>
+                        직원 수 : {$ selectedDept.employees && selectedDept.employees.length $}
+                    </small>
+                </div>
+            </div>
+            <div class="container is-flex is-justify-content-center mt-4">
                 <!-- 직원 검색  -->
                 <!--                <p> employeeName : {$ employeeName $}<br/>-->
                 <!--                    employees : {$ employees $}<br/>-->
@@ -325,6 +382,7 @@
                 >
                     <b-checkbox size="is-small"
                                 :disabled.navite="!selectedEmployee"
+                                v-model="asLeader"
                     >
                         부서장
                     </b-checkbox>
@@ -332,8 +390,8 @@
                 <!--                    v-if="selectedDept"-->
                 <b-button class="is-primary is-light is-rounded is-pulled-right ml-2"
                           size="is-small"
-                          @click="validateDelete"
-                          :disabled="!selectedEmployee"
+                          :disabled="!selectedEmployee || isLoading"
+                          @click="addEmployee"
                 >
                     <span class="icon">
                          <i class="mdi mdi-plus-thick mr-1"> </i>
@@ -342,77 +400,62 @@
                 </b-button>
             </div>
 
-            <div class="container has-text-centered has-background-light mt-4"
-                 style="border-radius: 5%; width: 150px;">
-
-                <!--                     :class="getColorToLevelAndSort(item.level, item.parent_sort, item.sort)"-->
-                <div class="list-item-title mb-1 py-1 tag has-text-centered is-block is-size-7"
-                >
-                    부서명
-                </div>
-                <!-- root에서는 상사 leader가 없을 수 있기 때문에 조건문 걸어줘야 한다. -->
-                <figure class="image is-inline-block py-0 "
-                        style="height: 40px; width: 40px;margin-right: -2px;">
-                    <!--                         :src="item.leader ? '../uploads/'+item.leader.avatar : '/static/img/user/default_avatar.svg'"-->
-                    <!--                         :alt="item.leader ? item.leader.name : ''"-->
-                    <img class="is-rounded has-background-white" style="height: 40px; width: 100%;"
-                    >
-                </figure>
-
-                <div class="is-size-7 pb-1">
-                    <small>직위</small>
-                    </br>
-                    <span class="has-text-weight-bold"
-                          style="color:black">부서장</span>
-                </div>
-            </div>
-
-            <div class="container has-text-centered mt-2">
-                <!-- 총괄직원은 .children가 있는 상위부서일 때만 나타나도록 -->
-                <!--                     :class="getColorToLevelAndSort(item.level, item.parent_sort, item.sort)"-->
-                <!--                     v-if="item.children"-->
-                <div class="tag is-rounded"
-                >
-                    <small>
-                        총괄 직원 : 0
-                    </small>
-                </div>
-                <div class="tag is-rounded"
-                >
-                    <small>
-                        직원 수 : 0
-                    </small>
-                </div>
-            </div>
-
 
             <!--  직원 list          -->
             <!--  flex로서 세로 배치(is-flex-direction-column) 한다면, 가운데 정렬은 is-align-items-center로 해야한다 -->
-            <div class="container is-flex is-flex-direction-column is-align-items-center mt-2 ">
-                <div class="list has-visible-pointer-controls has-hoverable-list-items">
+            <div class="container is-flex is-flex-direction-column is-align-items-center ">
+                <!--  직원 없을 때 -->
+                <div class="list"
+                     v-if="!selectedDept.employees || (selectedDept.employees && !selectedDept.employees.length)">
                     <div class="list-item">
+                        <div class="list-item-content is-size-7">
+                            <div class="list-item-description ">
+                                소속된 직원이 없습니다.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="list has-visible-pointer-controls has-hoverable-list-items">
+                    <div class="list-item py-1 pt-1"
+                         :class="{'has-background-light' : employee.job_status === '휴직'}"
+                         v-for="(employee, index) in selectedDept.employees"
+                         :key="employee.id"
+                    >
                         <div class="list-item-image is-primary">
                             <figure class="image"
                                     style="height: 30px; width: 30px;">
-                                <!--                                 :src="item.leader ? '../uploads/'+item.leader.avatar : '/static/img/user/default_avatar.svg'"-->
-                                <!--                                 :alt="item.leader ? item.leader.name : ''"-->
                                 <img class="is-rounded has-background-white" style="height: 30px; width: 100%;"
-                                     src="/static/img/user/default_avatar.svg"
+                                     :src="employee.avatar ? '../uploads/' + employee.avatar : '/static/img/user/default_avatar.svg'"
+                                     :alt="employee ? employee.name : ''"
                                 >
                             </figure>
                         </div>
-                        <div class="list-item-content is-size-7">
-                            <div class="list-item-title ">List item</div>
-                            <div class="list-item-description ">List item description</div>
+                        <div class="list-item-content is-size-7 ml-2">
+                            <div class="list-item-title ">
+                                {$ employee.name $}
+                            </div>
+                            <div class="list-item-description ">
+                                {$ employee.position $} | {$ employee.job_status $}
+                            </div>
                         </div>
-                        <div class="list-item-controls ml-4 is-size-7">
+                        <div class="list-item-controls ml-6 is-size-7">
                             <div class="tags is-right">
                                 <a href=""
-                                   class="tag is-warning is-light">
+                                   class="tag is-warning is-light"
+                                   v-if="employee.job_status === '재직' "
+                                >
                                     휴직
                                 </a>
                                 <a href=""
-                                   class="tag is-danger is-light">
+                                   class="tag is-success is-light"
+                                   v-else
+                                >
+                                    복직
+                                </a>
+                                <a href="#"
+                                   class="tag is-danger is-light"
+                                   @click="dismissEmployee(employee.id)"
+                                >
                                     해임
                                 </a>
                             </div>
@@ -572,6 +615,7 @@
                     employees: [], // 입력된 값에 따라 검색 값 -> :data or 필터링 -> field=특정필드값만 나타내기 가능
                     selectedEmployee: null, // <- 선택된 값
                     isFetching: false, // get요청시 isLoading flag
+                    asLeader: false, // 직원 추가시 부서장 여부
 
 
                     deptIds: [],
@@ -1216,6 +1260,119 @@
                     }).finally(() => {
                         this.isFetching = false;
                     });
+                },
+                addEmployee() {
+                    this.isLoading = true;
+
+                    let payload = {
+                        emp_id: this.selectedEmployee.id,
+                        after_dept_id: this.selectedDept.id,
+                        as_leader: this.asLeader,
+                    }
+                    console.log('payload >> ', payload);
+
+                    axios({
+                        url: '{{ url_for("department.add_employee") }}',
+                        method: 'post',
+                        data: payload,
+                        headers: {'Content-type': 'application/json;charset=utf-8'},
+                    }).then(res => {
+                        // 통신성공 but 로직 실패(200대 외)
+                        if (res.status >= 300) {
+                            this.toast(res.data.message)
+                            // [cancel 2] 통신성공 BUT 로직실패  => tree변경 취소(기존 this.depts -> this.treeData)
+                            // this.updateTreeData(); // 변경된 tree 롤백
+                            return;
+                        }
+
+                        // 통신 성공 + (DB 순서변경)로직 성공
+                        // 현재 선택된 부서에 employees에 직원 추가
+                        // console.log('res.data.new_emp >> ', res.data.new_emp);
+                        // 1) 직원 추가
+                        if (!this.asLeader) {
+                            if (!this.selectedDept.employees) {
+                                this.selectedDept.employees = []
+                            }
+                            this.selectedDept.employees.push(res.data.new_emp);
+                        } else {
+                            // 2) 부서장 추가
+                            this.selectedDept.has_direct_leader = true;
+                            this.selectedDept.leader = res.data.new_emp;
+                        }
+
+
+                        this.toast(res.data.message);
+                        // this.treeUpdated(tree); // tree 자체 ----getPureData------> this.depts
+                        // this.initialDepts = this.depts; // this.depts -------> this.initialDepts
+
+                    }).catch(err => {
+                        console.log(err)
+                        this.toast(err.response ? err.response.data.message : '서버와 연결이 올바르지 않습니다.');
+                        // [cancel 3] 통신실패  => tree변경 취소(기존 this.depts -> this.treeData)
+                        // this.updateTreeData();
+
+                    }).finally(() => {
+                        this.isLoading = false;
+                        this.asLeader = false;
+                    });
+
+
+                },
+                dismissEmployee(emp_id, isLeader = false) {
+                    this.isLoading = true;
+
+                    let payload = {
+                        emp_id: emp_id,
+                        current_dept_id: this.selectedDept.id,
+                    }
+                    // console.log('payload >> ', payload);
+
+                    axios({
+                        url: '{{ url_for("department.dismiss_employee") }}',
+                        method: 'post',
+                        data: payload,
+                        headers: {'Content-type': 'application/json;charset=utf-8'},
+                    }).then(res => {
+                        // 통신성공 but 로직 실패(200대 외)
+                        if (res.status >= 300) {
+                            this.toast(res.data.message)
+                            // [cancel 2] 통신성공 BUT 로직실패  => tree변경 취소(기존 this.depts -> this.treeData)
+                            // this.updateTreeData(); // 변경된 tree 롤백
+                            return;
+                        }
+
+                        // 통신 성공 + (DB 순서변경)로직 성공
+                        // 현재 선택된 부서에 employees를 해임(부서제거)
+                        // isLeader 여부에 따라, 다르게 처리
+                        // 1) 직원 해임
+                        if (!isLeader) {
+                            let targetIndex = this.selectedDept.employees.findIndex(employee => {
+                                return employee.id === emp_id
+                            });
+                            if (targetIndex > -1) {
+                                this.selectedDept.employees.splice(targetIndex, 1);
+                            }
+                        } else {
+                            //2) 리더 해임
+                            this.selectedDept.leader = null;
+                        }
+
+
+                        this.toast(res.data.message);
+                        // this.treeUpdated(tree); // tree 자체 ----getPureData------> this.depts
+                        // this.initialDepts = this.depts; // this.depts -------> this.initialDepts
+
+                    }).catch(err => {
+                        console.log(err)
+                        this.toast(err.response ? err.response.data.message : '서버와 연결이 올바르지 않습니다.');
+                        // [cancel 3] 통신실패  => tree변경 취소(기존 this.depts -> this.treeData)
+                        // this.updateTreeData();
+
+                    }).finally(() => {
+                        this.isLoading = false;
+                    });
+
+
                 },
 
 

@@ -833,7 +833,7 @@ class Employee(BaseModel):
         del d['add_date']  # base공통칼럼을 제외해야 keyword가 안겹친다
         del d['pub_date']
         # del d['user']  # 관계필드는 굳이 필요없다. -> inspect안써서 더이상 관계필드 조홰 안한다.
-        del d['id']
+        # del d['id']
         return d
 
     def update(self, info_dict):
@@ -1021,6 +1021,9 @@ class Employee(BaseModel):
     #### with other entity
     def get_position_by_dept_id(self, dept_id):
         with DBConnectionHandler() as db:
+            if self not in db.session:
+                db.session.add(self)
+
             stmt = (
                 select(EmployeeDepartment.position)
                 .where(EmployeeDepartment.dismissal_date.is_(None))

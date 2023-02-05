@@ -1,3 +1,4 @@
+import datetime
 import random
 
 from flask import Blueprint, render_template, request, make_response, jsonify
@@ -145,3 +146,51 @@ def employees():
 
     # return jsonify(employees=employees, message='직원 조회 성공')
     return jsonify(employees=employees)
+
+
+@dept_bp.route("/employees/add", methods=['POST'])
+def add_employee():
+    payload = request.get_json()
+    # print(payload)
+    # {'emp_id': 16, 'after_dept_id': 16, 'as_leader': False}
+    employee = Employee.get_by_id(payload['emp_id'])
+
+    result, message = employee.change_department(
+        current_dept_id=None,
+        after_dept_id=payload['after_dept_id'],
+        as_leader=payload['as_leader'],
+        target_date=datetime.date.today()
+    )
+
+    if result:
+        position = employee.get_position_by_dept_id(payload['after_dept_id'])
+
+        new_emp = {
+            'id': employee.id,
+            'name': employee.name,
+            'job_status': employee.job_status,
+            'avatar': employee.user.avatar,
+            'position': position,
+        }
+        return make_response(dict(new_emp=new_emp, message="직원을 추가했습니다."), 200)
+    else:
+        return make_response(dict(message=message), 409)
+
+
+@dept_bp.route("/employees/dismiss", methods=['POST'])
+def dismiss_employee():
+    payload = request.get_json()
+    # print(payload)
+    employee = Employee.get_by_id(payload['emp_id'])
+
+    result, message = employee.change_department(
+        current_dept_id=payload['current_dept_id'],
+        after_dept_id=None,
+        as_leader=None,
+        target_date=datetime.date.today()
+    )
+
+    if result:
+        return make_response(dict(message=message), 200)
+    else:
+        return make_response(dict(message=message), 409)
