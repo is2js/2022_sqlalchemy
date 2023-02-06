@@ -168,7 +168,7 @@ def add_employee():
         new_emp = {
             'id': employee.id,
             'name': employee.name,
-            'job_status': employee.job_status,
+            'job_status': employee.job_status.name,
             'avatar': employee.user.avatar,
             'position': position,
         }
@@ -194,3 +194,16 @@ def dismiss_employee():
         return make_response(dict(message=message), 200)
     else:
         return make_response(dict(message=message), 409)
+
+
+@dept_bp.route("/employees/change/job_status", methods=['PUT'])
+def change_employee_job_status():
+    payload = request.get_json()
+    # print(payload)
+    employee = Employee.change_job_status(payload['emp_id'], payload['job_status'], datetime.date.today())
+
+
+    if employee:
+        return make_response(dict(message='재직상태가 변경되었습니다.'), 200)
+    else:
+        return make_response(dict(message='재직상태 변경에 실패하였습니다.'), 409)

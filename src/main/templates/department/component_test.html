@@ -440,21 +440,20 @@
                         </div>
                         <div class="list-item-controls ml-6 is-size-7">
                             <div class="tags is-right">
-                                <a href=""
-                                   class="tag is-warning is-light"
+                                <a class="tag is-warning is-light"
                                    v-if="employee.job_status === '재직' "
+                                   @click.prevent="changeJobStatus(employee, '휴직')"
                                 >
                                     휴직
                                 </a>
-                                <a href=""
-                                   class="tag is-success is-light"
+                                <a class="tag is-success is-light"
                                    v-else
+                                   @click.prevent="changeJobStatus(employee, '복직')"
                                 >
                                     복직
                                 </a>
-                                <a href="#"
-                                   class="tag is-danger is-light"
-                                   @click="dismissEmployee(employee.id)"
+                                <a class="tag is-danger is-light"
+                                   @click.prevent="dismissEmployee(employee.id, employee.job_status)"
                                 >
                                     해임
                                 </a>
@@ -1375,6 +1374,55 @@
 
                 },
 
+
+                changeJobStatus(emp, target_status){
+                    let job_status = 1;
+                    if (target_status === '휴직' ) {
+                        job_status = 2;
+                    }
+
+                    let payload = {
+                        emp_id: emp.id,
+                        job_status: job_status,
+                    }
+                    // console.log('payload >> ', payload);
+
+                    axios({
+                        url: '{{ url_for("department.change_employee_job_status") }}',
+                        method: 'put',
+                        data: payload,
+                        headers: {'Content-type': 'application/json;charset=utf-8'},
+                    }).then(res => {
+                        // 통신성공 but 로직 실패(200대 외)
+                        if (res.status >= 300) {
+                            this.toast(res.data.message)
+                            // [cancel 2] 통신성공 BUT 로직실패  => tree변경 취소(기존 this.depts -> this.treeData)
+                            // this.updateTreeData(); // 변경된 tree 롤백
+                            return;
+                        }
+
+                        // 통신 성공 + (DB 순서변경)로직 성공
+                        // -> 객체를 받았을 때, 필드변경 연동 확인 됨
+                        // => 복직이 target_status일 땐, 재직으로 변경해서 넣어주기
+                        if (target_status === '복직') target_status = '재직';
+                        emp.job_status = target_status;
+
+
+                        this.toast(res.data.message);
+                        // this.treeUpdated(tree); // tree 자체 ----getPureData------> this.depts
+                        // this.initialDepts = this.depts; // this.depts -------> this.initialDepts
+
+                    }).catch(err => {
+                        console.log(err)
+                        this.toast(err.response ? err.response.data.message : '서버와 연결이 올바르지 않습니다.');
+                        // [cancel 3] 통신실패  => tree변경 취소(기존 this.depts -> this.treeData)
+                        // this.updateTreeData();
+
+                    }).finally(() => {
+
+                    });
+
+                },
 
                 emitClick(dep, level, store, $event) {
                     console.log('emitClick');
