@@ -36,6 +36,16 @@ class ProjectProdConfig(Project):
                     or BASE_FOLDER.joinpath('uploads/')
 
 
+project_config = {
+    'development': ProjectDevConfig,
+    'testing': ProjectTestingConfig,
+    'production': ProjectProdConfig,
+
+    'default': ProjectDevConfig
+}
+project_config = project_config[os.getenv('APP_CONFIG') or 'default']()
+
+
 class DB:
     POST_PER_PAGE = int(os.getenv("POST_PER_PAGE", "10"))
     COMMENTS_PER_PAGE = int(os.getenv("COMMENTS_PER_PAGE", "20"))
@@ -43,7 +53,7 @@ class DB:
 
 class DBDevConfig(DB):
     DATABASE_URL = os.environ.get('DEV_DATABASE_URL') or \
-                   'sqlite:///' + os.path.join(BASE_FOLDER, f'{os.getenv("DB_NAME")}-dev.db' or "data-dev.sqlite")
+                   'sqlite:///' + os.path.join(BASE_FOLDER, f'{os.getenv("DB_NAME") or "data"}-dev.db')
 
 
 class DBTestingConfig(DB):
@@ -68,11 +78,24 @@ class DBProductionConfig(DB):
         DATABASE_URL = 'sqlite:///' + os.path.join(BASE_FOLDER, f'{os.getenv("DB_NAME")}.db' or "data.sqlite")
 
 
+db_config = {
+    'development': DBDevConfig,
+    'testing': DBTestingConfig,
+    'production': DBProductionConfig,
+
+    'default': DBDevConfig
+}
+db_config = db_config[os.getenv('APP_CONFIG') or 'default']()
+
+
 class Auth:
     # jwt. Watch out -> int( None )
     TOKEN_KEY = os.getenv("TOKEN_KEY")
     EXP_TIME_MIN = int(os.getenv("EXP_TIME_MIN", "30"))
     REFRESH_TIME_MIN = int(os.getenv("REFRESH_TIME_MIN", "15"))
+
+
+auth_config = Auth()
 
 
 class FlaskConfig:
@@ -90,7 +113,7 @@ class FlaskConfig:
 
 
 class FlaskDevConfig(FlaskConfig):
-    DEBUG = True # flask run의 운영환경과 별개
+    DEBUG = True  # flask run의 운영환경과 별개
 
 
 class FlaskTestingConfig(FlaskConfig):
@@ -98,17 +121,9 @@ class FlaskTestingConfig(FlaskConfig):
 
 
 class FlaskProdConfig(FlaskConfig):
-    pass
+    ENV = 'production'
+    DEBUG = False
 
-
-project_config = {
-    'development': ProjectDevConfig,
-    'testing': ProjectTestingConfig,
-    'production': ProjectProdConfig,
-
-    'default': ProjectDevConfig
-}
-project_config = project_config[os.getenv('APP_CONFIG') or 'default']()
 
 app_config = {
     'development': FlaskDevConfig,
@@ -118,17 +133,6 @@ app_config = {
 }
 app_config = app_config[os.getenv('APP_CONFIG') or 'default']()
 
-db_config = {
-    'development': DBDevConfig,
-    'testing': DBTestingConfig,
-    'production': DBProductionConfig,
-
-    'default': DBDevConfig
-}
-db_config = db_config[os.getenv('APP_CONFIG') or 'default']()
-
-auth_config = Auth()
-
-print("CONFIG>>>", os.getenv('APP_CONFIG'))
-print("DB_URL>>>", db_config.DATABASE_URL)
-print("UPLOAD_FOLDER>>>", project_config.UPLOAD_FOLDER)
+# print("CONFIG>>>", os.getenv('APP_CONFIG'))
+# print("DB_URL>>>", db_config.DATABASE_URL)
+# print("UPLOAD_FOLDER>>>", project_config.UPLOAD_FOLDER)
