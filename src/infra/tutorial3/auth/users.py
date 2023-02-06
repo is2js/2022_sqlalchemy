@@ -828,16 +828,22 @@ class Employee(BaseModel):
     def __repr__(self):
         return '<Employee %r>' % self.id
 
-    def to_dict(self):
+    def to_dict(self, without_id=False):
         d = super().to_dict()
         del d['add_date']  # base공통칼럼을 제외해야 keyword가 안겹친다
         del d['pub_date']
         # del d['user']  # 관계필드는 굳이 필요없다. -> inspect안써서 더이상 관계필드 조홰 안한다.
-        # del d['id']
+        # form에서는 id를 넣어주면 중복되서 삭제햇었는데, view에서는 필요로 한다.
+        if without_id:
+            del d['id']
         return d
 
-    def update(self, info_dict):
-        for k, v in info_dict.items():
+    def update(self, info_dict, **kwargs):
+        if info_dict:
+            for k, v in info_dict.items():
+                setattr(self, k, v)
+
+        for k, v in kwargs.items():
             setattr(self, k, v)
 
     @classmethod

@@ -1218,6 +1218,7 @@ def employee_edit(id):
             # 'job_status': form.job_status.data,
             # 'resign_date': form.resign_date.data,
         }
+
         employee.update(employee_info)
 
         with DBConnectionHandler() as db:
@@ -1225,6 +1226,7 @@ def employee_edit(id):
             db.session.commit()
             # print(employee.user.role_id)
             flash("직원 수정 성공", category='is-success')
+            print('employee  >> ', employee.name)
 
         return redirect(url_for('admin.employee'))
 

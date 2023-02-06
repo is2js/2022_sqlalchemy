@@ -268,7 +268,7 @@ class EmployeeForm(UserInfoForm):
             # {'add_date': datetime.datetime(2022, 12, 21, 21, 50, 11, 114650), 'pub_date': datetime.datetime(2022, 12, 21, 21, 50, 11, 114650), 'id': 12, 'user_id': 37, 'name': '투자자', 'sub_name': '투자자', 'birth': '2010233349192', 'join_date': datetime.da
             # te(2022, 12, 21), 'job_status': <JobStatusType.재직: 1>, 'resign_date': None, 'user': User[id=37]}
             # print(self.employee.serialize())
-            super().__init__(user, **self.employee.to_dict())
+            super().__init__(user, **self.employee.to_dict(without_id=True))
         else:
             # super().__init__(*args, **kwargs)
             ## 상속한 부모 form UserInfoForm는 무조건 수정상태로 쓰니, user를 넣어준다.
@@ -319,13 +319,15 @@ class EmployeeForm(UserInfoForm):
             self.role_id.data = role.id
 
         #### 재입사시, 기존 직원들 정보로 미리 채우는 것 추가
-        if self.user and self.user.has_employee_history:
-            prev_emp: Employee = Employee.get_by_user_id(self.user.id)
-            if not prev_emp:
-                return
-            self.name.data = prev_emp.name
-            self.sub_name.data = prev_emp.sub_name
-            self.birth.data = prev_emp.birth
+        # => 여기서 채워버리니까, 직원정보 수정 -> form에 데이터를 입력해도 여기 입력 데이터를 backend로가져온다
+        # =>
+        # if self.user and self.user.has_employee_history:
+        #     prev_emp: Employee = Employee.get_by_user_id(self.user.id)
+        #     if not prev_emp:
+        #         return
+        #     self.name.data = prev_emp.name
+        #     self.sub_name.data = prev_emp.sub_name
+        #     self.birth.data = prev_emp.birth
 
     def validate_birth(self, field):
         if self.employee:  # 수정시 자신의 제외하고 데이터 중복 검사
