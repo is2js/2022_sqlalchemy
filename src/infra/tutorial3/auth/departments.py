@@ -14,6 +14,7 @@ from src.main.templates.filters import format_date
 
 class DepartmentType(enum.IntEnum):
     부장 = 0  # 부서명 ex> 병원장, 진료부장, 간호부 => 끝에 장이 없으면 [부서명 + 장]
+
     실 = 1  # 실원, 실장 ex> 탕제실, 홍보실, 기획관리실, 정보전산실,
     팀 = 2  # 팀원, 팀장 ex> 총무팀
     과 = 3  # 팀원, 과장 ex> 원무과, 행정과
@@ -944,7 +945,8 @@ class EmployeeDepartment(BaseModel):
     # department_id = Column(Integer, ForeignKey('departments.id'), nullable=False, index=True)
     #### session.delete( dept )시, fk테이블인 여기에서 where = dept.id update set NULL이 자동으로 이루어진다.
     #### => (1) one이 삭제될 수도 있다면(실제 검증에서 삭제안하게 할 건데), 부가적으로 발생하는 update에 대비해서 nullable=False를 지워준다.
-    department_id = Column(Integer, ForeignKey('departments.id', ondelete='SET NULL'), index=True)
+    department_id = Column(Integer, ForeignKey('departments.id', ondelete='SET NULL'), index=True,
+                           nullable=True)
 
     # new
     employee = relationship("Employee", backref="employee_departments", foreign_keys=[employee_id],

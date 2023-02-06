@@ -224,17 +224,11 @@
                                 >
                                     <!-- name -->
                                     {$ dept.name $}
-                                    <!--                                    <span class="has-text-weight-light ml-1"-->
-                                    <!--                                          :class="dept.id !== idOfSelectedDept ? 'has-text-grey' : 'has-text-white'"-->
-                                    <!--                                    >-->
-
-                                    <!--                                        &lt;!&ndash; 부서장 외 (부서장 제외 직원 + 하위부서장 + 하위직원 수) : all_employee_count&ndash;&gt;-->
-                                    <!--                                        <small v-if="dept.has_direct_leader ">-->
-                                    <!--                                            {$ dept.leader.name $}-->
-                                    <!--                                        </small>-->
-                                    <!--                                        <small v-else>(부서장 공석) </small>-->
-
-                                    <!--                                    </span>-->
+                                    <span class="has-text-weight-light ml-1"
+                                          :class="dept.id !== idOfSelectedDept ? 'has-text-grey' : 'has-text-white'"
+                                          >
+                                            <small>{$ getDeptCategory(dept) $}</small>
+                                    </span>
                                 </span>
                                 <!-- 더블클릭시 나타나는 이름변경 input -->
                                 <input class="is-size-7"
@@ -410,7 +404,7 @@
                     <div class="list-item">
                         <div class="list-item-content is-size-7">
                             <div class="list-item-description ">
-                                소속된 직원이 없습니다.
+                                {$ selectedDept.type === 0 ? '1인 부서로 부서장만 추가 가능합니다.' : '소속된 직원이 없습니다.' $}
                             </div>
                         </div>
                     </div>
@@ -453,7 +447,7 @@
                                     복직
                                 </a>
                                 <a class="tag is-danger is-light"
-                                   @click.prevent="dismissEmployee(employee.id, employee.job_status)"
+                                   @click.prevent="dismissEmployee(employee.id, false)"
                                 >
                                     해임
                                 </a>
@@ -882,6 +876,14 @@
                     // 선택되지 않은 dept라면, 할당 -> 선택됬다면 null로 선택 풀기
                     if (this.idOfSelectedDept !== dept.id) {
                         this.selectedDept = dept;
+
+                        // 선택된 부서가 1인 부서라면, 부서장 체크하기
+                        if (this.selectedDept.type === 0){
+                            this.asLeader = true;
+                        } else {
+                            this.asLeader = false;
+                        }
+
                         return;
                     }
                     this.selectedDept = null;
@@ -1422,6 +1424,18 @@
 
                     });
 
+                },
+
+                getDeptCategory(dept){
+                    if (dept.type === 0){
+                        return '1인 부서'
+                    } else if (1 <= dept.type <= 3 ){
+                        return '행정 부서'
+                    } else if (4 <= dept.type <= 7 ){
+                        return '의료관련 부서'
+                    } else if (8 <= dept.type ){
+                        return '연구관련 부서'
+                    }
                 },
 
                 emitClick(dep, level, store, $event) {
