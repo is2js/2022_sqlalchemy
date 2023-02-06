@@ -205,9 +205,9 @@ def index():
                            post_by_category=(post_by_category_x_datas, post_by_category_y_datas),
                            tag_with_post_count=tag_with_post_count,
 
-                           user_count_bar_options=user_chart.dump_options(),
-                           user_sex_pie_options=user_sex_pie_chart.dump_options(),
-                           year_options=year_chart.dump_options(),
+                           # user_count_bar_options=user_chart.dump_options(),
+                           # user_sex_pie_options=user_sex_pie_chart.dump_options(),
+                           # year_options=year_chart.dump_options(),
 
                            chart=[user_chart, user_sex_pie_chart]
                            )
