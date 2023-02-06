@@ -17,7 +17,7 @@ class Project:
     PROJECT_NAME: str = os.getenv("PROJECT_NAME")
     PROJECT_VERSION: str = os.getenv("PROJECT_VERSION")
     # user생성시 role안넣은 상태에서, email이 정해진 email이면, 관리자 Role을 넣어준다.
-    ADMIN_EMAIL: str = os.getenv("ADMIN_EMAIL")
+    ADMIN_EMAIL: str = os.getenv("ADMIN_EMAIL") or 'tingstyle1@gmail.com'
 
 
 # path로 join만 하면 [마지막을 파일명으로 취급]하여 '/'가 없다.

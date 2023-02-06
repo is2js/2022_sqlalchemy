@@ -35,8 +35,8 @@ def init_script(app: Flask):
         click.echo(f'db.create_all() 완료')
 
     #### admin user 만들기 전에 role도 파이선으로 생성가능하도록 명령어로 만들기
-    @app.cli.command()
-    def createrole():
+    @app.cli.command("create_role")
+    def create_role():
         click.echo('기본 Role들을 python으로 생성합니다.')
         try:
             Role.insert_roles()
