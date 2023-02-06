@@ -172,6 +172,7 @@ def index():
 
         #### < 2-1 일주일 user 수>
         user_chart = get_user_chart(db)
+        print("user_chart", user_chart)
         # <2-2-2 user 성별 piechart > 아직 성별칼럼이 없으니 직원수 vs 일반 유저로 비교해보자.
         user_sex_pie_chart = get_pie_chart(db, User, 'sex', condition=User.sex != SexType.미정)
 
@@ -215,11 +216,14 @@ def index():
 def get_user_chart(db):
     user_x_datas, user_y_datas = get_datas_count_by_date(db, User, 'add_date', interval='day', period=7)
     #
+    print("user_x_datas, user_y_datas" , user_x_datas, user_y_datas)
     user_chart = (
         Bar()
         .add_xaxis(user_x_datas)
         .add_yaxis('유저 수', user_y_datas)
     )
+    print('user_chart  >> ', user_chart)
+
     return user_chart
 
 
@@ -238,6 +242,7 @@ def get_datas_count_by_date(db, entity, date_column_name, interval='day', period
         raise ValueError('invalid aggregation interval(string, day or month or year) & period=int')
 
     series = generate_series_subquery(start_date, end_date, interval=interval)
+
     ### subquery를 확인시에는 .select()로 만들어서 .all()후 출력
     # print(db.session.execute(series.select()).all())
     # print(ts, type(ts))
@@ -250,6 +255,7 @@ def get_datas_count_by_date(db, entity, date_column_name, interval='day', period
     ##  오늘에 해당 데이터가 안걸린다. 데이터를 일단 변환하고 필터링에 넣어야한다.
     # select(func.date(User.add_date).label('date'), func.count(User.id).label('count')) \
     values = count_by_date_subquery(interval, entity, date_column_name, end_date, start_date)
+
     # print(db.session.execute(values.select()).all())
 
     # .group_by(func.strftime("%Y", User.add_date).label('date'))\
@@ -273,6 +279,8 @@ def get_datas_count_by_date(db, entity, date_column_name, interval='day', period
     for day, user_count in db.session.execute(stmt):
         x_datas.append(day)
         y_datas.append(user_count)
+    print('x_datas, y_datas  >> ', x_datas, y_datas)
+
     # 집계대상 필터링은 Y-m-d(date) -> group_by strftime으로 (day) or Y-m-d/(month)Y-m/(year)Y 상태
     # 이미 문자열로 Y-m-d  or Y-m  or Y 중 1개로 정해진 상태다. -> -로 split한 뒤 마지막거만 가져오면 interval 단위
     # => 출력을 위해 day단위면, d만 / month단위면 m만 나가도록 해준다 (year는 이미 Y)
