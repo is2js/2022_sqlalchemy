@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+
+{% block title %}
+페이지를 찾을 수 없습니다
+{% endblock title %}
+
+{% block hero %}
+{% endblock hero %}
+
+{% block box %}
+<div class="container">
+    <div class="columns is-flex is-justify-content-center">
+        <div class="is-12 has-text-centered">
+            <span class="is-block mt-6 is-size-3">{{status_code}} Error !!</span>
+            <div class="m-4 is-size-6">{{description}}</div>
+            <a href="/" class="tag m-6">홈으로 돌아가기</a>
+        </div>
+    </div>
+</div>
+{% endblock box %}

@@ -3,7 +3,7 @@
 import datetime
 from pathlib import Path
 
-from flask import Flask
+from flask import Flask, render_template
 from flask_cors import CORS
 from sqlalchemy import select
 
@@ -20,13 +20,14 @@ static_dir = str(Path.cwd().joinpath('src/main/static/'))
 print(f"template_dir: {template_dir}\n"
       f"static_dir: {static_dir}")
 
+
 ## 추가 extenstion객체 생성
 # migrate = Migrate()
 # moment = Moment()
 # pagedown = PageDown()
 
-def create_app(config_name='default'):
 
+def create_app(config_name='default'):
     print("config_name>>>", config_name)
 
     app = Flask(__name__,
@@ -45,14 +46,14 @@ def create_app(config_name='default'):
     CORS(app)
 
     ## 필터 추가
-    from src.main.templates.filters import feed_datetime, join_phone, join_birth, format_date, format_datetime, format_timedelta
+    from src.main.templates.filters import feed_datetime, join_phone, join_birth, format_date, format_datetime, \
+        format_timedelta
     app.jinja_env.filters["feed_datetime"] = feed_datetime
     app.jinja_env.filters["join_phone"] = join_phone
     app.jinja_env.filters["join_birth"] = join_birth
     app.jinja_env.filters["format_date"] = format_date
     app.jinja_env.filters["format_datetime"] = format_datetime
     app.jinja_env.filters["format_timedelta"] = format_timedelta
-
 
     ## bp아닌 것들은 add_url_rule용
     from src.main.routes import (
@@ -85,6 +86,10 @@ def create_app(config_name='default'):
     from src.main.utils import init_script
     init_script(app)
 
+    ## 오류페이지 등록
+    app.register_error_handler(404, render_error)
+    app.register_error_handler(500, render_error)
+
     return app
 
 
@@ -114,3 +119,17 @@ def inject_permission():
         Permission=Permission,
         # Roles=Roles,
     )
+
+
+## 에러 핸들링
+# def page_not_found(e):
+def render_error(e):
+    # print(dir(e))
+    # 'args', 'code', 'description', 'get_body', 'get_description', 'get_headers', 'get_response', 'name', 'response', 'with_traceback', 'wrap']
+    # print(e.code) # 404
+    # print(e.description) # The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
+
+    return render_template(
+        'errors/404.html',
+        status_code=e.code,
+        description=e.description), e.code
