@@ -75,7 +75,7 @@ class DBProductionConfig(DB):
                        f"{DB_SERVER}:{DB_PORT}/" \
                        f"{DB_NAME}"
     else:
-        DATABASE_URL = 'sqlite:///' + os.path.join(BASE_FOLDER, f'{os.getenv("DB_NAME")}.db' or "data.sqlite")
+        DATABASE_URL = 'sqlite:///' + os.path.join(BASE_FOLDER, f'{os.getenv("DB_NAME") or "data"}-prod.db')
 
 
 db_config = {

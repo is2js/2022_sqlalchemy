@@ -25,7 +25,7 @@ print(f"template_dir: {template_dir}\n"
 # moment = Moment()
 # pagedown = PageDown()
 
-def create_app(config_name):
+def create_app(config_name='default'):
 
     print("config_name>>>", config_name)
 
