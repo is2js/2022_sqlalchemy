@@ -3,21 +3,22 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from flask import Flask
+from logging.config import dictConfig
 
 dotenv_path = Path("./.env")
 load_dotenv(dotenv_path=dotenv_path)
 
-BASE_FOLDER = Path(__file__).resolve().parent.parent.parent  # root
+BASE_FOLDER = Path(__file__).resolve().parent.parent.parent  # root( config -> src -> root)
 
 
 # fastapi 세팅 참고
 # https://github.com/heumsi/python-rest-api-server-101/blob/main/project/src/config.py
 class Project:
     # project
-    PROJECT_NAME: str = os.getenv("PROJECT_NAME")
+    PROJECT_NAME: str = os.getenv("PROJECT_NAME") or 'sqlalchemy'  # 직접 deafult값  줌
     PROJECT_VERSION: str = os.getenv("PROJECT_VERSION")
     # user생성시 role안넣은 상태에서, email이 정해진 email이면, 관리자 Role을 넣어준다.
-    ADMIN_EMAIL: str = os.getenv("ADMIN_EMAIL") or 'tingstyle1@gmail.com'
+    ADMIN_EMAIL: str = os.getenv("ADMIN_EMAIL") or 'tingstyle1@gmail.com'  # 직접 default 값 줌
 
 
 # path로 join만 하면 [마지막을 파일명으로 취급]하여 '/'가 없다.
@@ -113,17 +114,14 @@ class FlaskConfig:
 
 
 class FlaskDevConfig(FlaskConfig):
-    # ENV = 'development'
     DEBUG = True
 
 
 class FlaskTestingConfig(FlaskConfig):
-    # ENV = 'testing'
     TESTING = True
 
 
 class FlaskProdConfig(FlaskConfig):
-    # ENV = 'production'
     DEBUG = False
 
 
@@ -133,8 +131,54 @@ app_config = {
     'production': FlaskProdConfig,
     'default': FlaskDevConfig,
 }
+
 app_config = app_config[os.getenv('APP_CONFIG') or 'default']()
 
 # print("CONFIG>>>", os.getenv('APP_CONFIG'))
 # print("DB_URL>>>", db_config.DATABASE_URL)
 # print("UPLOAD_FOLDER>>>", project_config.UPLOAD_FOLDER)
+
+
+if os.getenv('APP_CONFIG') == 'production':
+    # Prod 환경일때만, 로깅 폴더 만들고 적용하기
+    # 1) Prod에서 로그폴더 자동 생성
+    LOG_FOLDER = os.path.join(BASE_FOLDER, 'logs/')
+    if not os.path.exists(LOG_FOLDER):
+        os.mkdir(LOG_FOLDER)
+
+    # 1) logging 설정
+    dictConfig({
+        'version': 1, # 1 고정값 사용. 버전무관하게 만들어주는 안전장치
+        'formatters': {
+            # 출력형식 : 현재시간 / 로그레벨 / 로그호출 모듈명 / 출력내용
+            'default': {
+                'format': '[%(asctime)s] %(levelname)s in %(module)s: %(message)s',
+            }
+        },
+        'handlers': {
+            # 출력 방법 -> file로
+            'file': {
+                # 출력 로그 레벨 설정: 그 이상 레벨을 다 출력한다. (DEBUG < INFO < WARNING < ERROR < CRITICAL)
+                # => logging.debug, logging.info, logging.warning, logging.error, logging.critical 함수 중 logging.debug는 출력안될 것이다.
+                # - 1단계 DEBUG: 디버깅 목적으로 사용
+                # - 2단계 INFO: 일반 정보를 출력할 목적으로 사용
+                # - 3단계 WARNING: 경고 정보를 출력할 목적으로(작은 문제) 사용
+                # - 4단계 ERROR: 오류 정보를 출력할 목적으로(큰 문제) 사용
+                # - 5단계 CRITICAL: 아주 심각한 문제를 출력할 목적으로 사용
+                'level': 'INFO',
+                # 로그핸들러 class지정.
+                # - RotatingFileHandler는 파일크기가 설정한 값보다 커지면 파일 뒤에 인덱스를 붙여 백업. RotatingFileHandler의 장점은 로그가 무한히 생겨도 파일 개수를 일정하게 유지(rolling)하므로 "로그 파일이 너무 커져서 디스크가 꽉 차는 위험"을 방지
+                'class': 'logging.handlers.RotatingFileHandler',
+                'filename': os.path.join(LOG_FOLDER, f'{project_config.PROJECT_NAME}.log'),
+                'maxBytes': 1024 * 1024 * 5,  # 5 MB
+                # maxBytes을 넘어설 때 최대 만들 로그파일 갯수.
+                'backupCount': 5,
+                'formatter': 'default',
+            },
+        },
+        # 최상위 로거 설정
+        'root': {
+            'level': 'INFO',
+            'handlers': ['file']
+        }
+    })

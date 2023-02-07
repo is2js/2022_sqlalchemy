@@ -1,5 +1,6 @@
 #!/bin/bash
 
+#### uwsgi, gunicorn 사용 전까지, 직접 환경변수 입력용 sh
 # 프로젝트 폴더로 이동
 cd ~/projects/sqlalchemy
 

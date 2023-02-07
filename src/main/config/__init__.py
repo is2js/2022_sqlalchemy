@@ -33,7 +33,6 @@ def create_app(config_name='default'):
     app = Flask(__name__,
                 template_folder=template_dir,
                 static_folder=static_dir,
-                instance_relative_config=True
                 )
 
     ## db환경변수를 개별로 넣지않고 config object로 넣는다.
@@ -130,6 +129,6 @@ def render_error(e):
     # print(e.description) # The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
 
     return render_template(
-        'errors/404.html',
+        'errors/http_errors.html',
         status_code=e.code,
         description=e.description), e.code
