@@ -14,6 +14,9 @@ main_bp = Blueprint("main", __name__, url_prefix='/main')
 
 @main_bp.route("/")
 def index():
+    # 예상치못한 not http error
+    3/0 # 강제 에러 발생
+    
     # post_list = [1, 2, 3, 4, 5, 6]
     page = request.args.get('page', 1, type=int)
 
