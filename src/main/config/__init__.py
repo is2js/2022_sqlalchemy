@@ -31,13 +31,15 @@ def create_app(config_name):
 
     app = Flask(__name__,
                 template_folder=template_dir,
-                static_folder=static_dir)
+                static_folder=static_dir,
+                instance_relative_config=True
+                )
 
     ## db환경변수를 개별로 넣지않고 config object로 넣는다.
     # app.config["SECRET_KEY"] = app_config.SECRET_KEY
     # app_config.init_app(app)
     app.config.from_object(app_config)
-    # print(app.config)
+    print(app.config)
 
     ## extension객체들로 app객체 초기화
     CORS(app)

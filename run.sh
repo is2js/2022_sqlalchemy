@@ -3,9 +3,11 @@
 # 프로젝트 폴더로 이동
 cd ~/projects/sqlalchemy
 
-export FLASK_APP=manage.py
+# development / testing / production / default
 export APP_CONFIG=production
+export FLASK_APP=manage.py
 
+export FLASK_ENV=$APP_CONFIG
 export FLASK_RUN_HOST=0.0.0.0
 export FLASK_RUN_PORT=5000
 

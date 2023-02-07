@@ -113,15 +113,17 @@ class FlaskConfig:
 
 
 class FlaskDevConfig(FlaskConfig):
-    DEBUG = True  # flask run의 운영환경과 별개
+    # ENV = 'development'
+    DEBUG = True
 
 
 class FlaskTestingConfig(FlaskConfig):
+    # ENV = 'testing'
     TESTING = True
 
 
 class FlaskProdConfig(FlaskConfig):
-    ENV = 'production'
+    # ENV = 'production'
     DEBUG = False
 
 
