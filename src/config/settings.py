@@ -53,16 +53,15 @@ class DB:
 
 
 class DBDevConfig(DB):
-    DATABASE_URL = os.environ.get('DEV_DATABASE_URL') or \
-                   'sqlite:///' + os.path.join(BASE_FOLDER, f'{os.getenv("DB_NAME") or "data"}-dev.db')
+    DATABASE_URL = 'sqlite:///' + os.path.join(BASE_FOLDER, f'{os.getenv("DB_NAME") or "data"}-dev.db')
 
 
 class DBTestingConfig(DB):
-    DATABASE_URL = os.environ.get('TEST_DATABASE_URL') or \
-                   'sqlite:///:memory:'
+    DATABASE_URL = 'sqlite:///:memory:'
 
 
 class DBProductionConfig(DB):
+    # .env 파일에 DB_CONNECTION 여부가 sqlite vs RDB를 결정한다.
     if os.getenv("DB_CONNECTION"):
         DB_CONNECTION = os.getenv("DB_CONNECTION").lower()
         DB_USER: str = os.getenv("DB_USER", "root")

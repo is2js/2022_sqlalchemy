@@ -21,8 +21,8 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
-from infra.config.base import Base
-from infra.entities import *
+from src.infra.config.base import Base
+from src.infra.entities import *
 # target_metadata = None
 target_metadata = Base.metadata
 
