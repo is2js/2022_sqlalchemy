@@ -379,7 +379,7 @@
 
 {% block vue_script %}
 <script>
-    app._data.selectedColor = "{{ form.theme_color.data or '#ffffff'}}"
+    app._data.selectedColor = "{{ form.theme_color.data or '#7957d5'}}"
     // app._data.date = "{{ form.start_date.data}}"
     // db string to front date
     app._data.date = new Date("{{ form.start_date.data or today_date() }}")
