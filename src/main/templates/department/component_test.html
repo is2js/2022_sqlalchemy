@@ -212,7 +212,7 @@
                                     {$ dept.name $}
                                     <span class="has-text-weight-light ml-1"
                                           :class="dept.id !== idOfSelectedDept ? 'has-text-grey' : 'has-text-white'"
-                                          >
+                                    >
                                             <small>{$ getDeptCategory(dept) $}</small>
                                     </span>
                                 </span>
@@ -858,7 +858,7 @@
                         this.selectedDept = dept;
 
                         // 선택된 부서가 1인 부서라면, 부서장 체크하기
-                        if (this.selectedDept.type === 0){
+                        if (this.selectedDept.type === 0) {
                             this.asLeader = true;
                         } else {
                             this.asLeader = false;
@@ -1336,6 +1336,10 @@
                         } else {
                             //2) 리더 해임
                             this.selectedDept.leader = null;
+                            // [부서 삭제시 검증은 .has_direct_leader]로 한다
+                            // => 부서 추가시에 this.selectedDept.has_direct_leader = true;를 한다
+                            // => 부서장 해임시 false를 해줘야, 부서 삭제 등 부서관리 레벨에서 확인할 수 있다.
+                            this.selectedDept.has_direct_leader = false;
                         }
 
 
@@ -1357,9 +1361,9 @@
                 },
 
 
-                changeJobStatus(emp, target_status){
+                changeJobStatus(emp, target_status) {
                     let job_status = 1;
-                    if (target_status === '휴직' ) {
+                    if (target_status === '휴직') {
                         job_status = 2;
                     }
 
@@ -1406,16 +1410,21 @@
 
                 },
 
-                getDeptCategory(dept){
-                    if (dept.type === 0){
+                getDeptCategory(dept) {
+                    if (dept.type === 0) {
                         return '1인 부서'
-                    } else if (1 <= dept.type <= 3 ){
+                    } else if (1 <= dept.type <= 3) {
                         return '행정 부서'
-                    } else if (4 <= dept.type <= 7 ){
+                    } else if (4 <= dept.type <= 7) {
                         return '의료관련 부서'
-                    } else if (8 <= dept.type ){
+                    } else if (8 <= dept.type) {
                         return '연구관련 부서'
                     }
+                },
+
+                deptRemoved(tree) {
+                    this.depts = tree.getPureData();
+                    // this.$emit('changed');
                 },
 
                 collapseAll: function () {
@@ -1440,6 +1449,7 @@
                     });
                 },
             },
+
 
             computed: {
                 idOfSelectedDept() {

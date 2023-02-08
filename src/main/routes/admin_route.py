@@ -172,7 +172,7 @@ def index():
 
         #### < 2-1 일주일 user 수>
         user_chart = get_user_chart(db)
-        print("user_chart", user_chart)
+        # print("user_chart", user_chart)
         # <2-2-2 user 성별 piechart > 아직 성별칼럼이 없으니 직원수 vs 일반 유저로 비교해보자.
         user_sex_pie_chart = get_pie_chart(db, User, 'sex', condition=User.sex != SexType.미정)
 
@@ -216,13 +216,13 @@ def index():
 def get_user_chart(db):
     user_x_datas, user_y_datas = get_datas_count_by_date(db, User, 'add_date', interval='day', period=7)
     #
-    print("user_x_datas, user_y_datas" , user_x_datas, user_y_datas)
+    # print("user_x_datas, user_y_datas" , user_x_datas, user_y_datas)
     user_chart = (
         Bar()
         .add_xaxis(user_x_datas)
         .add_yaxis('유저 수', user_y_datas)
     )
-    print('user_chart  >> ', user_chart)
+    # print('user_chart  >> ', user_chart)
 
     return user_chart
 
