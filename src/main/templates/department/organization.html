@@ -86,7 +86,7 @@
                 <!-- root에서는 상사 leader가 없을 수 있기 때문에 조건문 걸어줘야 한다. -->
                 <figure class="image is-inline-block py-0 " style="height: 40px; width: 40px;margin-right: -2px;">
                     <img class="is-rounded has-background-white" style="height: 40px; width: 100%;"
-                         :src="item.leader ? '../uploads/'+item.leader.avatar : '/static/img/user/default_avatar.svg'"
+                         :src="item.leader && item.leader.avatar ? '../uploads/'+item.leader.avatar : '/static/img/user/default_avatar.svg'"
                          :alt="item.leader ? item.leader.name : ''">
                 </figure>
 

@@ -33,7 +33,7 @@
     <!-- settings -> 테마색 적용하기  -->
     {% block extra_head_style %}{% endblock extra_head_style %}
     <style>
-        .navbar-item .is-primary, /* 닉네임 표시 or (회원가입)  */
+        .navbar-item .is-theme, /* 닉네임 표시 or (회원가입)  */
         .navbar-start > a:hover, /* 상단메뉴 hover  */
         .navbar-start > a.navbar-item.has-text-primary {
         /* 상단메뉴 active  */
@@ -121,20 +121,21 @@
 
                             <div class="buttons">
                                 <!-- 닉네임 + 내 정보-->
-                                <a class="button is-primary"
+                                <a class="button is-small is-light is-theme p-1"
                                    href="{{ url_for('auth.userinfo') }}"
                                 >
                                     {{g.user['username']}}님 정보
                                 </a>
                                 <!-- 직원이상이라면 admin 추가 -->
                                 {% if g.user.is_staff %}
-                                <a class="button is-success"
+                                <a class="button is-small is-success p-1"
                                    href="{{ url_for('admin.index') }}">
                                     Admin
                                 </a>
                                 {% endif %}
                                 <!-- 로그아웃 -->
-                                <a class="button is-danger" href="{{ url_for('auth.logout')}}">
+                                <a class="button is-small is-danger p-1"
+                                   href="{{ url_for('auth.logout')}}">
                                     로그아웃
                                 </a>
                             </div>
