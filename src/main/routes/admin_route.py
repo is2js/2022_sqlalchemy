@@ -255,7 +255,7 @@ def get_datas_count_by_date(db, entity, date_column_name, interval='day', period
     ## 만약, today() 2022-11-29를   2022-11-29 13:00:00 datetime필드로 필터링하면
     ##  오늘에 해당 데이터가 안걸린다. 데이터를 일단 변환하고 필터링에 넣어야한다.
     # select(func.date(User.add_date).label('date'), func.count(User.id).label('count')) \
-    values = count_by_date_subquery(interval, entity, date_column_name, end_date, start_date)
+    values = count_by_date_subquery(db, interval, entity, date_column_name, end_date, start_date)
 
     # print(db.session.execute(values.select()).all())
 
@@ -294,7 +294,7 @@ def get_datas_count_by_date(db, entity, date_column_name, interval='day', period
     return x_datas, y_datas
 
 
-def count_by_date_subquery(interval, entity, date_column_name, end_date, start_date):
+def count_by_date_subquery(db, interval, entity, date_column_name, end_date, start_date):
     if interval == 'day':
         strftime_format = '%Y-%m-%d'
     elif interval == 'month':
@@ -304,9 +304,14 @@ def count_by_date_subquery(interval, entity, date_column_name, end_date, start_d
     else:
         raise ValueError('invalid aggregation interval(string, day or month or year) & period=int')
 
-    return (
-        select(func.strftime(strftime_format, getattr(entity, date_column_name)).label('date'),
+    if isinstance(db.session.bind.dialect, postgresql.dialect):
+        select_stmt = select(func.strftime(strftime_format, getattr(entity, date_column_name)).label('date'),
                func.count(entity.id).label('count'))
+    else:
+        select_stmt = select(func.to_char(getattr(entity, date_column_name), strftime_format).label('date'),
+               func.count(entity.id).label('count'))
+    return (
+        select_stmt
         .where(and_(
             start_date <= func.date(getattr(entity, date_column_name)),
             func.date(getattr(entity, date_column_name)) <= end_date)
