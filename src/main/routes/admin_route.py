@@ -10,6 +10,7 @@ from pyecharts import options as opts
 from pyecharts.charts import Bar, Line, Pie, Tab
 from sqlalchemy import select, delete, func, text, literal_column, column, literal, and_, extract, distinct, cast, \
     Integer, exists
+from sqlalchemy.dialects import postgresql, mysql, sqlite
 from sqlalchemy.orm import joinedload
 from werkzeug.security import generate_password_hash
 
@@ -241,7 +242,7 @@ def get_datas_count_by_date(db, entity, date_column_name, interval='day', period
     else:
         raise ValueError('invalid aggregation interval(string, day or month or year) & period=int')
 
-    series = generate_series_subquery(start_date, end_date, interval=interval)
+    series = generate_series_subquery(db, start_date, end_date, interval=interval)
 
     ### subquery를 확인시에는 .select()로 만들어서 .all()후 출력
     # print(db.session.execute(series.select()).all())
@@ -315,7 +316,7 @@ def count_by_date_subquery(interval, entity, date_column_name, end_date, start_d
     )
 
 
-def generate_series_subquery(start_date, end_date, interval='day'):
+def generate_series_subquery(db, start_date, end_date, interval='day'):
     if interval == 'day':
         strftime_format = '%Y-%m-%d'
     if interval == 'month':
@@ -324,20 +325,55 @@ def generate_series_subquery(start_date, end_date, interval='day'):
         strftime_format = '%Y'
 
     # select date form dates담에 ;를 넘으면 outer join시 에러
-    _text = text(f"""
-        WITH RECURSIVE dates(date) AS (
-              VALUES (:start_date)
-          UNION ALL
-              SELECT date(date, '+1 {interval}')
-              FROM dates
-              WHERE date < :end_date
+    # stmt = f"""
+    #         WITH RECURSIVE dates(date) AS (
+    #               VALUES (:start_date)
+    #           UNION ALL
+    #               SELECT date(date, '+1 {interval}')
+    #               FROM dates
+    #               WHERE date < :end_date
+    #         )
+    #         SELECT strftime('{strftime_format}', date) AS 'date' FROM dates
+    #         """
+    # sqlite_select_date = f"SELECT date(date, '+1 {interval}')"
+    # postgresql_select_date = f"SELECT date + interval '1 {interval}s"
+    # mysql_select_date = f"SELECT date + interval 1 {interval}"
+    #
+    # # sqlite_to_char = f"strftime('{strftime_format}', date)"
+    if isinstance(db.session.bind.dialect, sqlite.dialect):
+        # select_date = select(func.dateadd(func.now(),  text('interval 1 day')).label('date')).compile(dialect=sqlite.dialect())
+        select_date = f"SELECT date(date, '+1 {interval}')"
+        to_char = f"strftime('{strftime_format}', date)"
+    elif isinstance(db.session.bind.dialect, postgresql.dialect):
+        select_date = f"SELECT date + interval '1 {interval}s"
+        to_char = f"to_char(date, '{strftime_format}')"
+    elif isinstance(db.session.bind.dialect, mysql.dialect):
+        select_date =  f"SELECT date + interval 1 {interval}"
+        to_char = f"DATE_FORMAT(date, '{strftime_format}')"
+    else:
+        raise NotImplementedError(
+            'Not implemented for this dialect'
         )
-        SELECT strftime('{strftime_format}', date) AS date FROM dates
-        """).bindparams(start_date=to_string_date(start_date), end_date=to_string_date(end_date))
-    # SELECT strftime('{strftime_format}', date) AS 'date' FROM dates
 
-    # func.to_char(orig_datetime, 'YYYY-MM-DD HH24:MI:SS
-    # SELECT strftime('%Y', date) FROM dates
+
+    stmt = f"""
+            WITH RECURSIVE dates(date) AS (
+                  VALUES (:start_date)
+              UNION ALL
+                  {select_date}
+                  FROM dates
+                  WHERE date < :end_date
+            )
+            SELECT {to_char} AS 'date' FROM dates
+            """
+    _text = text(
+        stmt
+    ).bindparams(start_date=to_string_date(start_date), end_date=to_string_date(end_date))
+
+
+
+    # func.to_char(orig_datetime, 'YYYY-MM-DD HH24:MI:SS) - psql
+    # SELECT strftime('%Y', date) FROM dates - sqlite
 
     # with DBConnectionHandler() as db:
     #     print(db.session.execute(stmt.columns(column('date')).label('date')).subquery('series').select()).all())
