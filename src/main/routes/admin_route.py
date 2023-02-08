@@ -345,7 +345,7 @@ def generate_series_subquery(db, start_date, end_date, interval='day'):
         select_date = f"SELECT date(date, '+1 {interval}')"
         to_char = f"strftime('{strftime_format}', date)"
     elif isinstance(db.session.bind.dialect, postgresql.dialect):
-        select_date = f"SELECT date + interval '1 {interval}s"
+        select_date = f"SELECT date + interval '1 {interval}s'"
         to_char = f"to_char(date, '{strftime_format}')"
     elif isinstance(db.session.bind.dialect, mysql.dialect):
         select_date =  f"SELECT date + interval 1 {interval}"
