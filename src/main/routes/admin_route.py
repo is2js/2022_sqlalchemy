@@ -342,14 +342,14 @@ def generate_series_subquery(db, start_date, end_date, interval='day'):
     # # sqlite_to_char = f"strftime('{strftime_format}', date)"
     if isinstance(db.session.bind.dialect, sqlite.dialect):
         # select_date = select(func.dateadd(func.now(),  text('interval 1 day')).label('date')).compile(dialect=sqlite.dialect())
-        select_date = f"SELECT date(date, '+1 {interval}')"
+        select_date = f"SELECT date(date, '+1 {interval}')  AS 'date'"
         to_char = f"strftime('{strftime_format}', date)"
     elif isinstance(db.session.bind.dialect, postgresql.dialect):
-        select_date = f"SELECT date + interval '1 {interval}s'"
+        select_date = f"SELECT date + interval '1 {interval}s' AS date" # postgre는 '단일따옴표 안붙인다.
         to_char = f"to_char(date, '{strftime_format}')"
     elif isinstance(db.session.bind.dialect, mysql.dialect):
         select_date =  f"SELECT date + interval 1 {interval}"
-        to_char = f"DATE_FORMAT(date, '{strftime_format}')"
+        to_char = f"DATE_FORMAT(date, '{strftime_format}')  AS 'date'"
     else:
         raise NotImplementedError(
             'Not implemented for this dialect'
@@ -364,7 +364,7 @@ def generate_series_subquery(db, start_date, end_date, interval='day'):
                   FROM dates
                   WHERE date < :end_date
             )
-            SELECT {to_char} AS 'date' FROM dates
+            SELECT {to_char} FROM dates
             """
     _text = text(
         stmt
