@@ -367,7 +367,9 @@ def generate_series_subquery(db, start_date, end_date, interval='day'):
             
             SELECT {to_char} FROM dates
             """
-    stmt = f"""select to_char(generate_series, 'yyyy-MM-dd') as date form generate_series(:start_date::DATE, :end_date::DATE, '1 {interval}'::INTERVAL)"""
+    stmt = f"""
+    select to_char(generate_series, 'yyyy-MM-dd') as date form generate_series({to_string_date(start_date)}::DATE, {to_string_date(start_date)}::DATE, '1 {interval}'::INTERVAL)
+    """
     _text = text(
         stmt
     ).bindparams(start_date=to_string_date(start_date), end_date=to_string_date(end_date))
