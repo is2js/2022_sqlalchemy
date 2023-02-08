@@ -332,8 +332,10 @@ def generate_series_subquery(start_date, end_date, interval='day'):
               FROM dates
               WHERE date < :end_date
         )
-        SELECT strftime('{strftime_format}', date) AS 'date' FROM dates
+        SELECT strftime('{strftime_format}', date) AS date FROM dates
         """).bindparams(start_date=to_string_date(start_date), end_date=to_string_date(end_date))
+    # SELECT strftime('{strftime_format}', date) AS 'date' FROM dates
+
     # func.to_char(orig_datetime, 'YYYY-MM-DD HH24:MI:SS
     # SELECT strftime('%Y', date) FROM dates
 
