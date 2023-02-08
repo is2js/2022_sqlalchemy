@@ -345,7 +345,7 @@ def generate_series_subquery(db, start_date, end_date, interval='day'):
         select_date = f"SELECT date(date, '+1 {interval}')  AS 'date'"
         to_char = f"strftime('{strftime_format}', date)"
     elif isinstance(db.session.bind.dialect, postgresql.dialect):
-        select_date = f"SELECT to_date(coalesce(date, '2022-02-02'), , 'YYYY-MM-DD') + interval '1 {interval}s' AS date" # postgre는 '단일따옴표 안붙인다.
+        select_date = f"SELECT to_date(coalesce(date, '2022-02-02'), 'YYYY-MM-DD') + interval '1 {interval}s' AS date" # postgre는 '단일따옴표 안붙인다.
         to_char = f"TO_CHAR(date, '{strftime_format}')"
     elif isinstance(db.session.bind.dialect, mysql.dialect):
         select_date =  f"SELECT date + interval 1 {interval}"
