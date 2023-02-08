@@ -305,9 +305,9 @@ def count_by_date_subquery(db, interval, entity, date_column_name, end_date, sta
         raise ValueError('invalid aggregation interval(string, day or month or year)  &  period=int')
 
     if isinstance(db.session.bind.dialect, postgresql.dialect):
-        select_stmt = func.strftime(strftime_format, getattr(entity, date_column_name)).label('date')
-    else:
         select_stmt = func.to_char(getattr(entity, date_column_name), strftime_format).label('date')
+    else:
+        select_stmt = func.strftime(strftime_format, getattr(entity, date_column_name)).label('date')
     return (
         select(select_stmt,
                func.count(entity.id).label('count'))
@@ -315,7 +315,7 @@ def count_by_date_subquery(db, interval, entity, date_column_name, end_date, sta
             start_date <= func.date(getattr(entity, date_column_name)),
             func.date(getattr(entity, date_column_name)) <= end_date)
         )
-        .group_by(func.strftime(strftime_format, getattr(entity, date_column_name)).label('date'))
+        .group_by(select_stmt)
         .subquery()
     )
 
