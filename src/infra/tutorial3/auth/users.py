@@ -546,7 +546,7 @@ class Employee(BaseModel):
 
     name = Column(String(40), nullable=False)
     sub_name = Column(String(40), nullable=False)
-    birth = Column(String(12), nullable=False)
+    birth = Column(String(13), nullable=False)
 
     # join_date = Column(Date, nullable=False)
     join_date = Column(Date, nullable=True)
