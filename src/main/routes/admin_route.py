@@ -302,7 +302,7 @@ def count_by_date_subquery(db, interval, entity, date_column_name, end_date, sta
     elif interval == 'year':
         strftime_format = '%Y'
     else:
-        raise ValueError('invalid aggregation interval(string, day or month or year) & period=int')
+        raise ValueError('invalid aggregation interval(string, day or month or year)  &  period=int')
 
     if isinstance(db.session.bind.dialect, postgresql.dialect):
         select_stmt = func.strftime(strftime_format, getattr(entity, date_column_name)).label('date')
