@@ -4,7 +4,7 @@
 <style>
     .carousel {
         display: grid;
-        grid-template-columns: auto 10%;
+        grid-template-columns: auto 13%;
         align-items: center;
         /*align-items: flex-start;*/
     }
@@ -61,16 +61,18 @@
                     >
                 </figure>
                 <div class="is-overlay is-flex mt-3 is-justify-content-center">
-                    <a :href="banner.url">
-                        <h1 class="is-size-4">{$ banner.desc $}</h1>
+                    <a :href="banner.url"
+                       class="mt-4 has-text-black"
+                    >
+                        <h1 class="is-size-5">{$ banner.desc $}</h1>
                     </a>
                 </div>
         </b-carousel-item>
         <template #indicators="props">
             <b-image class="al image" :src="getBannerImg(props.i)" :title="props.i"></b-image>
-<!--            <h1 class="is-size-7 has-text-centered" style="color:black;">-->
-<!--                {$ getBannerTitle(props.i) | truncate(15, '...') $}-->
-<!--            </h1>-->
+            <h1 class="is-size-7 has-text-centered has-text-weight-bold" style="color:black;">
+                {$ getBannerTitle(props.i) | truncate(10, '...') $}
+            </h1>
         </template>
     </b-carousel>
 </template>

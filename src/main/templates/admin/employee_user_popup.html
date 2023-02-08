@@ -7,7 +7,7 @@
                             {% if user.avatar %}
                              {{url_for('download_file', filename=user.avatar)}}
                              {% else %}
-                             {{url_for('static', filename='/img/user/default_avatar.svg')}}
+                             {{url_for('static', filename='img/user/default_avatar.svg')}}
                              {% endif %}
                             "
                      alt="{{ user.username }}">

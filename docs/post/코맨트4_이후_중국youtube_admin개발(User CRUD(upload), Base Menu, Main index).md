@@ -753,7 +753,7 @@ def user_edit(id):
    1. form안에 user객체가 들어가 잇는 수정form일 경우
       - figure+ img태그가 나오는데
         1. **form.user.avatar**를 이미 가지는 유저는 `{{url_for('download_file', filename=form.user.avatar)}}`
-        2. **else로 없는 경우는 `url('static', filename='/img/user/default_avatar.svg'`를 img태그의 src로**
+        2. **else로 없는 경우는 `url('static', filename='img/user/default_avatar.svg'`를 img태그의 src로**
 
    ```html
    {% if form.user %}
