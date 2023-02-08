@@ -1,5 +1,25 @@
 {% extends 'base.html' %}
 
+{% block extra_head_style %}
+<style>
+    .carousel {
+        display: grid;
+        grid-template-columns: auto 10%;
+        align-items: center;
+        /*align-items: flex-start;*/
+    }
+
+    .carousel-indicator {
+        flex-direction: column;
+    }
+
+    .indicator-item {
+        margin-right: initial !important;
+        padding: 5px;
+    }
+</style>
+{% endblock extra_head_style %}
+
 {% block hero %}
 <!-- backend에서 넘겨준 json을 div#banner_list + display:none;으로 banner_list를 받아본다-->
 <!--<div id="banner_list" style="display:none;">-->
@@ -25,23 +45,32 @@
     <!--        </b-carousel-item>-->
     <!--    </b-carousel>-->
 
-    <b-carousel :indicator-inside="false">
-        <b-carousel-item v-for="(banner, i) in banner_list" :key="i">
+    <b-carousel :indicator-inside="false"
+                :indicator-custom="true"
+                :indicator-custom-size="is-small"
+                :pause-hover="true"
+                :arrow="false"
+    >
+        <b-carousel-item v-for="(banner, i) in banner_list"
+                         :key="i"
+        >
             <!--            <b-image class="image is-16by9" :src="banner.img"> </b-image>-->
-            <a :href="banner.url">
                 <figure class="image is-16by9">
-                    <img :src="banner.img" alt="">
+                    <img :src="banner.img"
+                         alt=""
+                    >
                 </figure>
-<!--                <div class="is-overlay is-flex is-justify-content-center">-->
-<!--                    <h1 class="is-size-3">{$ banner.desc $}</h1>-->
-<!--                </div>-->
-            </a>
+                <div class="is-overlay is-flex mt-3 is-justify-content-center">
+                    <a :href="banner.url">
+                        <h1 class="is-size-4">{$ banner.desc $}</h1>
+                    </a>
+                </div>
         </b-carousel-item>
         <template #indicators="props">
             <b-image class="al image" :src="getBannerImg(props.i)" :title="props.i"></b-image>
-            <h1 class="is-size-6 has-text-centered" style="color:black;">
-                {$ getBannerTitle(props.i) | truncate(15, '...') $}
-            </h1>
+<!--            <h1 class="is-size-7 has-text-centered" style="color:black;">-->
+<!--                {$ getBannerTitle(props.i) | truncate(15, '...') $}-->
+<!--            </h1>-->
         </template>
     </b-carousel>
 </template>

@@ -59,8 +59,9 @@
                             <figure class="image  py-0 m-0" style="height: 32px; width: 128px;">
 
                                 <img class="" style="min-height: 32px; width: 100%;"
-                                     src="{{ url_for('download_file', filename=settings.logo) }}"
+                                     src="{% if settings.logo %} {{url_for('download_file', filename=settings.logo) }} {% else %}/static/img/main/logo.png{% endif %}"
                                      alt="{{settings.site_name}}">
+
                             </figure>
                         </b-navbar-item>
                     </template>
@@ -502,7 +503,11 @@
                 return `${this.banner_list[value].img}`
             },
             getBannerTitle(value) {
-                return `${this.banner_list[value].desc}`
+                if (this.banner_list[value].desc) {
+                    return `${this.banner_list[value].desc}`
+                } else {
+                    return `배너-${value}`
+                }
             },
 
             convertDateYyyymmdd(value) {
