@@ -6,9 +6,13 @@ __pycache__
 #migrations
 
 *.db
+*.json
 
+!uploads/
 uploads/*
 
 logs
+!alembic/versions/
 alembic/versions/*
+!migrations/versions/
 migrations/versions/*

@@ -76,9 +76,13 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        # 4. sqlite ALTER support를 안해주므로, sqlite인 경우 render_as_batch옵션이 들어가도록
+        render_as_batch = db_config.DATABASE_URL.startswith("sqlite")
+
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
+            render_as_batch=render_as_batch # 옵션 주어서 실행
         )
 
         with context.begin_transaction():

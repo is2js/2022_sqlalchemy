@@ -6,7 +6,8 @@ from src.infra.config.connection import DBConnectionHandler
 
 # class Setting(BaseModel):
 class Setting(Base):
-    __tablename__ = 'settings1'
+    # __tablename__ = 'settings1'
+    __tablename__ = 'settings'
 
     # id = Column(Integer, primary_key=True)
     id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
