@@ -3,10 +3,12 @@ venv
 .idea
 *.pyc
 __pycache__
-migrations
+#migrations
 
 *.db
-tutorial3-dev.db
+
+uploads/*
 
 logs
 alembic/versions/*
+migrations/versions/*

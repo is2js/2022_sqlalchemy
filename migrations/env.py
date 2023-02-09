@@ -79,8 +79,6 @@ def run_migrations_online() -> None:
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
-            # 3. 온라인일 때 타입비교까지 넣어주기
-            # compare_type=True
         )
 
         with context.begin_transaction():
