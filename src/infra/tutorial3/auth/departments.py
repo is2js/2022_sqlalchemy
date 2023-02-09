@@ -339,7 +339,7 @@ class Department(BaseModel):
         with DBConnectionHandler() as db:
             dep = db.session.scalars(
                 select(cls)
-                .where(cls.status == 1)
+                .where(cls.status)
                 .where(cls.name == name)
             ).first()
             return dep
@@ -349,7 +349,7 @@ class Department(BaseModel):
         with DBConnectionHandler() as db:
             dep = db.session.scalars(
                 select(cls)
-                .where(cls.status == 1)
+                .where(cls.status)
                 .where(cls.id == id)
             ).first()
             return dep
@@ -359,7 +359,7 @@ class Department(BaseModel):
         with DBConnectionHandler() as db:
             depts = db.session.scalars(
                 select(cls)
-                .where(cls.status == 1)
+                .where(cls.status)
                 .order_by(cls.path)
             ).all()
             return depts
@@ -369,7 +369,7 @@ class Department(BaseModel):
         with DBConnectionHandler() as db:
             depts = db.session.scalars(
                 select(cls)
-                .where(cls.status == 1)
+                .where(cls.status)
                 .order_by(cls.path)
             ).all()
             return [(x.id, x.name) for x in depts]
@@ -379,7 +379,7 @@ class Department(BaseModel):
         with DBConnectionHandler() as db:
             depts = db.session.scalars(
                 select(cls)
-                .where(cls.status == 1)
+                .where(cls.status)
                 .order_by(cls.path)
             ).all()
             return [{'id': x.id, 'name': x.name} for x in depts]
@@ -394,7 +394,7 @@ class Department(BaseModel):
                 .order_by(cls.path)  # view에선 sort순이 중요함.
             )
             if not with_inactive:
-                stmt = stmt.where(cls.status == 1)
+                stmt = stmt.where(cls.status)
 
             return db.session.scalars(stmt).all()
 
