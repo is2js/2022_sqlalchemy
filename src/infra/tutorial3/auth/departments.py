@@ -452,7 +452,7 @@ class Department(BaseModel):
                 select(Department)
                 .where(with_parent(self, Department.children))
                 # 활성화된 메뉴만
-                .where(Department.status == 1)
+                .where(Department.status)
                 # 나의 자식들이 나오는데, 같은 level의 부서들이 나오므로 -> 정렬은 path순으로 하자.
                 .order_by(Department.path)
             )

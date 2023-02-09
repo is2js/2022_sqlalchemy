@@ -686,7 +686,7 @@ if __name__ == '__main__':
         .where(EmployeeDepartment.dismissal_date.is_(None))
         .where(EmployeeDepartment.employee_id == 직원_병원장.id)
         .join(EmployeeDepartment.department)
-        .where(Department.status == 1)
+        .where(Department.status)
     )
     print(session.execute(stmt).all())
     # [('병원장', '병원장'), ('진료부', '진료부장'), ('한방진료실', '대표원장')]

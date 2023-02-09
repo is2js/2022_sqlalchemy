@@ -989,7 +989,8 @@ class Employee(BaseModel):
                 .where(EmployeeDepartment.employee_id == self.id)
                 # dept name정보 + 부서 active필터링를 위해 join
                 .join(EmployeeDepartment.department)
-                .where(Department.status == 1)
+                # .where(Department.status == 1) # postgre는 Boolean필드에 대해서 boolean으로만 비교한다.
+                .where(Department.status)
                 # level순으로 정렬하기 위해, path로 정렬
                 .order_by(Department.path, EmployeeDepartment.is_leader.desc())
             )
@@ -1037,7 +1038,7 @@ class Employee(BaseModel):
                 .where(EmployeeDepartment.department_id == dept_id)
                 # dept name정보 + 부서 active필터링를 위해 join
                 .join(EmployeeDepartment.department)
-                .where(Department.status == 1)
+                .where(Department.status)
             )
             position = db.session.scalar(stmt)
             return position if position else '(공석)'
