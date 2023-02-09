@@ -9,3 +9,4 @@ migrations
 tutorial3-dev.db
 
 logs
+alembic/versions/*
