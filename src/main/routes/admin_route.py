@@ -9,7 +9,7 @@ from flask import Blueprint, render_template, request, flash, redirect, url_for,
 from pyecharts import options as opts
 from pyecharts.charts import Bar, Line, Pie, Tab
 from sqlalchemy import select, delete, func, text, literal_column, column, literal, and_, extract, distinct, cast, \
-    Integer, exists
+    Integer, exists, or_
 from sqlalchemy.dialects import postgresql, mysql, sqlite
 from sqlalchemy.orm import joinedload
 from werkzeug.security import generate_password_hash
@@ -32,17 +32,21 @@ def to_string_date(last_month):
     return datetime.strftime(last_month, '%Y-%m-%d')
 
 
-def get_pie_chart(db, entity, category_column_name, condition=None):
+def get_pie_chart(db, entity, category_column_name, conditions=None):
     # 1) sql을 groupby에 카테고리를 올리고, 갯수를 센다
     # -> group_by 집계시에는 label을 못단다?
     # [(False, 2), (True, 2)]
     stmt = select(getattr(entity, category_column_name), func.count(entity.id)).group_by(
         getattr(entity, category_column_name))
-    if condition:
-        stmt = stmt.where(condition)
+
+    if conditions:
+        stmt = apply_dynamic_filter(conditions, stmt, entity)
     datas = db.session.execute(
         stmt
     ).all()
+
+    # print(f'{entity} datas in get_pie_chart  >> ', datas)
+    # 유저가 없을 경우 => []
 
     # print(datas)
     # [(False, 2), (True, 2)]
@@ -64,21 +68,31 @@ def get_pie_chart(db, entity, category_column_name, condition=None):
     datas = list(map(lambda x: (SexType(x[0]).name, x[1]), datas))
     # print(datas)
 
-    # 3) pie차트는 [ (category, count) ] tuple list를 입력으로 받는다.
+    # 3) pie차트는 [ (category1, count1) , (category2, count2)] tuple list를 입력으로 받는다.
     #### 빈 datas면.. range error가 나서.. if문 걸어줌.
     if datas:
+        # print(datas)
+        # [('남자', 8), ('여자', 13)]
         c = (
             Pie()
             .add("", datas)
-            .set_series_opts(label_opts=opts.LabelOpts(formatter="{b}({d}%)"))
+            .set_series_opts(label_opts=opts.LabelOpts(
+                formatter="{b}({d}%)"))  # {b}: 튜플[0] 카테고리명 /  {d} => 현재 튜플[1] count / 전체 튜플[1]의 합 => 다 0일 때, 0/0으로 undefined됨.
             .set_global_opts(legend_opts=opts.LegendOpts(pos_left=True, orient='vertical'))
         )
         return c
     else:
-        return None
+        # 데이터가 없는 경우에도, 차트는 만들어야 한다. [('미정'or'남자'or'여자'), count)]가 만들어져야한다.
+        c = (
+            Pie()
+            .add("", [(sex_type.name, 0) for sex_type in SexType])  # enum을 순회하면서 count는 다 0으로
+            .set_series_opts(label_opts=opts.LabelOpts(formatter="{b}"))  # format에서 {d}( 현재/전체 비율 -> 전체 0이므로 {d} 표기 제거)
+            .set_global_opts(legend_opts=opts.LegendOpts(pos_left=True, orient='vertical'))
+        )
+        return c
 
 
-def get_diff_for(db, entity, interval='day', period=7, condition=None):
+def get_diff_for(db, entity, interval='day', period=7, conditions=None):
     if period < 2:
         raise ValueError('최소 1단위 전과 비교하려면, period는 2 이상이어야합니다.')
     end_date = date.today()
@@ -92,15 +106,17 @@ def get_diff_for(db, entity, interval='day', period=7, condition=None):
         raise ValueError('invalid aggregation interval(string, day or month or year) & period=int')
 
     end_stmt = select(func.count(entity.id)).where(and_(func.date(getattr(entity, 'add_date')) <= end_date))
-    if condition:
-        end_stmt = end_stmt.where(condition)
+    if conditions:
+        end_stmt = apply_dynamic_filter(conditions, end_stmt, entity)
+
     end_count = db.session.scalar(
         end_stmt
     )
 
     srt_stmt = select(func.count(entity.id)).where(and_(func.date(getattr(entity, 'add_date')) <= start_date))
-    if condition:
-        srt_stmt = srt_stmt.where(condition)
+    if conditions:
+        srt_stmt = apply_dynamic_filter(conditions, srt_stmt, entity)
+
     start_count = db.session.scalar(
         srt_stmt
     )
@@ -108,11 +124,55 @@ def get_diff_for(db, entity, interval='day', period=7, condition=None):
     diff = end_count - start_count
     # start가 zero division
     try:
+
         rate_of_increase = round((end_count - start_count) / start_count * 100, 2)
+        print(f'{entity} TRY rate_of_increase  >> ', rate_of_increase)
     except:
         rate_of_increase = round(end_count * 100, 2)
+        print(f'{entity} EXCEPT rate_of_increase  >> ', rate_of_increase)
+        print('end_count  >> ', end_count)
+
     # print(rate_of_increase)
     return diff, rate_of_increase
+
+
+def apply_dynamic_filter(conditions, stmt, entity):
+    for raw in conditions:
+        try:
+            column_name, op, value = raw
+        except:
+            raise Exception(f'Invalid filter {raw}')
+
+        column = getattr(entity, column_name, None)
+
+        if not column:
+            raise Exception(f'Invalid column name {column_name}')
+
+        if op == 'in':
+            if isinstance(value, list):
+                my_filter = column.in_(value)
+            else:
+                my_filter = column.in_(value.split(','))
+        else:
+            # >>> hasattr(User.is_staff, 'eq')
+            # False
+            # >>> hasattr(User.is_staff, 'eq_')
+            # False
+            # >>> hasattr(User.is_staff, '__eq__')
+            # True
+            try:
+                # [op, f'{op}_', f'__{op}__'] # 3개 연산자 중에 1개라도 column이 들고 있으면, 그놈 중 첫번재 아무거나
+                # => list( filter(lambda x: , 배열)) 로 true것들만 골라낸 뒤, 첫번째만
+                op = list(filter(lambda x: hasattr(column, x), [op, f'{op}_', f'__{op}__']))[0]
+            except IndexError:
+                raise Exception(f'Invalid operator {op}')
+
+            if value == 'null':
+                value = None
+            # User.is_staff.__eq__( value )
+            my_filter = getattr(column, op)(value)
+        stmt = stmt.where(my_filter)
+    return stmt
 
 
 @admin_bp.route('/')
@@ -127,13 +187,27 @@ def index():
         banner_count = db.session.scalar(select(func.count(Banner.id)))
         banner_count_diff, banner_count_diff_rate = get_diff_for(db, Banner, interval='day', period=7)
         # 같은 User entity라서 condition= 옵션을 추가함.
+        # -> 관리자를 제외할 건데, 이미 직원미만만 카운팅
+        #### method를 통한 hybrid expression condition은 제대로 작동을 안하는 듯 하다.
+        # => 이미 Boolean으로 바뀌어서 들어가버린다.
+        from sqlalchemy import tuple_
         user_count = db.session.scalar(select(func.count(User.id)).where(~User.is_staff))
+
+        # getattr(User, 'is_staff')
+        # <sqlalchemy.orm.attributes.create_proxied_attribute.<locals>.Proxy object at 0x00000253012DF1A8>
         user_count_diff, user_count_diff_rate = get_diff_for(db, User, interval='day', period=7,
-                                                             condition=not User.is_staff,
+                                                             conditions=[('is_staff', 'eq', False)]
                                                              )
-        employee_count = db.session.scalar(select(func.count(User.id)).where(User.is_staff))
-        employee_count_diff, employee_count_diff_rate = get_diff_for(db, User, interval='day', period=7,
-                                                                     condition=User.is_staff,
+
+        # 직원 중에 재직+휴직(퇴사만 아니면) 카운터에 포함시킨다. + 관리자는 제외한다.
+        employee_count = db.session.scalar(
+            select(func.count(Employee.id))
+            .where(or_(Employee.is_active, Employee.is_leaved))
+            .where(not Employee.is_administrator)  # hybrid expression을 조건문에 걸땐, ~ 이 아닌 not으로 걸자.
+        )
+        # => 관리자 제외시킬 건데, is_admin==관리자이상 => and_()로 연결해서 필수제외조건으로 추가한다
+        employee_count_diff, employee_count_diff_rate = get_diff_for(db, Employee, interval='day', period=7,
+                                                                     conditions=[('is_administrator', 'eq', False)],
                                                                      )
 
         # 연결되어있는 것도  sql문으로하려면, 직접 where에 연결해줘야한다(꽁join 아니면)
@@ -169,20 +243,23 @@ def index():
             .group_by(Tag.id) \
             .order_by(literal_column('count').desc()) \
             .limit(3)
+
         tag_with_post_count = db.session.execute(stmt).all()
 
         #### < 2-1 일주일 user 수>
-        user_chart = get_user_chart(db)
+        user_chart = get_user_chart(db, conditions=[('is_administrator', 'eq', False)])
         # print("user_chart", user_chart)
         # <2-2-2 user 성별 piechart > 아직 성별칼럼이 없으니 직원수 vs 일반 유저로 비교해보자.
-        user_sex_pie_chart = get_pie_chart(db, User, 'sex', condition=User.sex != SexType.미정)
+        user_sex_pie_chart = get_pie_chart(db, User, 'sex', conditions=[('sex', 'ne', SexType.미정)])
 
         ### 만약, df로 만들거라면 row별로 dict()를 치면 row1당 column:value의 dict list가 된다.
         # print([dict(r) for r in db.session.execute(stmt)])
 
         #### < 월별 연간 통계 by pyerchart>
         year_x_datas, year_post_y_datas = get_datas_count_by_date(db, Post, 'add_date', interval='month', period=12)
-        _, year_user_y_datas = get_datas_count_by_date(db, User, 'add_date', interval='month', period=12)
+        _, year_user_y_datas = get_datas_count_by_date(db, User, 'add_date', interval='month', period=12,
+                                                       conditions=[('is_administrator', 'eq', False)]
+                                                       )
         _, year_category_y_datas = get_datas_count_by_date(db, Category, 'add_date', interval='month', period=12)
         _, year_banner_y_datas = get_datas_count_by_date(db, Banner, 'add_date', interval='month', period=12)
         _, year_tag_y_datas = get_datas_count_by_date(db, Tag, 'add_date', interval='month', period=12)
@@ -206,16 +283,16 @@ def index():
                            post_by_category=(post_by_category_x_datas, post_by_category_y_datas),
                            tag_with_post_count=tag_with_post_count,
 
-                           # user_count_bar_options=user_chart.dump_options(),
-                           # user_sex_pie_options=user_sex_pie_chart.dump_options(),
-                           # year_options=year_chart.dump_options(),
+                           user_count_bar_options=user_chart.dump_options(),
+                           user_sex_pie_options=user_sex_pie_chart.dump_options(),
+                           year_options=year_chart.dump_options(),
 
                            chart=[user_chart, user_sex_pie_chart]
                            )
 
 
-def get_user_chart(db):
-    user_x_datas, user_y_datas = get_datas_count_by_date(db, User, 'add_date', interval='day', period=7)
+def get_user_chart(db, conditions=None):
+    user_x_datas, user_y_datas = get_datas_count_by_date(db, User, 'add_date', interval='day', period=7, conditions=conditions)
     #
     # print("user_x_datas, user_y_datas" , user_x_datas, user_y_datas)
     user_chart = (
@@ -228,7 +305,7 @@ def get_user_chart(db):
     return user_chart
 
 
-def get_datas_count_by_date(db, entity, date_column_name, interval='day', period=7):
+def get_datas_count_by_date(db, entity, date_column_name, interval='day', period=7, conditions=None):
     if period < 2:
         raise ValueError('최소 1단위 전과 비교하려면, period는 2 이상이어야합니다.')
 
@@ -255,7 +332,8 @@ def get_datas_count_by_date(db, entity, date_column_name, interval='day', period
     ## 만약, today() 2022-11-29를   2022-11-29 13:00:00 datetime필드로 필터링하면
     ##  오늘에 해당 데이터가 안걸린다. 데이터를 일단 변환하고 필터링에 넣어야한다.
     # select(func.date(User.add_date).label('date'), func.count(User.id).label('count')) \
-    values = count_by_date_subquery(db, interval, entity, date_column_name, end_date, start_date)
+    values = count_by_date_subquery(db, interval, entity, date_column_name, end_date, start_date,
+                                    conditions=conditions)
 
     # print(db.session.execute(values.select()).all())
 
@@ -280,7 +358,7 @@ def get_datas_count_by_date(db, entity, date_column_name, interval='day', period
     for day, user_count in db.session.execute(stmt):
         x_datas.append(day)
         y_datas.append(user_count)
-    print('x_datas, y_datas  >> ', x_datas, y_datas)
+    # print('x_datas, y_datas  >> ', x_datas, y_datas)
 
     # 집계대상 필터링은 Y-m-d(date) -> group_by strftime으로 (day) or Y-m-d/(month)Y-m/(year)Y 상태
     # 이미 문자열로 Y-m-d  or Y-m  or Y 중 1개로 정해진 상태다. -> -로 split한 뒤 마지막거만 가져오면 interval 단위
@@ -294,7 +372,7 @@ def get_datas_count_by_date(db, entity, date_column_name, interval='day', period
     return x_datas, y_datas
 
 
-def count_by_date_subquery(db, interval, entity, date_column_name, end_date, start_date):
+def count_by_date_subquery(db, interval, entity, date_column_name, end_date, start_date, conditions=None):
     if interval == 'day':
         strftime_format = '%Y-%m-%d'
     elif interval == 'month':
@@ -308,17 +386,22 @@ def count_by_date_subquery(db, interval, entity, date_column_name, end_date, sta
         select_stmt = func.to_char(getattr(entity, date_column_name), strftime_format).label('date')
     else:
         select_stmt = func.strftime(strftime_format, getattr(entity, date_column_name)).label('date')
-    return (
-        select(select_stmt,
-               func.count(entity.id).label('count'))
+    stmt = (
+        select(select_stmt, func.count(entity.id).label('count'))
         .where(and_(
             start_date <= func.date(getattr(entity, date_column_name)),
             func.date(getattr(entity, date_column_name)) <= end_date)
-        )
+        ))
+
+    if conditions:
+        stmt = apply_dynamic_filter(conditions, stmt, entity)
+
+    return (
+        # 여기에도 카운팅할 때, 다이나믹 filter 적용되어야함
+        stmt
         .group_by(select_stmt)
         .subquery()
     )
-
 
 def generate_series_subquery(db, start_date, end_date, interval='day'):
     if interval == 'day':
@@ -348,9 +431,9 @@ def generate_series_subquery(db, start_date, end_date, interval='day'):
         # select_date = f"SELECT to_date(date, 'yyyy-MM-dd') + interval '1 {interval}s' AS date" # postgre는 '단일따옴표 안붙인다.
         # to_char = f"TO_CHAR(date, '{strftime_format}')"
         stmt = f"""
-        select to_char(generate_series, 'yyyy-MM-dd') as date 
-        from generate_series('{to_string_date(start_date).replace('-', '')}'::DATE, '{to_string_date(end_date).replace('-', '')}'::DATE, '1 {interval}s'::INTERVAL)
-        """
+    select to_char(generate_series, 'yyyy-MM-dd') as date 
+    from generate_series('{to_string_date(start_date).replace('-', '')}'::DATE, '{to_string_date(end_date).replace('-', '')}'::DATE, '1 {interval}s'::INTERVAL)
+    """
         _text = text(
             stmt
         )
@@ -363,29 +446,27 @@ def generate_series_subquery(db, start_date, end_date, interval='day'):
         to_char = f"strftime('{strftime_format}', date) AS 'date' "
 
     elif isinstance(db.session.bind.dialect, mysql.dialect):
-        select_date =  f"SELECT date + interval 1 {interval}"
+        select_date = f"SELECT date + interval 1 {interval}"
         to_char = f"DATE_FORMAT(date, '{strftime_format}')  AS 'date'"
     else:
         raise NotImplementedError(
             'Not implemented for this dialect'
         )
 
-
     stmt = f"""
-            WITH RECURSIVE dates(date) AS (
-                  VALUES (:start_date)
-              UNION ALL
-                  {select_date}
-                  FROM dates
-                  WHERE date < :end_date
-            )
-            
-            SELECT {to_char} FROM dates
-            """
+        WITH RECURSIVE dates(date) AS (
+              VALUES (:start_date)
+          UNION ALL
+              {select_date}
+              FROM dates
+              WHERE date < :end_date
+        )
+        
+        SELECT {to_char} FROM dates
+        """
     _text = text(
         stmt
     ).bindparams(start_date=to_string_date(start_date), end_date=to_string_date(end_date))
-
 
     # func.to_char(orig_datetime, 'YYYY-MM-DD HH24:MI:SS) - psql
     # SELECT strftime('%Y', date) FROM dates - sqlite
@@ -409,7 +490,6 @@ def generate_series_subquery(db, start_date, end_date, interval='day'):
     #     return stmt.columns(extract('year',column('date'))).subquery('series')
 
     return _text.columns(column('date')).subquery('series')
-
 
 @admin_bp.route('/category')
 @login_required
@@ -435,7 +515,6 @@ def category():
     return render_template('admin/category.html',
                            category_list=category_list, pagination=pagination)
 
-
 @admin_bp.route('/category/add', methods=['GET', 'POST'])
 @login_required
 @role_required(allowed_roles=[Roles.EXECUTIVE])
@@ -452,7 +531,6 @@ def category_add():
     errors = [{'field': key, 'messages': form.errors[key]} for key in form.errors.keys()] if form.errors else []
 
     return render_template('admin/category_form.html', form=form, errors=errors)
-
 
 @admin_bp.route('/category/edit/<int:id>', methods=['GET', 'POST'])
 @login_required
@@ -488,7 +566,6 @@ def category_edit(id):
 
     return render_template('admin/category_form.html', form=form, errors=errors)
 
-
 @admin_bp.route('/category/delete/<int:id>')
 @login_required
 @role_required(allowed_roles=[Roles.EXECUTIVE])
@@ -507,7 +584,6 @@ def category_delete(id):
             db.session.commit()
             flash(f'{category.name} Category 삭제 완료.')
             return redirect(url_for('admin.category'))
-
 
 # @admin_bp.route('/category/delete2/<int:id>')
 # @login_required
@@ -538,7 +614,6 @@ def article():
     return render_template('admin/article.html',
                            post_list=post_list, pagination=pagination)
 
-
 @admin_bp.route('/article/add', methods=['GET', 'POST'])
 @login_required
 @role_required(allowed_roles=[Roles.STAFF])
@@ -568,7 +643,6 @@ def article_add():
 
     return render_template('admin/article_form.html',
                            form=form, errors=errors)
-
 
 @admin_bp.route('/article/edit/<int:id>', methods=['GET', 'POST'])
 @login_required
@@ -603,7 +677,6 @@ def article_edit(id):
 
     return render_template('admin/article_form.html', form=form, errors=errors)
 
-
 @admin_bp.route('/article/delete/<int:id>')
 @login_required
 @role_required(allowed_roles=[Roles.STAFF])
@@ -620,7 +693,6 @@ def article_delete(id):
             flash(f'{post.title} Post 삭제 완료.')
             return redirect(url_for('admin.article'))
 
-
 @admin_bp.route('/tag')
 @login_required
 def tag():
@@ -632,7 +704,6 @@ def tag():
 
     return render_template('admin/tag.html',
                            tag_list=tag_list, pagination=pagination)
-
 
 @admin_bp.route('/tag/add', methods=['GET', 'POST'])
 @login_required
@@ -651,7 +722,6 @@ def tag_add():
     errors = [{'field': key, 'messages': form.errors[key]} for key in form.errors.keys()] if form.errors else []
 
     return render_template('admin/tag_form.html', form=form, errors=errors)
-
 
 @admin_bp.route('/tag/edit/<int:id>', methods=['GET', 'POST'])
 @login_required
@@ -675,7 +745,6 @@ def tag_edit(id):
 
     return render_template('admin/tag_form.html', form=form, errors=errors)
 
-
 @admin_bp.route('/tag/delete/<int:id>')
 @login_required
 @role_required(allowed_roles=[Roles.STAFF])
@@ -688,7 +757,6 @@ def tag_delete(id):
             db.session.commit()
             flash(f'{tag.name} Tag 삭제 완료.')
             return redirect(url_for('admin.tag'))
-
 
 @admin_bp.route('/user')
 @login_required
@@ -720,7 +788,6 @@ def user():
                            user_list=user_list, pagination=pagination,
                            role_list=role_list
                            )
-
 
 @admin_bp.route('/user/add', methods=['GET', 'POST'])
 @login_required
@@ -773,7 +840,6 @@ def user_add():
 
     return render_template('admin/user_form.html', form=form, errors=errors)
 
-
 @admin_bp.route('/user/edit/<int:id>', methods=['GET', 'POST'])
 @login_required
 @role_required(allowed_roles=[Roles.CHIEFSTAFF])
@@ -824,7 +890,6 @@ def user_edit(id):
 
     return render_template('admin/user_form.html', form=form, errors=errors)
 
-
 @admin_bp.route('/user/delete/<int:id>', methods=['GET', 'POST'])
 @login_required
 @role_required(allowed_roles=[Roles.CHIEFSTAFF])
@@ -840,7 +905,6 @@ def user_delete(id):
             flash(f'{user.username} User 삭제 완료.')
             return redirect(url_for('admin.user'))
 
-
 @admin_bp.route('/banner')
 @login_required
 @role_required(allowed_roles=[Roles.STAFF])
@@ -853,7 +917,6 @@ def banner():
 
     return render_template('admin/banner.html',
                            banner_list=banner_list, pagination=pagination)
-
 
 @admin_bp.route('/banner/add', methods=['GET', 'POST'])
 @login_required
@@ -887,7 +950,6 @@ def banner_add():
         return redirect(url_for('admin.banner'))
 
     return render_template('admin/banner_form.html', form=form)
-
 
 @admin_bp.route('/banner/edit/<int:id>', methods=['GET', 'POST'])
 @login_required
@@ -924,7 +986,6 @@ def banner_edit(id):
 
     return render_template('admin/banner_form.html', form=form)
 
-
 @admin_bp.route('/banner/delete/<int:id>', methods=['GET', 'POST'])
 @login_required
 @role_required(allowed_roles=[Roles.STAFF])
@@ -940,7 +1001,6 @@ def banner_delete(id):
             flash(f'{banner.desc} Banner 삭제 완료.')
             return redirect(url_for('admin.banner'))
 
-
 @admin_bp.route('/setting', methods=['GET'])
 @login_required
 @role_required(allowed_roles=[Roles.ADMINISTRATOR])
@@ -950,7 +1010,6 @@ def setting():
     # db객체 list대신 dict를 건네준다.
     # return render_template('admin/setting.html', s_dict=s_dict, active_tab=1)
     return render_template('admin/setting.html', s_dict=s_dict)
-
 
 @admin_bp.route('/setting/edit', methods=['GET', 'POST'])
 @login_required
@@ -1016,7 +1075,6 @@ def setting_edit():
 
     return render_template('admin/setting_form.html', form=form)
 
-
 @admin_bp.route('/employee')
 @login_required
 @role_required(allowed_roles=[Roles.CHIEFSTAFF])
@@ -1048,7 +1106,6 @@ def employee():
                            pagination=pagination,
                            job_status_list=job_status_list
                            )
-
 
 @admin_bp.route('/employee/add/<int:user_id>', methods=['GET', 'POST'])
 @login_required
@@ -1103,7 +1160,6 @@ def employee_add(user_id):
     return render_template('admin/employee_form.html',
                            form=form
                            )
-
 
 # @admin_bp.route('/invite/employee/<int:user_id>', methods=['GET', 'POST'])
 # @login_required
@@ -1223,7 +1279,6 @@ def employee_invite():
     # return redirect(url_for('admin.user'))
     return redirect(redirect_url())
 
-
 @admin_bp.route('/employee/edit/<int:id>', methods=['GET', 'POST'])
 @login_required
 @role_required(allowed_roles=[Roles.CHIEFSTAFF])
@@ -1265,7 +1320,6 @@ def employee_edit(id):
             delete_uploaded_file(directory_and_filename=user.avatar)
             user.avatar = f'avatar/{filename}'
 
-
         #### employee ####
         employee_info = {
             'name': form.name.data,
@@ -1294,7 +1348,6 @@ def employee_edit(id):
     return render_template('admin/employee_form.html',
                            form=form
                            )
-
 
 @admin_bp.route('/employee/job_status', methods=['POST'])
 @login_required
@@ -1369,7 +1422,6 @@ def employee_job_status_change():
 
     return redirect(redirect_url())
 
-
 @admin_bp.route('employee/<int:employee_id>/user_popup')
 @login_required
 def user_popup(employee_id):
@@ -1377,7 +1429,6 @@ def user_popup(employee_id):
     user = employee.user
 
     return render_template('admin/employee_user_popup.html', user=user)
-
 
 @admin_bp.route('/departments/<employee_id>', methods=['GET'])
 @login_required
@@ -1390,7 +1441,6 @@ def get_current_departments(employee_id):
         dict(deptInfos=current_dept_infos),
         200
     )
-
 
 # @admin_bp.route('/departments/selectable/<department_id>', methods=['GET'])
 # @login_required
@@ -1432,7 +1482,6 @@ def get_selectable_departments():
         200
     )
 
-
 @admin_bp.route('/departments/all', methods=['GET'])
 @login_required
 def get_all_departments():
@@ -1441,7 +1490,6 @@ def get_all_departments():
         return make_response(dict(message='선택가능한 부서가 없습니다.'), 500)
 
     return make_response(dict(deptInfos=dept_infos), 200)
-
 
 @admin_bp.route('/departments/promote/', methods=['POST'])
 @login_required
@@ -1481,21 +1529,20 @@ def determine_promote():
     # 강등여부판단은 전제가 [변경부서선택 with 부서원] OR  변경부서선택을 => [부서제거]로 None이어도 상관없다.
     # => 내부에서 1개 팀장인데 && 부서원으로 뿐만 아니라 1개 팀장인데 && after_dept_id가 None도 추가해야할 듯하다.
     # if current_dept_id:
-        # 1) 현재부서  +  선택부서가 부서원으로 판단
+    # 1) 현재부서  +  선택부서가 부서원으로 판단
     is_demote = current_employee.is_demote(current_dept_id, after_dept_id, as_leader)
-        # 2) 현재부서 + 선택부서가 None으로 해지를 추가할 예정
+    # 2) 현재부서 + 선택부서가 None으로 해지를 추가할 예정
     # else:
     #     현재부서는 nullable이고, 현재부서가 없다면, 쿼리날리기도 전에 강등은 있을 수 없어서 무조건 False
-        # is_demote = False
+    # is_demote = False
 
     return make_response(dict(isPromote=is_promote, isDemote=is_demote), 200)
-
 
 @admin_bp.route('/departments/change', methods=['POST'])
 @login_required
 @role_required(allowed_roles=[Roles.CHIEFSTAFF])
 def department_change():
-    # print(request.form) 
+    # print(request.form)
     # ImmutableMultiDict([('employee_id', '4'), ('current_dept_id', '5'), ('after_dept_id', '4'), ('as_leader', '부서장'), ('date', '2023-01-20')])
     employee_id = request.form.get('employee_id', type=int)
     current_dept_id = request.form.get('current_dept_id', type=int)
@@ -1513,7 +1560,7 @@ def department_change():
     if not employee:
         flash('퇴사한 직원은 부서 변경이 불가능 합니다.', category='is-danger')
         return redirect(redirect_url())
-    
+
     # (bool, msg) 반환
     result, message = employee.change_department(current_dept_id, after_dept_id, as_leader, target_date)
 
