@@ -265,11 +265,11 @@ class User(BaseModel):
             )
             # 부서 중에 내가 팀장인 부서정보만
             if as_leader:
-                subq_stmt = subq_stmt.where(EmployeeDepartment.is_leader == 1)
+                subq_stmt = subq_stmt.where(EmployeeDepartment.is_leader == True)
 
             ## 추가) 부서 중에 내가 팀원으로 있는 정보만
             if as_employee:
-                subq_stmt = subq_stmt.where(EmployeeDepartment.is_leader == 0)
+                subq_stmt = subq_stmt.where(EmployeeDepartment.is_leader == False)
 
             dep_ids = (
                 subq_stmt
@@ -873,11 +873,11 @@ class Employee(BaseModel):
 
             # 부서 중에 내가 팀장인 부서정보만
             if as_leader:
-                subq_stmt = subq_stmt.where(EmployeeDepartment.is_leader == 1)
+                subq_stmt = subq_stmt.where(EmployeeDepartment.is_leader == True)
 
             ## 추가) 부서 중에 내가 팀원으로 있는 정보만
             if as_employee:
-                subq_stmt = subq_stmt.where(EmployeeDepartment.is_leader == 0)
+                subq_stmt = subq_stmt.where(EmployeeDepartment.is_leader == False)
 
             dep_ids = (
                 subq_stmt

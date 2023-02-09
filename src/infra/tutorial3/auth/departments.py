@@ -619,7 +619,7 @@ class Department(BaseModel):
                 .where(EmployeeDepartment.department.has(Department.id == self.id))
             )
             if except_leader:
-                stmt = stmt.where(EmployeeDepartment.is_leader != 1)
+                stmt = stmt.where(EmployeeDepartment.is_leader == False)
             return db.session.scalars(stmt).all()
 
     #### with other entity
