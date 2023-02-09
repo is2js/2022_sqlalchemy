@@ -620,7 +620,7 @@ col-{{12 - comment.level}} offset-{{comment.level}}
    # DB_NAME=cinema
    # DB_USER=root
    # DB_PASSWORD=564123
-   # DB_SERVER= 
+   # DB_HOST= 
    # DB_PORT=
    # POST_PER_PAGE = 10
    # COMMENTS_PER_PAGE = 20
