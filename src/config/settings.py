@@ -66,13 +66,13 @@ class DBProductionConfig(DB):
         DB_CONNECTION = os.getenv("DB_CONNECTION").lower()
         DB_USER: str = os.getenv("DB_USER", "root")
         DB_PASSWORD = os.getenv("DB_PASSWORD", "root")
-        DB_SERVER = os.getenv("DB_SERVER", "localhost")
+        DB_HOST = os.getenv("DB_HOST", "localhost")
         DB_PORT: str = os.getenv("DB_PORT", "3306")
         DB_NAME: str = os.getenv("DB_NAME", "test")
 
         DATABASE_URL = f"{DB_CONNECTION}://" \
                        f"{DB_USER}:{DB_PASSWORD}@" \
-                       f"{DB_SERVER}:{DB_PORT}/" \
+                       f"{DB_HOST}:{DB_PORT}/" \
                        f"{DB_NAME}"
     else:
         DATABASE_URL = 'sqlite:///' + os.path.join(BASE_FOLDER, f'{os.getenv("DB_NAME") or "data"}-prod.db')

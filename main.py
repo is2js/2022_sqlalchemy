@@ -5,7 +5,7 @@ from pprint import pprint
 import faker
 from dateutil.relativedelta import relativedelta
 from faker import Faker
-from sqlalchemy import select, func, distinct, and_, update
+from sqlalchemy import select, func, distinct, and_, update, text
 
 # .env
 # DB_CONNECTION=sqlite
@@ -252,7 +252,29 @@ if __name__ == '__main__':
           # f'{Department.change_sort_cross_level(12, after_parent_id=1, after_sort=4)}  >> ')
           # f'{Department.change_sort_cross_level(12, after_parent_id=None, after_sort=1)}  >> ')
 
+    from sqlalchemy.dialects import postgresql, mysql, oracle, sqlite
 
+    stmt_pg = (
+        select(func.dateadd(func.now(),  text('interval 1 day')).label(''))
+        .compile(dialect=postgresql.dialect())
+    )
+    stmt_mysql = (
+        select(func.dateadd(func.now(),  text('interval 1 day')))
+        .compile(dialect=mysql.dialect())
+    )
+    stmt_oracle = (
+        select(func.dateadd(func.now(),  text('interval 1 day')))
+        .compile(dialect=oracle.dialect())
+    )
+
+    stmt_sqlite = (
+        select(func.dateadd(func.now(),  text('interval 1 day')))
+        .compile(dialect=sqlite.dialect())
+    )
+    print('stmt_mysql  >> ', stmt_mysql)
+    print('stmt_pg  >> ', stmt_pg)
+    print('stmt_oracle  >> ', stmt_oracle)
+    print('stmt_sqlite  >> ', stmt_sqlite)
 
 
 
