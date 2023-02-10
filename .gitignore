@@ -5,16 +5,24 @@ venv
 __pycache__
 #migrations
 
-*.db
-*.json
 
 !uploads/
 uploads/*
-
-logs
 !alembic/versions/
 alembic/versions/*
 !migrations/versions/
 migrations/versions/*
 
+!docs/readme.md
+docs/*
+
+logs
 study
+*.db
+*.sqlite
+
+*.json
+main*.py
+create_database*.py
+
+
