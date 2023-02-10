@@ -16,3 +16,5 @@ logs
 alembic/versions/*
 !migrations/versions/
 migrations/versions/*
+
+study
