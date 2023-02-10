@@ -12,6 +12,10 @@ alembic/versions/*
 !migrations/versions/
 migrations/versions/*
 
+docs/*
+!docs/
+!docs/readme.md
+docs/post/*
 
 logs
 study
