@@ -21,6 +21,7 @@ logs
 study
 *.db
 *.sqlite
+*.sql
 
 *.json
 main*.py
