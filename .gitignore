@@ -3,18 +3,15 @@ venv
 .idea
 *.pyc
 __pycache__
-#migrations
-
 
 !uploads/
 uploads/*
+
 !alembic/versions/
 alembic/versions/*
 !migrations/versions/
 migrations/versions/*
 
-!docs/readme.md
-docs/*
 
 logs
 study
