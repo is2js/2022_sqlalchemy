@@ -13,6 +13,10 @@ from src.main.templates.filters import format_date, format_datetime
 
 class BaseModel(Base):
     __abstract__ = True
+    __table_args__ = {
+        'mysql_engine': 'InnoDB',
+        'mysql_charset': 'utf8mb4'
+    }
 
     add_date = Column(DateTime, nullable=False, default=datetime.datetime.now)
     pub_date = Column(DateTime, nullable=False, default=datetime.datetime.now, onupdate=datetime.datetime.now)

@@ -21,7 +21,7 @@ class Banner(BaseModel):
     __tablename__ = 'banners'
 
     # id = Column(Integer, primary_key=True)
-    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
+    id = Column(Integer().with_variant(BigInteger, "postgresql"), primary_key=True)
     # 1) 아바타와 달리 반드시 있어야한다. avatar = Column(String(200), nullable=True)
     img = Column(String(200))# nullable=False)
     desc = Column(String(200), nullable=True)

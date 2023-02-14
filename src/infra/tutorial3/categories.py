@@ -13,7 +13,7 @@ class Category(BaseModel):
     __tablename__ = 'categories'
 
     # id = Column(Integer, primary_key=True)
-    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
+    id = Column(Integer().with_variant(BigInteger, "postgresql"), primary_key=True)
     name = Column(String(128), nullable=False, unique=True)
     icon = Column(String(128), nullable=True)
 
@@ -29,9 +29,10 @@ class Category(BaseModel):
 
 
 posttags = Table('posttags', Base.metadata,
-                 Column('tag_id', Integer, ForeignKey('tags.id'), primary_key=True),
-                 Column('post_id', Integer, ForeignKey('posts.id'), primary_key=True),
-
+                 Column('tag_id', Integer().with_variant(BigInteger, "postgresql"), ForeignKey('tags.id'), primary_key=True, nullable=False),
+                 Column('post_id', Integer().with_variant(BigInteger, "postgresql"), ForeignKey('posts.id'), primary_key=True, nullable=False),
+                 mysql_engine='InnoDB',
+                 mysql_charset='utf8mb4'
                  )
 
 
@@ -70,11 +71,12 @@ class PostPublishType(enum.IntEnum):
 class Post(BaseModel):
     __tablename__ = 'posts'
 
+
     # id = Column(Integer, primary_key=True)
-    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
+    id = Column(Integer().with_variant(BigInteger, "postgresql"), primary_key=True)
     title = Column(String(128), nullable=False)
     desc = Column(String(200), nullable=False)
-    content = Column(Text, nullable=False)
+    content = Column(Text().with_variant(String(100), 'mysql'), nullable=False)
     # has_type = Column(Enum(PostPublishType), server_default='show', nullable=False)
     # IntEnum을 TypeDecorator로 정의해놓고 그 타입으로 써야한다.
     # has_type = Column(Enum(PostPublishType), server_default=PostPublishType.show.value, nullable=False)
@@ -84,13 +86,14 @@ class Post(BaseModel):
     # has_type = Column(Integer, default=PostPublishType.SHOW, nullable=False)
     ### 2) IntEnum( Enumclass ) + view에서 post.has_type.name + .value로 사용가능해진다.
     # -> server_default는 int로 반영되어야한다. default=로만 줘야한다.
-    has_type = Column(IntEnum(PostPublishType), default=PostPublishType.SHOW, nullable=False)
+    has_type = Column(IntEnum(PostPublishType), default=PostPublishType.SHOW.value, nullable=False)
 
     # 해결책1) many에 ondelete를 줘야 db제약조건과 동일해지지만, 부모삭제시 set null을 기본 수행한다
-    category_id = Column(Integer,
-                         # ForeignKey('categories.id'),
-                         ForeignKey('categories.id', ondelete="CASCADE"),
-                         nullable=False
+    category_id = Column(Integer().with_variant(BigInteger, "postgresql"),
+                         ForeignKey('categories.id',
+                                    ondelete="CASCADE"),
+                         nullable=False,
+                         # name='post_category_id'
                          )
 
     tags = relationship('Tag', secondary=posttags,
@@ -110,7 +113,7 @@ class Tag(BaseModel):
     __tablename__ = 'tags'
 
     # id = Column(Integer, primary_key=True)
-    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
+    id = Column(Integer().with_variant(BigInteger, "postgresql"), primary_key=True)
     name = Column(String(128), nullable=False, unique=True)
 
     def __repr__(self):

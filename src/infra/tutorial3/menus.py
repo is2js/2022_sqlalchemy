@@ -46,7 +46,7 @@ class Menu(Base):
                            , join_depth=3  # 필수1
                            , lazy='subquery'  # 필수2
                            )
-    path = Column(Text, index=True)
+    path = Column(Text().with_variant(String(100), 'mysql'), index=True)
 
     ## 21.
     @hybrid_property

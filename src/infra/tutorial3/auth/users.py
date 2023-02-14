@@ -36,7 +36,7 @@ class User(BaseModel):
     __tablename__ = 'users'
     # 가입시 필수
     # id = Column(Integer, primary_key=True)
-    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
+    id = Column(Integer().with_variant(BigInteger, "postgresql"), primary_key=True)
     username = Column(String(128), unique=True, nullable=False)
     # password = Column(String(320), nullable=False)
     password_hash = Column(String(320), nullable=False)
@@ -57,7 +57,7 @@ class User(BaseModel):
     ## 추가
     # email/phone은 선택정보이지만, 존재한다면 unique검사가 들어가야한다.
     # => form에서 unique를 검증하고  추가정보로서 unique키를 주면 안된다(None대입이 안되서 unique제약조건에 걸림)
-    sex = Column(IntEnum(SexType), default=SexType.미정, nullable=True)
+    sex = Column(IntEnum(SexType), default=SexType.미정.value, nullable=True)
     address = Column(String(60), nullable=True)
     # phone = Column(String(11), nullable=True, unique=True) # nullable데이터는 unique key못주니, form에서 검증하자
     phone = Column(String(11), nullable=True)
@@ -398,7 +398,7 @@ class Role(BaseModel):
     __tablename__ = 'roles'
 
     # id = Column(Integer, primary_key=True)
-    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
+    id = Column(Integer().with_variant(BigInteger, "postgresql"), primary_key=True)
     name = Column(String(64), unique=True, index=True)
     # User 생성시, default객체가 User인지를 컴퓨터는 알길이 없기에
     # 우리가 정해둔 default role을 검색해서, User생성시 배정할 수 있게 한다
@@ -536,7 +536,7 @@ class Employee(BaseModel):
     __tablename__ = 'employees'
 
     # id = Column(Integer, primary_key=True)
-    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
+    id = Column(Integer().with_variant(BigInteger, "postgresql"), primary_key=True)
     # 연결고리이자, user로부터 -> employee의 정보를 찾을 때, 검색조건이 될 수 있다.
     user_id = Column(Integer, ForeignKey("users.id"), index=True)
     #### Many쪽에 backref가 아닌 관계속성을 직접 정의해야, => Many.one.any()를 stmt에 쓸 수 있다.
@@ -553,7 +553,7 @@ class Employee(BaseModel):
 
     # job_status가 User에서 신청한 대기 Employee(role이 아직 User)를 검색해서 대기중인 Employee데이터를 골라낼 수도 있다.
     # - 예약시에는 reserve_status가 대기 중인 것을 골라낼 것이다.
-    job_status = Column(IntEnum(JobStatusType), default=JobStatusType.재직, nullable=False, index=True)
+    job_status = Column(IntEnum(JobStatusType), default=JobStatusType.재직.value, nullable=False, index=True)
     resign_date = Column(Date, nullable=True)
     # new : 휴직 상태의 최종휴직일을 알도록 칼럼을 추가한다
     leave_date = Column(Date, nullable=True)
@@ -1579,7 +1579,7 @@ class Employee(BaseModel):
 class EmployeeInvite(InviteBaseModel):
     __tablename__ = 'employee_invites'
 
-    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
+    id = Column(Integer().with_variant(BigInteger, "postgresql"), primary_key=True)
     # user -> inviter / invitee
     inviter_id = Column(Integer, ForeignKey('users.id'))
     invitee_id = Column(Integer, ForeignKey('users.id'))
@@ -1613,7 +1613,7 @@ class EmployeeInvite(InviteBaseModel):
 class EmployeeLeaveHistory(BaseModel):
     __tablename__ = 'employee_leave_histories'
 
-    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
+    id = Column(Integer().with_variant(BigInteger, "postgresql"), primary_key=True)
 
     employee_id = Column(Integer, ForeignKey('employees.id'),
                          nullable=False, index=True)

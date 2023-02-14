@@ -57,7 +57,7 @@ class Comment(Base):
                            )
     # ,lazy='dynamic') # => 명시하면, subqueryload조차 안됨. 아예안됨.
     ## 7. 한번에 쿼리하기 위해 path칼럼을 추가한다.(Text 01.01., index)
-    path = Column(Text, index=True)
+    path = Column(Text().with_variant(String(100), 'mysql'), index=True)
 
     #### 14. 최상위댓글별 그룹을 timestamp로 지정하기 위해
     ####     자신 + 대댓글들은 부모의 timestamp를 복제한 thread_timestamp를 가진다.

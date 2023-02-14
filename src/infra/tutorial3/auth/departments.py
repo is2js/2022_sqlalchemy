@@ -115,7 +115,7 @@ class Department(BaseModel):
     __tablename__ = 'departments'
     # __table_args__ = {'extend_existing': True}
 
-    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
+    id = Column(Integer().with_variant(BigInteger, "postgresql"), primary_key=True)
     # name = Column(String(50), nullable=False, comment="부서 이름")
     # 9. + index, unique까지
     name = Column(String(50), nullable=False, index=True, unique=True, comment="부서 이름")
@@ -171,8 +171,11 @@ class Department(BaseModel):
     # code = Column(String(24))
     # root = Column(Boolean, default=False)  # parent_id가 None이면 root에 True넣어주고, 그외는 False로 기본 생성
     # menu
-    path = Column(Text, index=True,
+    path = Column(Text().with_variant(String(100), 'mysql'), index=True,
                   nullable=True)  # 동적으로 채울거라 nullabe=True로 일단 주고, add후 다른데이터를 보고 채운다다 => 자식검색시 path.like(자신apth)로 하니 index 필수
+    #### mysql 에러: BLOB/TEXT column 'path' used in key specification without a key length
+    # - https://blog.miguelgrinberg.com/post/implementing-user-comments-with-sqlalchemy
+    # => type을 Text말고, String(1000)으로 변경
 
     #### EmployeeDepartment에 position을 남기기 위한, Type
     type = Column(IntEnum(DepartmentType), default=DepartmentType.팀, nullable=False, index=True)
@@ -932,7 +935,7 @@ class EmployeeDepartment(BaseModel):
 
     # __table_args__ = (ForeignKeyConstraint(['user_id'], ['users.id'], name='users_tag_maps_department_id_fk'),)
 
-    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
+    id = Column(Integer().with_variant(BigInteger, "postgresql"), primary_key=True)
 
     # user_id = Column(Integer, nullable=False)
     # department_id = Column(Integer, nullable=True) # 부서는 nullable일 수 있다.?! 유저마다 유저부서 정보가 생기는데, 부서는 없을 수 있음? => 유저-부서정보라서 꼭 있어야한다. 여기선 join할 일이 없어서 안쓰는 듯.
