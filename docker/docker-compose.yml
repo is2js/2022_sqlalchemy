@@ -1,0 +1,55 @@
+version: "3.9"
+## [수정] 프로젝트명 -> docker-compose v2이상부터
+# -> 그 이하버전이면 주석처리하고, docker-compose시 -p 프로젝트명으로 명시하며 명령어 사용
+name: sqlalchemy
+
+services:
+  db:
+    ## 컨테이너 이름을 생략한다. -> 고정된 이름을 주면,  다른 옵션, 여러개의 다른 -p(project name)으로 app을 띄울 때, 똑같은 컨테이너 이름이 이미 존재한다고 에러 난다.
+    #container_name: mysql-sqlalchemy
+    ## build: 도커파일경로 -> 생략
+    # build가 있으면 Dockerfile FROM image의 새로운 이미지명(docker build -t)이 되는데,
+    #  - 여기선 image가 Dockerfile의 FROM 기반컨테이너:버전 을 대신하여 기반image 원본을 표기
+    image: mysql:8.0.28
+    platform: linux/x86_64
+    restart: always
+    ports:
+      # [수정]
+      - "13306:3306"
+    ## [수정] 자동생성되는 db이름을 명시 -> sqlalchemy의 데이터베이스명과 동일하게 수정
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: sqlalchemy
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+      TZ: Asia/Seoul
+    volumes:
+      # 데이터 마운트 docker -> host
+      - ./db/mysql/data:/var/lib/mysql
+      # 초기 자동실행스크립트 마운트 host -> docker
+      - ./db/mysql/init:/docker-entrypoint-initdb.d
+      # [권한 필요] 초기 설정파일 마운트 host -> docker
+      - ./db/mysql/config:/etc/mysql/conf.d
+      # [conf파일 필요] 로그 마운트 docker -> my.conf -> host
+      - ./db/mysql/logs:/var/log/mysql
+    command:
+      >
+      bash -c "chmod 755 /etc/mysql/conf.d/*.cnf && /entrypoint.sh mysqld"
+
+  postgres:
+    image: postgres:14.1-alpine
+    restart: always
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=sqlalchemy
+    logging:
+      options:
+        max-size: 10m
+        max-file: "3"
+    ports:
+      - '15432:5432'
+    volumes:
+      - ./db/postgresql/data:/var/lib/postgresql/data
+      # copy the sql script to create tables
+      - ./db/postgresql/init:/docker-entrypoint-initdb.d

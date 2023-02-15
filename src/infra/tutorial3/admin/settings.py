@@ -9,7 +9,7 @@ class Setting(Base):
     __tablename__ = 'settings'
 
     # id = Column(Integer, primary_key=True)
-    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
+    id = Column(Integer().with_variant(BigInteger, "postgresql"), primary_key=True)
     setting_key = Column(String(64), index=True, unique=True)
     setting_value = Column(String(800), default='')
 

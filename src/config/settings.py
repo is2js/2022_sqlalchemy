@@ -53,7 +53,26 @@ class DB:
 
 
 class DBDevConfig(DB):
-    DATABASE_URL = 'sqlite:///' + os.path.join(BASE_FOLDER, f'{os.getenv("DB_NAME") or "data"}-dev.db')
+   # .env 파일에 DB_CONNECTION 여부가 sqlite vs RDB를 결정한다.
+    if os.getenv("DB_CONNECTION"):
+        DB_CONNECTION = os.getenv("DB_CONNECTION").lower()
+        DB_USER: str = os.getenv("DB_USER", "root")
+        DB_PASSWORD = os.getenv("DB_PASSWORD", "root")
+        DB_HOST = os.getenv("DB_HOST", "localhost")
+        DB_PORT: str = os.getenv("DB_PORT", "3306")
+        DB_NAME: str = os.getenv("DB_NAME", "data")
+
+        DATABASE_URL = f"{DB_CONNECTION}://" \
+                       f"{DB_USER}:{DB_PASSWORD}@" \
+                       f"{DB_HOST}:{DB_PORT}/" \
+                       f"{DB_NAME}"
+        
+        # 추가
+        if 'mysql' in DB_CONNECTION:
+            DATABASE_URL += '?charset=utf8mb4'
+
+    else:
+        DATABASE_URL = 'sqlite:///' + os.path.join(BASE_FOLDER, f'{os.getenv("DB_NAME") or "data"}-dev.db')
 
 
 class DBTestingConfig(DB):
@@ -68,12 +87,16 @@ class DBProductionConfig(DB):
         DB_PASSWORD = os.getenv("DB_PASSWORD", "root")
         DB_HOST = os.getenv("DB_HOST", "localhost")
         DB_PORT: str = os.getenv("DB_PORT", "3306")
-        DB_NAME: str = os.getenv("DB_NAME", "test")
+        DB_NAME: str = os.getenv("DB_NAME", "data")
 
         DATABASE_URL = f"{DB_CONNECTION}://" \
                        f"{DB_USER}:{DB_PASSWORD}@" \
                        f"{DB_HOST}:{DB_PORT}/" \
                        f"{DB_NAME}"
+
+        # 추가
+        if 'mysql' in DB_CONNECTION:
+            DATABASE_URL += '?charset=utf8mb4'
     else:
         DATABASE_URL = 'sqlite:///' + os.path.join(BASE_FOLDER, f'{os.getenv("DB_NAME") or "data"}-prod.db')
 

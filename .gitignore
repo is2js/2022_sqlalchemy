@@ -1,30 +1,39 @@
+#### cache and env ####
 .env
 venv
 .idea
 *.pyc
 __pycache__
 
+#### upload ####
 !uploads/
 uploads/*
 
+#### migration ####
 !alembic/versions/
 alembic/versions/*
 !migrations/versions/
 migrations/versions/*
 
+#### docs ####
 docs/*
 !docs/
 !docs/readme.md
 docs/post/*
 
+#### log and study ####
 logs
 study
 *.db
 *.sqlite
 *.sql
 
+#### data ####
 *.json
 main*.py
 create_database*.py
 
-
+#### docker ####
+docker/db/mysql/data/
+docker/db/mysql/log/
+docker/db/postgresql/data/
