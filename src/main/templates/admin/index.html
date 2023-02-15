@@ -396,12 +396,12 @@ div.box 안쪽으로  block box /endblock을 추가한다-->
                                     <td>
                                         <div class="tags">
                                             <span class="tag is-primary is-light">
-                                                {{ tag.name }}
+                                                {{ tag['name'] }}
                                             </span>
                                         </div>
                                     </td>
-                                    <td>{{ tag.count }}</td>
-                                    <td>{{ tag.sum }}</td>
+                                    <td>{{ tag['count'] }}</td>
+                                    <td>{{ tag['sum'] }}</td>
                                 </tr>
                                 {% endfor %}
                                 </tbody>

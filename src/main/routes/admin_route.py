@@ -267,7 +267,16 @@ def index():
             .order_by(literal_column('count').desc()) \
             .limit(3)
 
+        #### 기존 => 아직해소 되지 않은 [ rows ] => jinja에서만 사용가능해짐 row.name / row.count 등
+        # tag_with_post_count  >>  [('태그1', 1, 2)]
+        # => but jinja에서 내부가 실행되나. tag_with_post_count -> for tag -> tag.name  tag.count tag.sum
+        # => db컨넥션을 풀기 위해 enum치환하여 dict로 풀어서 -> jinja에선 tag['name'], tag['count']. tag['sum']으로 변경하기
         tag_with_post_count = db.session.execute(stmt).all()
+
+        #### 업뎃 => enum처리한 dict list로 반환하며, jinja에서 dict list -> dict['name'] 를 사용하도록 변경
+        tag_with_post_count = StaticsQuery.agg_with_relationship(Tag, 'name', 'posts',
+                                                          rel_agg_dict={'id': 'count', 'has_type': 'sum'})
+        # agg
 
         #### < 2-1 일주일 user 수>
         #### 기존
@@ -315,7 +324,8 @@ def index():
             .add_yaxis('태그 수', year_tag_y_datas)
         )
 
-        year_chart = chart.create_count_bars([User, Employee, Post, Category, Banner, Tag], 'add_date', date.today(), interval_unit='month', interval_value=12,
+        year_chart = chart.create_count_bars([User, Employee, Post, Category, Banner, Tag], 'add_date', date.today(),
+                                             interval_unit='month', interval_value=12,
                                              filters_with_model={
                                                  User: {'and': [('is_administrator', '==', False)]},
                                                  Employee: {'and': [('name', '==', '관리자')]},

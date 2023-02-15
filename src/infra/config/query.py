@@ -1,11 +1,12 @@
 import enum
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 
 from dateutil.relativedelta import relativedelta
 from pyecharts.charts import Bar
 from sqlalchemy import and_, or_, select, func, distinct, inspect, Table, cast, Integer, literal_column, text, column, \
     Numeric
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.orm import aliased
 
 from src.infra.config.connection import DBConnectionHandler
 from src.main.utils.to_string import to_string_date
@@ -132,7 +133,7 @@ class BaseQuery:
             filt_aux = []
             for raw in filters[filter_op]:
                 print('raw  >> ', raw)
-                
+
                 # 1) try로 unpack가능한 (,,)인지 확인
                 try:
                     col_name, op_name, value = raw
@@ -198,6 +199,29 @@ class BaseQuery:
 
     @classmethod
     def execute_to_dict(cls, stmt):
+        """
+            [{'sex': '미정', 'count': 1}, {'sex': '남자', 'count': 5}]
+
+        """
+        with DBConnectionHandler() as db:
+            # return db.session.execute(stmt).mappings().all()
+            # enum변환을 못해서 새로 작성
+            result = list()
+            for row in db.session.execute(stmt):
+                temp_dict = row._asdict()
+                for col_name in stmt.columns.keys():
+                    # Enum칼럼인 경우, {'sex': [<SexType.미정: 0>], 'count': [1]})
+                    col_value = getattr(row, col_name)
+                    if isinstance(col_value, enum.Enum):
+                        col_value = col_value.name
+                    temp_dict.update({col_name: col_value})  # inplace
+                # print(temp_dict)
+                result.append(temp_dict)
+
+            return result
+
+    @classmethod
+    def execute_to_list_in_dict(cls, stmt):
         # print('stmt.columns  >> ', stmt.columns)
         # print('stmt.columns.keys()  >> ', stmt.columns.keys())
         # stmt.columns  >>  ImmutableColumnCollection(anon_1.id, anon_1.name, anon_1.count)
@@ -224,7 +248,7 @@ class BaseQuery:
         return result
 
     @classmethod
-    def execute_to_list(cls, stmt):
+    def execute_to_tuple_list(cls, stmt):
         # print('stmt.columns  >> ', stmt.columns)
         # print('stmt.columns.keys()  >> ', stmt.columns.keys())
         # stmt.columns  >>  ImmutableColumnCollection(anon_1.id, anon_1.name, anon_1.count)
@@ -243,10 +267,34 @@ class BaseQuery:
                     # ->속성은 똑같이 : sqlalchemy.orm.attributes.InstrumentedAttribute 이지만
                     # -> 출력이 execute된 결과에서 꺼내면
                     # type(getattr(row, name))  >>  <enum 'SexType'> 의 enum이 나온다
+                    print(row, col_name)
                     col_value = getattr(row, col_name)
                     if isinstance(col_value, enum.Enum):
                         col_value = col_value.name
-                    new_row += (col_value, )
+                    new_row += (col_value,)
+                result.append(new_row)
+
+        return result
+
+    @classmethod
+    def execute_to_named_tuple_list(cls, stmt):
+
+        result = list()
+        col_names = stmt.columns.keys()
+        NamedRow = namedtuple('NamedRow', ' '.join(col_names), rename=True)
+
+        with DBConnectionHandler() as db:
+            for row in db.session.execute(stmt):
+                new_row = NamedRow(*row)
+                for col_name in col_names:
+                    # Enum칼럼인 경우,[ {(<SexType.미정: 0>, 1)]
+                    # ->속성은 똑같이 : sqlalchemy.orm.attributes.InstrumentedAttribute 이지만
+                    # -> 출력이 execute된 결과에서 꺼내면
+                    # type(getattr(row, name))  >>  <enum 'SexType'> 의 enum이 나온다
+                    col_value = getattr(new_row, col_name)
+                    if isinstance(col_value, enum.Enum):
+                        col_value = col_value.name
+                    # new_row
                 result.append(new_row)
 
         return result
@@ -662,12 +710,12 @@ class StaticsQuery(BaseQuery):
             .limit(limit))
 
         # return list(db.session.execute(stmt).all())
-        # return cls.execute_to_dict(stmt)
-        return cls.execute_to_list(stmt)
+        # return cls.execute_to_list_in_dict(stmt)
+        return cls.execute_to_tuple_list(stmt)
 
     #### 외부용 -> 차트용
     @classmethod
-    def agg_with_relationship(cls, model, col_name, relation_name,
+    def agg_with_relationship(cls, model, col_name, rel_col_name,
                               rel_agg_dict=dict(id='count'),
                               filters=None,
                               rel_filters=None,
@@ -697,17 +745,16 @@ class StaticsQuery(BaseQuery):
         # ('posts', <RelationshipProperty at 0x28546b9e3c8; posts>)
         # relationship.target
         # Table('posts', MetaData()...
-        rel_model = cls.get_relation_model(model, relation_name)
+        rel_model = cls.get_relation_model(model, rel_col_name)
 
         #### __mapper__에서는 RelationshipProperty을 꺼낼 수 있고 -> .target으로 table객체를 꺼낼 수 있지만
         # join에 활용되는 orm.attributes.InstrumentedAttribute이랑은 다르다.
         # https://stackoverflow.com/questions/19641908/flask-sqlalchemy-manual-orm-relationshipproperty-object-has-no-attribute-par
         # sqlalchemy.exc.ArgumentError: Join target, typically a FROM expression, or ORM relationship attribute expected, got <RelationshipProperty at 0x1c8a2ee5e48; posts>.
-        rel_column = cls.create_column(model, relation_name)
+        rel_column = cls.create_column(model, rel_col_name)
 
         # 먼저 적힌 집계 먼저 발견되는 순으로 order_by에 입력
         order_by_columns = []
-
 
         # 3.7이후로는 defaultdict도 순서가 유지된다.
         for col_name, aggs in rel_agg_dict.items():
@@ -723,7 +770,6 @@ class StaticsQuery(BaseQuery):
             # list로 통일후 검증2) 모든요소가 str검사시 true여야한다.
             if not all(isinstance(agg, str) for agg in aggs):
                 raise AttributeError(f'Invalid agg string: {aggs}! elements must to be str.')
-
 
             for agg in aggs:
                 agg_column = cls.create_column(rel_model, col_name)
@@ -751,8 +797,13 @@ class StaticsQuery(BaseQuery):
         stmt = (
             select(*select_columns)
             # .join(rel_column, *cls.create_filter(rel_model, rel_filters), isouter=True) #  error
-            .outerjoin(rel_model, and_(rel_column, *cls.create_filters(rel_model, rel_filters)))
+            # => posttags_1.tag_id [테이블명이 alias가 잡혀버림]
+            # FROM tags LEFT OUTER JOIN posts ON tags.id = posttags_1.tag_id AND posts.id = posttags_1.post_id
+            # => 관계테이블이 alias로서 _1을 붙여버려 문제가 생긴다.
+            # .outerjoin(rel_model, and_(rel_column, *cls.create_filters(rel_model, rel_filters)))
+            .outerjoin(rel_column)  # 해결1) 성능은 떨어질지라도, outerjoin부터 시키고
             .where(*cls.create_filters(model, filters))
+            .where(*cls.create_filters(rel_model, rel_filters))  # 해결2) 거기서 관계모델을 필터링시킨다.
             .group_by(group_by_column)
             .order_by(*order_by_columns)
             .limit(limit)
@@ -799,6 +850,9 @@ class StaticsQuery(BaseQuery):
         # stmt.columns  >>  ImmutableColumnCollection(anon_1.id, anon_1.name, anon_1.count)
         # stmt.columns.keys()  >>  ['id', 'name', 'count']
 
+        # return cls.execute_to_list_in_dict(stmt)
+        # return cls.execute_to_tuple_list(stmt)
+        # return cls.execute_to_named_tuple_list(stmt)
         return cls.execute_to_dict(stmt)
         # return [{column: value for column, value in row.items()} for row in db.session.execute(stmt).all()]
 
@@ -945,7 +999,7 @@ class StaticsQuery(BaseQuery):
             .order_by(series_subquery.c.date.asc())
         )
 
-        result = cls.execute_to_dict(stmt)
+        result = cls.execute_to_list_in_dict(stmt)
         if result['date']:
             if interval_unit == 'day':
                 result['date'] = list(

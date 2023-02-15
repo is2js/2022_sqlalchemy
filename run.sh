@@ -10,7 +10,7 @@ export FLASK_APP=manage.py
 
 export FLASK_ENV=$APP_CONFIG
 export FLASK_RUN_HOST=0.0.0.0
-export FLASK_RUN_PORT=80
+export FLASK_RUN_PORT=5000
 
 # 가상환경 위치 + 실행까지
 . ~/venvs/sqlalchemy/bin/activate
