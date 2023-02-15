@@ -193,7 +193,10 @@ class Department(BaseModel):
 
     def exists(self):
         with DBConnectionHandler() as db:
-            department = db.session.scalars(select(Department).where(Department.name == self.name)).first()
+            department = db.session.scalars(
+                select(Department)
+                .where(Department.name == self.name)
+            ).first()
             return department  # 객체 or None
 
     def save_backup(self):

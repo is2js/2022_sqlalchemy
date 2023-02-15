@@ -1,10 +1,10 @@
 import datetime
 import os
 
+from pyecharts.charts.chart import Chart
 from sqlalchemy import select
 
 from src.infra.config.connection import DBConnectionHandler
-from src.infra.config.pyechart_wrapper import Chart
 from src.infra.config.query import StaticsQuery
 from src.infra.tutorial3 import *
 from src.main.config import create_app
