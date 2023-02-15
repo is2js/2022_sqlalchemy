@@ -35,6 +35,7 @@ foreign_key_turn_on = {
 
 
 def create_db(truncate: bool = False, drop_table: bool = False):
+    print(conn)
     metadata = Base.metadata
     engine_name = engine.name
 

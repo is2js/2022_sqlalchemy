@@ -11,6 +11,7 @@ from src.infra.config.base import Base
 
 class Category(BaseModel):
     __tablename__ = 'categories'
+    ko_NAME = '카테고리'
 
     # id = Column(Integer, primary_key=True)
     id = Column(Integer().with_variant(BigInteger, "postgresql"), primary_key=True)
@@ -32,7 +33,8 @@ posttags = Table('posttags', Base.metadata,
                  Column('tag_id', Integer().with_variant(BigInteger, "postgresql"), ForeignKey('tags.id'), primary_key=True, nullable=False),
                  Column('post_id', Integer().with_variant(BigInteger, "postgresql"), ForeignKey('posts.id'), primary_key=True, nullable=False),
                  mysql_engine='InnoDB',
-                 mysql_charset='utf8mb4'
+                 mysql_charset='utf8mb4',
+                 comment='Post-Tag 관계테이블'
                  )
 
 
@@ -70,6 +72,7 @@ class PostPublishType(enum.IntEnum):
 
 class Post(BaseModel):
     __tablename__ = 'posts'
+    ko_NAME = '게시글'
 
 
     # id = Column(Integer, primary_key=True)
@@ -111,6 +114,7 @@ class Post(BaseModel):
 
 class Tag(BaseModel):
     __tablename__ = 'tags'
+    ko_NAME = '태그'
 
     # id = Column(Integer, primary_key=True)
     id = Column(Integer().with_variant(BigInteger, "postgresql"), primary_key=True)

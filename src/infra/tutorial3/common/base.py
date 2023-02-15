@@ -10,13 +10,32 @@ from src.infra.config.base import Base
 from src.infra.tutorial3.common.int_enum import IntEnum
 from src.main.templates.filters import format_date, format_datetime
 
+default_args = {
+    'mysql_engine': 'InnoDB',
+    'mysql_charset': 'utf8mb4',
+}
+
 
 class BaseModel(Base):
     __abstract__ = True
-    __table_args__ = {
-        'mysql_engine': 'InnoDB',
-        'mysql_charset': 'utf8mb4'
-    }
+    # @declared_attr
+    # def __tablename__(cls) -> str:
+    #     return cls.__name__.lower()
+    # => 이것 하려면, fk에 테이블명.id로 지정해준 것도 바꿔야하며, 실제테이블을 import하여 column을 대입해줄 수 있다고 한다.
+    # https://stackoverflow.com/questions/28047027/sqlalchemy-not-find-table-for-creating-foreign-key
+
+    # __table_args__ = {
+    #     'mysql_engine': 'InnoDB',
+    #     'mysql_charset': 'utf8mb4',
+    # }
+
+    @declared_attr
+    def __table_args__(cls):
+        if hasattr(cls, "ko_NAME"):
+            # default_args.update({'comment': cls.ko_NAME})  # setter함수다.
+            # => 새로운dict를 만들고, 그안에 기존dict를 **kwargs로 풀어서 넣는다.
+            return dict(comment=cls.ko_NAME, **default_args)
+        return dict(comment=cls.__name__, **default_args)
 
     add_date = Column(DateTime, nullable=False, default=datetime.datetime.now)
     pub_date = Column(DateTime, nullable=False, default=datetime.datetime.now, onupdate=datetime.datetime.now)

@@ -111,6 +111,7 @@ class DepartmentType(enum.IntEnum):
 
 class Department(BaseModel):
     _N = 3
+    ko_NAME = '부서'
 
     __tablename__ = 'departments'
     # __table_args__ = {'extend_existing': True}
@@ -930,6 +931,7 @@ class Department(BaseModel):
 
 # 2.
 class EmployeeDepartment(BaseModel):
+    ko_NAME = '취임정보'
     __tablename__ = 'employee_departments'
     # __table_args__ = {'extend_existing': True}
 

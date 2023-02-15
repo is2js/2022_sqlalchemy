@@ -19,6 +19,7 @@ class BannerType(enum.IntEnum):
 
 class Banner(BaseModel):
     __tablename__ = 'banners'
+    ko_NAME = '배너'
 
     # id = Column(Integer, primary_key=True)
     id = Column(Integer().with_variant(BigInteger, "postgresql"), primary_key=True)

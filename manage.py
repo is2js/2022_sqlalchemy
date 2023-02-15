@@ -1,7 +1,11 @@
+import datetime
 import os
 
+from sqlalchemy import select
+
 from src.infra.config.connection import DBConnectionHandler
-from src.infra.config.query import StaticQuery
+from src.infra.config.pyechart_wrapper import Chart
+from src.infra.config.query import StaticsQuery
 from src.infra.tutorial3 import *
 from src.main.config import create_app
 
@@ -15,6 +19,9 @@ def make_shell_context():
     Session = db.get_current_session()
     db.session = Session()
 
-    return dict(db=db,
-                User=User, Role=Role, Post=Post, Category=Category,
-                StaticQuery=StaticQuery)
+    return dict(db=db, select=select,
+                User=User, Role=Role, Post=Post, Category=Category, Tag=Tag, posttags=posttags,
+                StaticsQuery=StaticsQuery,
+                chart=Chart(),
+                today=datetime.date.today()
+                )

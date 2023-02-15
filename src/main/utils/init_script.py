@@ -70,7 +70,7 @@ def init_script(app: Flask):
 
                 employee_admin = Employee(user_id=user_admin.id, name='관리자', sub_name='Administrator',
                                           birth='9910101918111',
-                                          join_date=datetime.date.today(), job_status=JobStatusType.재직,
+                                          join_date=datetime.date.today(), job_status=JobStatusType.재직.value,
                                           reference='관리자 계정')
 
                 db.session.add(employee_admin)
@@ -84,7 +84,8 @@ def init_script(app: Flask):
                 click.echo(
                     f'Warning) Username[{username}]  or Email[{project_config.ADMIN_EMAIL}]이 생성에 실패했습니다.(이미 존재 하는 정보)')
 
-            except:
+            except Exception as e:
+                print(e)
                 db.session.rollback()
 
                 click.echo(f'Warning) 알 수 없는 이유로 관리자계정 생성에 실패하였습니다.')

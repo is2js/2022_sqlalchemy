@@ -34,6 +34,12 @@ class SexType(enum.IntEnum):
 
 class User(BaseModel):
     __tablename__ = 'users'
+    #### baseModel에 동적으로 cls.ko_NAME이  comment을  __table_args__에 추가된다.
+    # -> 사용은 User.__table__.comment로 한다.
+    # User.__table__.comment
+    # '유저'
+    ko_NAME = '일반사용자'
+
     # 가입시 필수
     # id = Column(Integer, primary_key=True)
     id = Column(Integer().with_variant(BigInteger, "postgresql"), primary_key=True)
@@ -57,7 +63,9 @@ class User(BaseModel):
     ## 추가
     # email/phone은 선택정보이지만, 존재한다면 unique검사가 들어가야한다.
     # => form에서 unique를 검증하고  추가정보로서 unique키를 주면 안된다(None대입이 안되서 unique제약조건에 걸림)
-    sex = Column(IntEnum(SexType), default=SexType.미정.value, nullable=True)
+    sex = Column(IntEnum(SexType), default=SexType.미정.value, nullable=True,
+                 comment='성별'
+                 )
     address = Column(String(60), nullable=True)
     # phone = Column(String(11), nullable=True, unique=True) # nullable데이터는 unique key못주니, form에서 검증하자
     phone = Column(String(11), nullable=True)
@@ -396,6 +404,7 @@ roles = {
 
 class Role(BaseModel):
     __tablename__ = 'roles'
+    ko_NAME = '역할'
 
     # id = Column(Integer, primary_key=True)
     id = Column(Integer().with_variant(BigInteger, "postgresql"), primary_key=True)
@@ -534,6 +543,7 @@ class JobStatusType(enum.IntEnum):
 
 class Employee(BaseModel):
     __tablename__ = 'employees'
+    ko_NAME = '직원'
 
     # id = Column(Integer, primary_key=True)
     id = Column(Integer().with_variant(BigInteger, "postgresql"), primary_key=True)
@@ -1577,6 +1587,8 @@ class Employee(BaseModel):
 
 
 class EmployeeInvite(InviteBaseModel):
+    ko_NAME = '직원초대'
+
     __tablename__ = 'employee_invites'
 
     id = Column(Integer().with_variant(BigInteger, "postgresql"), primary_key=True)
@@ -1611,6 +1623,7 @@ class EmployeeInvite(InviteBaseModel):
 
 
 class EmployeeLeaveHistory(BaseModel):
+    ko_NAME = '휴/복직기록'
     __tablename__ = 'employee_leave_histories'
 
     id = Column(Integer().with_variant(BigInteger, "postgresql"), primary_key=True)

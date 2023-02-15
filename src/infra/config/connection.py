@@ -7,6 +7,7 @@ from src.config import db_config
 class DBConnectionHandler:
     def __init__(self, echo: bool = False) -> None:
         # self.__connection_string = "mysql+pymysql://root:564123@localhost:3306/cinema"
+
         self.__connection_string = db_config.DATABASE_URL
         # self.__engine = self.__create_database_engine()
         self.__engine = self.__create_database_engine(echo)
@@ -43,3 +44,6 @@ class DBConnectionHandler:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.session.close()
+
+    def __repr__(self):
+        return f"{self.__connection_string}에 연결합니다."
