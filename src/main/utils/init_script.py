@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from src.config import project_config
 from src.infra.config.connection import DBConnectionHandler
 
-from create_database_tutorial3 import *
+from create_database import *
 
 
 # from src.infra.tutorial3 import User, Role

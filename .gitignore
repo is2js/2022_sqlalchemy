@@ -31,7 +31,7 @@ study
 #### data ####
 *.json
 main*.py
-create_database*.py
+create_database_*.py
 
 #### docker ####
 docker/db/mysql/data/
