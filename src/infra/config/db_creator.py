@@ -8,12 +8,9 @@ import sqlalchemy
 from sqlalchemy import inspect
 
 from .base import Base
-from .connection import DBConnectionHandler
+from .connection import db
 
-conn = DBConnectionHandler()
-engine = conn.get_engine()
-
-Session = conn.get_current_session()
+engine = db.get_engine()
 
 truncate_query = {
     'mysql': 'TRUNCATE TABLE {};',
@@ -35,7 +32,7 @@ foreign_key_turn_on = {
 
 
 def create_db(truncate: bool = False, drop_table: bool = False):
-    print(conn)
+    # print(db)
     metadata = Base.metadata
     engine_name = engine.name
 
@@ -166,8 +163,8 @@ def get_class_by_tablename(tablename):
 # http://www.lotdoc.cn/blog/detail/178/
 def bulk_insert_from_json(file_name, table_name=None):
     metadata = Base.metadata
-    session = Session()
     engine_name = engine.name
+    session = db.get_session()
 
     tables = load_dump(file_name)
 

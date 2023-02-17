@@ -2,12 +2,12 @@ import datetime
 
 from werkzeug.security import generate_password_hash
 
-from src.infra.config.db_creator import create_db, Session, dump_sqlalchemy, load_dump, bulk_insert_from_json
+from src.infra.config.db_creator import create_db, db, dump_sqlalchemy, load_dump, bulk_insert_from_json
 # from src.infra import tutorial3 # 이렇게 쓰려면, [tutorial3(package).init에 떠 있는 것] 형태로 사용해야한다.
 from src.infra.tutorial3 import *
 
 
-def _load_fake_data(session: Session):
+def _load_fake_data(session):
     ...
     #### level0 #####
     m1 = Menu(
@@ -1814,4 +1814,4 @@ def create_database(load_fake_data: bool = False, truncate: bool = False, drop_t
     # if load_fake_data:
     # 초기데이터는  drop_table or truncate했을 때만 작동하도록 하여 중복데이터 안들어가게
     if (drop_table or truncate) and load_fake_data:
-        _load_fake_data(Session())
+        _load_fake_data(db.get_session())

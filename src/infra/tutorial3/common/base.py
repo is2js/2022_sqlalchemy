@@ -7,6 +7,7 @@ from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import declared_attr
 
 from src.infra.config.base import Base
+from src.infra.tutorial3.common.base_mixin import BaseMixin
 from src.main.templates.filters import format_date, format_datetime
 
 default_table_args = {
@@ -15,7 +16,8 @@ default_table_args = {
 }
 
 
-class BaseModel(Base):
+class BaseModel(BaseMixin):
+    # 추상화 안해주면, does not have a __table__ or __tablename__ specified and does not inherit from an existing table-mapped class.
     __abstract__ = True
     # @declared_attr
     # def __tablename__(cls) -> str:

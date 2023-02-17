@@ -2,7 +2,7 @@ from collections import defaultdict
 
 import pyecharts
 
-from src.infra.config.query import StaticsQuery
+from src.infra.tutorial3.common.base_query import StaticsQuery
 
 
 class Chart:

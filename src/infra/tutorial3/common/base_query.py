@@ -1,5 +1,6 @@
 import enum
 from collections import defaultdict, namedtuple
+from datetime import datetime
 
 from dateutil.relativedelta import relativedelta
 from pyecharts.charts import Bar
@@ -12,7 +13,12 @@ from sqlalchemy.util import classproperty
 
 from src.config import db_config
 from src.infra.config.connection import DBConnectionHandler
-from src.main.utils.to_string import to_string_date
+
+#### import Error유발해서 직접 정의해서 사용
+# from src.main.utils.to_string import to_string_date
+
+def to_string_date(last_month):
+    return datetime.strftime(last_month, '%Y-%m-%d')
 
 """
 BaseQuery 참고1(flask): https://vscode.dev/github/adpmhel24/BakeryProject/blob/master/bakery_project/bakery_app/_helpers.py
