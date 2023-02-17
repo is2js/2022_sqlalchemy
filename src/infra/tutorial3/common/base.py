@@ -2,15 +2,14 @@ import datetime
 import uuid
 
 from flask import url_for
-from sqlalchemy import Column, DateTime, BigInteger, Integer, ForeignKey, Boolean, String, func, and_, inspect
+from sqlalchemy import Column, DateTime, Boolean, String,  and_
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import declared_attr
 
 from src.infra.config.base import Base
-from src.infra.tutorial3.common.int_enum import IntEnum
 from src.main.templates.filters import format_date, format_datetime
 
-default_args = {
+default_table_args = {
     'mysql_engine': 'InnoDB',
     'mysql_charset': 'utf8mb4',
 }
@@ -34,8 +33,8 @@ class BaseModel(Base):
         if hasattr(cls, "ko_NAME"):
             # default_args.update({'comment': cls.ko_NAME})  # setter함수다.
             # => 새로운dict를 만들고, 그안에 기존dict를 **kwargs로 풀어서 넣는다.
-            return dict(comment=cls.ko_NAME, **default_args)
-        return dict(comment=cls.__name__, **default_args)
+            return dict(comment=cls.ko_NAME, **default_table_args)
+        return dict(comment=cls.__name__, **default_table_args)
 
     add_date = Column(DateTime, nullable=False, default=datetime.datetime.now)
     pub_date = Column(DateTime, nullable=False, default=datetime.datetime.now, onupdate=datetime.datetime.now)

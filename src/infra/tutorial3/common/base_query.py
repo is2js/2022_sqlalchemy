@@ -4,50 +4,64 @@ from collections import defaultdict, namedtuple
 from dateutil.relativedelta import relativedelta
 from pyecharts.charts import Bar
 from sqlalchemy import and_, or_, select, func, distinct, inspect, Table, cast, Integer, literal_column, text, column, \
-    Numeric
+    Numeric, desc, asc
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.orm import aliased
+from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.orm import aliased, Session
+from sqlalchemy.util import classproperty
 
+from src.config import db_config
 from src.infra.config.connection import DBConnectionHandler
 from src.main.utils.to_string import to_string_date
 
+"""
+BaseQuery 참고1(flask): https://vscode.dev/github/adpmhel24/BakeryProject/blob/master/bakery_project/bakery_app/_helpers.py
+BaseQuery 참고2(fastapi): https://vscode.dev/github/adpmhel24/BakeryProject/blob/master/bakery_project/bakery_app/_helpers.py
+
+BaseMixin 참고: https://github.com/riseryan89/notification-api/blob/master/app/database/schema.py
+
+Mixin 완성본 참고:  https://github.com/absent1706/sqlalchemy-mixins/tree/ce4badbc51f8049783fa3909615ccfc7c1198d98/sqlalchemy_mixins
+- smartquery: https://github.com/absent1706/sqlalchemy-mixins/blob/ce4badbc51f8049783fa3909615ccfc7c1198d98/sqlalchemy_mixins/smartquery.py
+- inpsect mixins: https://github.com/absent1706/sqlalchemy-mixins/blob/ce4badbc51f8049783fa3909615ccfc7c1198d98/sqlalchemy_mixins/inspection.py
+"""
+
+DESC_PREFIX = '-'
+OPERATOR_OR_FUNC_SPLITTER = '__'
+
+# https://github.com/absent1706/sqlalchemy-mixins/blob/ce4badbc51f8049783fa3909615ccfc7c1198d98/sqlalchemy_mixins/smartquery.py#L396
 op_dict = {
     "==": "eq",
+    "eq": "eq",
     "!=": "ne",
+    "ne": "ne",
     ">": "gt",
+    "gt": "gt",
     "<": "lt",
+    "lt": "lt",
     ">=": "ge",
+    "ge": "ge",
     "<=": "le",
+    "le": "le",
     "like": "like",
     "ilike": "ilike",
     "in": "in",
     "notilike": "notilike",
     "is": "is_",
     "isnot": "isnot",
+    "between": "between"
 }
 
 
-def get_dialect_name():
-    with DBConnectionHandler() as db:
-        # if isinstance(db.session.bind.dialect, postgresql.dialect):
-        #     date_format = date_format_map['postgresql']
-        # db.session.bind.dialect.name
-        # 'mysql', 'sqlite', 'postgresql'
-        dialect_name = db.session.bind.dialect.name
-    return dialect_name
-
-
 class BaseQuery:
-    dialect_name = get_dialect_name()
+    DIALECT_NAME = db_config.get_dialect_name()
 
     @classmethod
-    def create_column(cls, model, column_name):
-        # ORM model이 아니라 Table() 객체일 경우 -> .c에서getattr
+    def get_column(cls, model, column_name):
+        # ORM model이 아니라 Table() 객체일 경우 -> .c에서 getattr
         if isinstance(model, Table):
             column = getattr(model.c, column_name, None)
         else:
             column = getattr(model, column_name, None)
-
         # Table()객체는 boolean 자리에 입력시 에러
         # if not column:
         if column is None:
@@ -56,21 +70,72 @@ class BaseQuery:
         return column
 
     @classmethod
-    def create_columns(cls, model, col_names=None):
+    def split_and_check_name(cls, column_name):
+        column_name = column_name.split(f'{OPERATOR_OR_FUNC_SPLITTER}')
+        if len(column_name) > 2:
+            raise Exception(f'Invalid func column name: {column_name}')
+
+        return column_name
+
+    @classmethod
+    def create_column(cls, model, column_name):
+        """
+        BaseQuery.create_column(User, 'id')
+        <sqlalchemy.orm.attributes.InstrumentedAttribute object at 0x0000024B4967A5C8>
+
+        BaseQuery.create_column(User, 'id__count')
+        <sqlalchemy.sql.elements.Label object at 0x0000024B4989E748>
+
+        """
+        # 칼럼이 집계함수와 같이 들어온다면 집계함수를 적용할 수 있게 한다.
+        if '__' in column_name:
+            column_name, func_name = cls.split_and_check_name(column_name)  # split결과 3개이상나오면 에러 1개, 2개는 넘어감
+
+            column = cls.get_column(model, column_name)
+
+            #### func 적용 apply_func = 인자 추가
+            if func_name == 'count':
+                return func.coalesce(func.count(column), 0).label(func_name)
+            elif func_name == 'sum':
+                return func.coalesce(func.sum(cast(column, Integer)), 0).label(func_name)
+            elif func_name == 'length':
+                return func.coalesce(func.length(column), 0).label(func_name)
+            else:
+                raise NotImplementedError(f'Invalid column func_name: {func_name}')
+
+        else:
+            return cls.get_column(model, column_name)
+
+    @classmethod
+    def create_columns(cls, model, column_names=None):
         """
         return a list of columns from the model
         - https://vscode.dev/github/adpmhel24/jpsc_ordering_system
-        :param model:
-        :param col_names: string list ex> ['id', 'name']
-        :return:
+
+        BaseQuery.create_columns(User, ['id', 'id__sum'])
+        [<sqlalchemy.orm.attributes.InstrumentedAttribute object at 0x0000024B4967A5C8>, <sqlalchemy.sql.elements.Label object at 0x0000024B4989EA20>]
+        BaseQuery.create_columns(User, ['id', 'username__count'])
+        [<sqlalchemy.orm.attributes.InstrumentedAttribute object at 0x0000024B4967A5C8>, <sqlalchemy.sql.elements.Label object at 0x0000024B4989EB38>]
+        BaseQuery.create_columns(User, ['id', 'username__length'])
+        [<sqlalchemy.orm.attributes.InstrumentedAttribute object at 0x0000024B4967A5C8>, <sqlalchemy.sql.elements.Label object at 0x0000024B4989E710>]
+
         """
-        if not col_names:
+        if not column_names:
             return [model]
 
+        if not isinstance(column_names, (list, tuple, set)):
+            column_names = [column_names]
+
         columns = []
-        for col_name in col_names:
-            column = cls.create_column(model, col_name)
-            columns.append(column)
+        for column_name in column_names:
+            # 칼럼들이 들어올 때, str 'id'가 아니라, [('id', 'count')] 집계를 요구할 수 있다.
+            # if not isinstance(column_name, str):
+            #     if not isinstance(column_name, (list, tuple, set)):
+            #         raise Exception(f'Invalid column name: {column_name}')
+            #     column_name, apply_func = column_name
+            # => 집계를 ['id__count', 'name']형식으로 바꾸자.
+
+            columns.append(cls.create_column(model, column_name))
 
         return columns
 
@@ -90,7 +155,7 @@ class BaseQuery:
         return rel_column.target
 
     @classmethod
-    def create_filters(cls, model, filters):
+    def create_filters2(cls, model, filters):
         """
         재귀를 이용하여, and_or_or(key)의 내부들을 연결한다.
         return sqlalchemy's filter
@@ -118,11 +183,11 @@ class BaseQuery:
             if type(filters[filter_op]) == dict:
                 if 'and' in filter_op:
                     filt.append(
-                        and_(*cls.create_filters(model, filters[filter_op]))
+                        and_(*cls.create_filters2(model, filters[filter_op]))
                     )
                 elif 'or' in filter_op:
                     filt.append(
-                        or_(*cls.create_filters(model, filters[filter_op]))
+                        or_(*cls.create_filters2(model, filters[filter_op]))
                     )
                 else:
                     raise Exception(f'invalid filter operator: {filter_op}')
@@ -132,8 +197,6 @@ class BaseQuery:
             # -> 한번에 조건들을 filt_aux에 순서대로 append해놓고, key에 따라 전체를 and_() 하거나 or_()로 묶을 것이다.
             filt_aux = []
             for raw in filters[filter_op]:
-                print('raw  >> ', raw)
-
                 # 1) try로 unpack가능한 (,,)인지 확인
                 try:
                     col_name, op_name, value = raw
@@ -154,6 +217,10 @@ class BaseQuery:
                 # 3-1) in연산자만 attr확인없이 1개의 sqlachemy연산이 되므로 바로 filt_aux에 추가하면 된다.
                 if op_dict[op_name] == 'in':
                     filt_aux.append(column.in_(value))
+                    continue
+                # 추가 between도 바로 처리
+                elif op_dict[op_name] == 'between':
+                    filt_aux.append(column.between(value[0], value[1]))
                     continue
 
                 # 3-2) in이 아닌 다른 연산자들은 연산메서드(attribute)로 바꿔서 적용한 filter를 append
@@ -188,9 +255,195 @@ class BaseQuery:
 
         return filt
 
-    # columns, filters를 둘다 받아 내부에서 사용 + 실행은 안한 쿼리 -> .first()일지 .all()일지도 밖에서 결정한다.
     @classmethod
-    def create_select_query(cls, model, column_names=None, filters=None):
+    def create_filters(cls, model, filters):
+        """
+        나중에 Mixin으로 들어가면 filters(dict) => 인자 **kwargs로 변경 후, 외부에서는 keyword로만 입력하기. and_={}일때 dict펼치기
+                           , filters.items() =>  kwargs.items()로 변경
+
+        print( StaticsQuery.create_filters(User, filters={'id': 1}) [0])
+        -> users.id = :id_1
+        print( StaticsQuery.create_filters(User, filters={'id__eq': 1}) [0])
+        -> users.id = :id_1
+        ####  조건을 2개이상 걸 경우, 'and_'나 'or_'를 부모 key로서 걸어줘야한다. 'and'도 되지만, keyword방식에선 못씀. and_=로 걸어야한다
+        print( StaticsQuery.create_filters(User, filters={'id': 1, 'username': 'admin'}) [0])
+        -> users.id = :id_1
+        print( StaticsQuery.create_filters(User, filters={'and_':{'id': 1, 'username': 'admin'}}) [0])
+        -> users.id = :id_1 AND users.username = :username_1
+
+        #### depth로 조건을 걸면, and나 or가 안나올때까지 재귀를 태워서, 부모가 list를 받아 연산자를 걸어 최종반환한다
+        print( StaticsQuery.create_filters(User, filters={'and_': {'id__lt': 10, 'or_': {'username': 'admin', 'id__ne':1 }}}) [0])
+        -> users.id < :id_1 AND (users.username = :username_1 OR users.id != :id_2)
+        """
+        # 1. dict가 안들어와 -> filters 결과물인 list가 반환이 안되는 상황
+        if not filters:
+            return []
+        # 2. dict를 받아서 filters list를 만든다.
+        # CASE 1: dict순회시 => key='and_' or 'or_' / value = 자식dict
+        # CASE 2: dict순회시 'and_'나'or_'가 아니라서 => key='column__연산' / value = 값
+        # {
+        #  'or_1':{ <---- CASE 1
+        #       'and_1': { 'id__gt':5, 'id__ne':3 }, <---- CASE 2
+        #       'and_2': dict(name__eq='cho') <---- 2-2
+        #  },
+
+        total_filters = []
+
+        for key, value in filters.items():
+            # CASE 1: dict순회시 => key='and_' or 'or_' / value = 자식dict
+            # => 자식dict를 다시 create_filers의 인자로서 재귀로 넣고 filter list를 받은 뒤
+            #    연산자에 따라서 묵어준다.
+            if 'and' in key or 'or' in key:
+                child_filters = and_(*cls.create_filters(model, value)) if 'and' in key \
+                    else or_(*cls.create_filters(model, value))
+                total_filters.append(child_filters)
+                continue
+
+            # CASE 2: dict순회시 'and_'나'or_'가 아니라서 => key='column__연산' / value = 값
+            # => column__연산을 split하고, where 내을 list에 append한다.
+            # => 어차피 재귀로 타고온 2번째라서, 부모에게 list를 건네, 부모에서 and_()나 or_()로 묶일 예정이다.
+            #      이 때, 비교연산자를 안적는 경우, __eq로 간주하게 한다.
+            key = cls.split_and_check_name(key)  # # split결과 3개이상나오면 에러 1개, 2개는 넘어감
+            if len(key) == 1:
+                # split했기 때문에, [ 'username'] 으로 들어가있음. -> key[0]
+                column = cls.create_column(model, key[0])
+                # # 어차피 and or or로 시작하며, 아닌 턴에서는 list로만 append하면 부모가 and_()나 or_()로 싼다
+                total_filters.append(column == value)
+            else:  # len(key) == 2:
+                column_name, op_name = key
+                column = cls.create_column(model, column_name)
+
+                # 3) op string -> op attribute로 변환
+                if op_name not in op_dict:
+                    raise Exception(f'Invalid filter operator: {op_name}')
+                # 3-1) in연산자만 attr확인없이 1개의 sqlachemy연산이 되므로 바로 filt_aux에 추가하면 된다.
+                if op_dict[op_name] == 'in':
+                    total_filters.append(column.in_(value))
+                else:
+                    # 3-2) 나머지 연산자들 처리
+                    operator = op_dict[op_name]
+                    attr = next((op for op in (operator, f'{operator}_', f'__{operator}__') if hasattr(column, op)),
+                                None)
+                    if not attr:
+                        raise Exception(f'Invalid filter operator name: {op_name}')
+
+                    # 4) value가 json의 null이 올 수도
+                    if value == 'null':
+                        value = None
+
+                    total_filters.append(getattr(column, attr)(value))
+
+        return total_filters
+
+    #####
+    # classproperty    #
+    #####
+    # sqlalchemy가 주는 것 => model이 상속하는 경우 mode빼고, @classproperty로
+    # @classproperty
+    @classmethod
+    def get_column_names(cls, model):
+        # 1. inspect를 쓰는 방법 : https://github.com/absent1706/sqlalchemy-mixins/blob/master/sqlalchemy_mixins/smartquery.py
+        # => list(inspect(User).columns.keys())
+        # 2. ORM(Column객체)과 다른 table의 ColumnProperty를 순회 inspect(User).mapper.column_attrs -> 칼럼순회  -> 이름 column_attr.key
+        # 3. model.__table__을 활용하는 법
+        # =>list(User.__table__.columns.keys())
+        # => __table__을 활용하면 hybrid property 등을 차후 확인할 수 없게 된다.
+        #   ex> 'Table' object has no attribute 'all_orm_descriptors'
+        #       list(inspect(User).all_orm_descriptors)
+        return inspect(model).columns.keys()
+
+    # @classproperty
+    @classmethod
+    def get_hybrid_property_names(cls, model):
+        items = inspect(model).all_orm_descriptors
+        return [item.__name__ for item in items if isinstance(item, hybrid_property)]
+
+    # @classproperty
+    @classmethod
+    def get_sortable_columns(cls, model):
+        return cls.get_column_names(model) + cls.get_hybrid_property_names(model)
+
+    @classmethod
+    def create_order_bys(cls, model, column_names):
+        """
+        StaticsQuery.create_order_bys(User, '-id')
+        ->[<sqlalchemy.sql.elements.UnaryExpression object at 0x0000011E9E339B70>]
+
+        Mixin으로 바껴서 model없이 column_names만 받는다면, *column_names로 콤마들을 받아서
+        column_names를 인자 1개만 들어와도 list(tuple)로 다루면 된다.
+
+        """
+        if not column_names:
+            return []
+
+        if not isinstance(column_names, (list, tuple, set)):
+            column_names = [column_names]
+
+        order_by_columns = []
+        for column_name in column_names:
+            # 지연으로 맥일 함수를 ()호출없이 가지고만 있는다.
+            # -를 달고 있으면, 역순으로 맥인다.
+            # order_func = desc if column_name.startswith(DESC_PREFIX) else asc
+
+            #### 칼럼으로 순서 적용가능한지는 model.sortable_attributes안에 있는지로 확인한다.
+            # -> -달고 있으면 때고 검사해야한다.
+            # if column_name not in model.sortable_attributes:
+            #     raise KeyError(f'Invalid order column: {column_name}')
+            #### 2개를 한번에 처리(order_func + '-'달고 있으면 떼기)
+            order_func, column_name = (desc, column_name[1:]) if column_name.startswith(DESC_PREFIX) \
+                else (asc, column_name)
+
+            if column_name not in cls.get_sortable_columns(model):
+                raise KeyError(f'Invalid order by column: {column_name}')
+
+            # column을 만들고, desc()나 asc()를 지연으로 맥인다.
+            order_by_column = order_func(cls.create_column(model, column_name))
+
+            order_by_columns.append(order_by_column)
+
+        return order_by_columns
+
+    @classmethod
+    def create_select_statement(cls, model,
+                            selects=None,
+                            filters=None,
+                            order_bys=None,
+                            ):
+        """
+        1. 필터만 걸 때 -> 모든 칼럼
+        print(StaticsQuery.create_select_statement(User, filters={'id__in': [1,2,3,4]}))
+        ---
+        SELECT users.add_date, users.pub_date, users.id, users.username, users.password_hash, users.email, users.last_seen, users.is_active, users.avatar, users.sex, users.address, users.phone, users.role_id
+        FROM users
+        WHERE users.id IN (__[POSTCOMPILE_id_1])
+
+        2. selects에 뽑고 싶은 칼럼 기입
+        print(StaticsQuery.create_select_statement(User, selects=['username'], filters={'id__in': [1,2,3,4]}))
+        ---
+        SELECT users.username
+        FROM users
+        WHERE users.id IN (__[POSTCOMPILE_id_1])
+
+        3.print(StaticsQuery.create_select_statement(User, selects=['username'], filters={'id__in': [1,2,3,4]}, order_bys=['-id', 'username']))
+        ---
+        SELECT users.username
+        FROM users
+        WHERE users.id IN (__[POSTCOMPILE_id_1]) ORDER BY users.id DESC, users.username ASC
+        """
+
+        stmt = (
+            select(*cls.create_columns(model, column_names=selects))
+            .where(*cls.create_filters(model, filters=filters))
+            .order_by(*cls.create_order_bys(model, column_names=order_bys))
+        )
+        return stmt
+
+    # columns, filters를 둘다 받아 내부에서 사용 + 실행은 안한 쿼리 -> 외부에서 .first()일지 .all()일지도 밖에서 결정한다.
+    @classmethod
+    def execute_scalars(cls, model, column_names=None, filters=None):
+        """
+        외부에서 .all()  or .first()를 선택해서 사용한다.
+        """
         with DBConnectionHandler() as db:
             return db.session.scalars(
                 select(*cls.create_columns(model, column_names))
@@ -198,7 +451,19 @@ class BaseQuery:
             )
 
     @classmethod
-    def execute_to_dict(cls, stmt):
+    def execute_scalar(cls, model, column_names=None, filters=None):
+        """
+         StaticsQuery.execute_scalar_select(User, [('id', 'count')])
+        -> 1
+        """
+        with DBConnectionHandler() as db:
+            return db.session.scalar(
+                select(*cls.create_columns(model, column_names))
+                .where(*cls.create_filters(model, filters))
+            )
+
+    @classmethod
+    def execute_to_dict_list(cls, stmt):
         """
             [{'sex': '미정', 'count': 1}, {'sex': '남자', 'count': 5}]
 
@@ -286,15 +551,15 @@ class BaseQuery:
         with DBConnectionHandler() as db:
             for row in db.session.execute(stmt):
                 new_row = NamedRow(*row)
-                for col_name in col_names:
-                    # Enum칼럼인 경우,[ {(<SexType.미정: 0>, 1)]
-                    # ->속성은 똑같이 : sqlalchemy.orm.attributes.InstrumentedAttribute 이지만
-                    # -> 출력이 execute된 결과에서 꺼내면
-                    # type(getattr(row, name))  >>  <enum 'SexType'> 의 enum이 나온다
-                    col_value = getattr(new_row, col_name)
-                    if isinstance(col_value, enum.Enum):
-                        col_value = col_value.name
-                    # new_row
+                # for col_name in col_names:
+                # Enum칼럼인 경우,[ {(<SexType.미정: 0>, 1)]
+                # ->속성은 똑같이 : sqlalchemy.orm.attributes.InstrumentedAttribute 이지만
+                # -> 출력이 execute된 결과에서 꺼내면
+                # type(getattr(row, name))  >>  <enum 'SexType'> 의 enum이 나온다
+                # col_value = getattr(new_row, col_name)
+                # if isinstance(col_value, enum.Enum):
+                #     col_value = col_value.name
+                # new_row
                 result.append(new_row)
 
         return result
@@ -373,21 +638,21 @@ class BaseQuery:
     @classmethod
     def get_date_format(cls, interval_unit):
 
-        date_format = cls.date_format_map[cls.dialect_name][interval_unit]
+        date_format = cls.date_format_map[cls.DIALECT_NAME][interval_unit]
 
         return date_format
 
     @classmethod
     def to_string_column(cls, date_column, date_format):
 
-        if cls.dialect_name == 'postgresql':
+        if cls.DIALECT_NAME == 'postgresql':
             return func.to_char(date_column, date_format).label('date')
-        elif cls.dialect_name == 'mysql':
+        elif cls.DIALECT_NAME == 'mysql':
             return func.date_format(date_column, date_format).label('date')
-        elif cls.dialect_name == 'sqlite':
+        elif cls.DIALECT_NAME == 'sqlite':
             return func.strftime(date_format, date_column).label('date')
         else:
-            raise NotImplementedError(f'Invalid dialect : {cls.dialect_name}')
+            raise NotImplementedError(f'Invalid dialect : {cls.DIALECT_NAME}')
 
 
 class StaticsQuery(BaseQuery):
@@ -634,16 +899,21 @@ class StaticsQuery(BaseQuery):
 
     #### 외부용 -> 차트용
     @classmethod
-    def agg(cls, model, col_name, agg_dict=dict(id='count'),
+    def agg(cls, model, group_by_column, agg_dict,
+            select_column_names=None,
             filters=None,
             is_distinct=False,
             descending=True,
             limit=5
             ):
         """
-        === list ===
-        0. StaticsQuery.agg(User, 'sex', agg_dict=dict(sex='count'))
-         => pie chart를 위한 tuple list 반환 [('미정', 1)]
+        1. select_column_names을 지정해주지 않으면 groupby 칼럼 + 집계칼럼들이 select된다.
+        StaticsQuery.agg(Category, 'id', agg_dict=dict(id='count', name='length'))
+        => [(1, 1, 3), (2, 1, 3)]
+        2. select_column_names을 지정해주면, select칼럼들 + 집계칼럼들이 select된다.
+        StaticsQuery.agg(Category, 'id', agg_dict=dict(id='count', name='length'), select_column_names='name')
+        => [('123', 1, 3), ('456', 1, 3)]
+
 
          === dict ===
         1. 카테고리의 name별 'count'
@@ -663,9 +933,16 @@ class StaticsQuery(BaseQuery):
         """
 
         # 입력된 칼럼은 groupby 기준이자, select 1번째 기본
-        group_by_column = cls.create_column(model, col_name)
+        group_by_column = cls.create_column(model, group_by_column)
 
-        select_columns = [group_by_column]
+        # 따로 select하고 싶은 칼럼이 없다면, -> groupby 칼럼 + 집계칼럼들을 select할 예쩡이다.
+        if not select_column_names:
+            select_columns = [group_by_column]
+        else:
+            # 칼럼 1개만 적을 경우 대비
+            if not isinstance(select_column_names, list):
+                select_column_names = [select_column_names]
+            select_columns = cls.create_columns(model, select_column_names)
 
         # 먼저 적힌 집계 먼저 발견되는 순으로 order_by에 입력
         order_by_columns = []
@@ -796,18 +1073,26 @@ class StaticsQuery(BaseQuery):
         ####           .fk를 직접 사용하지말고, and_( 관계필드 , 추가조건)로 관계필드만 주면 .id == .fk가 자동연결된다.
         stmt = (
             select(*select_columns)
-            # .join(rel_column, *cls.create_filter(rel_model, rel_filters), isouter=True) #  error
-            # => posttags_1.tag_id [테이블명이 alias가 잡혀버림]
+            # 1차 => rel_filters를 그냥 넣으면  안걸림.
+            # .join(rel_column, *cls.create_filters(rel_model, rel_filters), isouter=True) #  error
+            # 2차 => 관계칼럼말고, 관계모델로join을 걸면, 찾은 관계모델이 alias로 취급된다.
+            # => posttags_1.tag_id [관계 테이블명이 alias가 잡혀버림]
+            # => 참고) https://github.com/absent1706/sqlalchemy-mixins/blob/master/sqlalchemy_mixins/smartquery.py
             # FROM tags LEFT OUTER JOIN posts ON tags.id = posttags_1.tag_id AND posts.id = posttags_1.post_id
-            # => 관계테이블이 alias로서 _1을 붙여버려 문제가 생긴다.
+            # => 관계테이블이 alias로서 posttags_1을 붙여버려 문제가 생긴다.
             # .outerjoin(rel_model, and_(rel_column, *cls.create_filters(rel_model, rel_filters)))
+            # .outerjoin(rel_model,  and_(*cls.create_filters(rel_model, rel_filters)))
+            # => 추가 조건을 join과 동시에 거려면, 관계칼럼으로 안되며, model로 join하고 id연결조건을 직접 달아줘야한다.
+            #     하지만 여기서는, 관계테이블에 의해 공짜로 연결되기 위해서는 관계칼럼으로 join해야한다.
+            # :https://stackoverflow.com/questions/34290956/sqlalchemy-condition-on-join-fails-with-attributeerror-neither-binaryexpress
             .outerjoin(rel_column)  # 해결1) 성능은 떨어질지라도, outerjoin부터 시키고
-            .where(*cls.create_filters(model, filters))
             .where(*cls.create_filters(rel_model, rel_filters))  # 해결2) 거기서 관계모델을 필터링시킨다.
+            .where(*cls.create_filters(model, filters))
             .group_by(group_by_column)
             .order_by(*order_by_columns)
             .limit(limit)
         )
+        # print(stmt)
         # print('stmt  >> ', stmt)
         # 1) join(테이블, 추가조건만) 줄 경우 -> .id == .fk 연결안됨
         # SELECT categories.id, categories.name, coalesce(count(posts.id), :coalesce_1) AS count
@@ -853,7 +1138,7 @@ class StaticsQuery(BaseQuery):
         # return cls.execute_to_list_in_dict(stmt)
         # return cls.execute_to_tuple_list(stmt)
         # return cls.execute_to_named_tuple_list(stmt)
-        return cls.execute_to_dict(stmt)
+        return cls.execute_to_dict_list(stmt)
         # return [{column: value for column, value in row.items()} for row in db.session.execute(stmt).all()]
 
     ##########
@@ -887,15 +1172,15 @@ class StaticsQuery(BaseQuery):
             start_date = cls.get_start_date_from(end_date, interval_unit, interval_value, is_during=is_during)
 
         # print(start_date)
-        # dialect_name = cls.get_dialect_name()
+        # DIALECT_NAME = cls.get_dialect_name()
 
         date_format = cls.get_date_format(interval_unit)
 
         # 1) postgresql만 재귀없이 generate_series로 format에 맞는 date들을 subquery로 만들 수 있다.
         # -> from start, end_date string을 넣고 -> interval로 만들어진 date -> select에서 to_char
         # -> text()에 넣어 'series'라는 이름의 subquery로 변환
-        # if dialect_name == 'postgresql':
-        if cls.dialect_name == 'postgresql':
+        # if DIALECT_NAME == 'postgresql':
+        if cls.DIALECT_NAME == 'postgresql':
             stmt = f"""
                     select to_char(generate_series, '{date_format}') as date 
                     from generate_series('{to_string_date(start_date)}'::DATE, '{to_string_date(end_date)}'::DATE, '1 {interval_unit}s'::INTERVAL)
@@ -906,15 +1191,15 @@ class StaticsQuery(BaseQuery):
         else:
             # 2) mysql과 sqlite는 재귀를 돌리는데, select/to_char stmt가 서로 다르다.
             #
-            # if dialect_name == 'mysql':
-            if cls.dialect_name == 'mysql':
+            # if DIALECT_NAME == 'mysql':
+            if cls.DIALECT_NAME == 'mysql':
                 select_date = f"SELECT date + interval 1 {interval_unit}"
                 to_char = f"DATE_FORMAT(date, '{date_format}')  AS 'date'"
-            elif cls.dialect_name == 'sqlite':
+            elif cls.DIALECT_NAME == 'sqlite':
                 select_date = f"SELECT date(date, '+1 {interval_unit}')"
                 to_char = f"strftime('{date_format}', date) AS 'date' "
             else:
-                raise NotImplementedError(f'Not implemented for {cls.dialect_name}')
+                raise NotImplementedError(f'Not implemented for {cls.DIALECT_NAME}')
 
             # start_date, end_date를 date형식으로 넣어야하는데, f"{}"로는 string밖에 못나타내니
             # -> text().bindparams()에 string을 넣으면, 자동으로 date로 들어간다?!
@@ -922,7 +1207,7 @@ class StaticsQuery(BaseQuery):
 
             stmt = f"""
             WITH RECURSIVE dates(date) AS (
-                  {'SELECT' if cls.dialect_name == 'mysql' else 'VALUES'} (:start_date)
+                  {'SELECT' if cls.DIALECT_NAME == 'mysql' else 'VALUES'} (:start_date)
                   UNION ALL
                   {select_date}
                   FROM dates

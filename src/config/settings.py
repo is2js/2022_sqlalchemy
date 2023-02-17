@@ -51,9 +51,22 @@ class DB:
     POST_PER_PAGE = int(os.getenv("POST_PER_PAGE", "10"))
     COMMENTS_PER_PAGE = int(os.getenv("COMMENTS_PER_PAGE", "20"))
 
+    # dialect를 DB_CONNECTION으로 바로 알 수 있도록 추가
+    # ->db_config.DIALECT_NAME() =>  'sqlite'
+
+    @classmethod
+    def get_dialect_name(cls):
+        if not hasattr(cls, 'DB_CONNECTION'):
+            return 'sqlite'
+
+        db_names = ['mysql', 'postgresql']
+        for db_name in db_names:
+            if db_name in cls.DB_CONNECTION:
+                return db_name
+
 
 class DBDevConfig(DB):
-   # .env 파일에 DB_CONNECTION 여부가 sqlite vs RDB를 결정한다.
+    # .env 파일에 DB_CONNECTION 여부가 sqlite vs RDB를 결정한다.
     if os.getenv("DB_CONNECTION"):
         DB_CONNECTION = os.getenv("DB_CONNECTION").lower()
         DB_USER: str = os.getenv("DB_USER", "root")
@@ -66,7 +79,7 @@ class DBDevConfig(DB):
                        f"{DB_USER}:{DB_PASSWORD}@" \
                        f"{DB_HOST}:{DB_PORT}/" \
                        f"{DB_NAME}"
-        
+
         # 추가
         if 'mysql' in DB_CONNECTION:
             DATABASE_URL += '?charset=utf8mb4'
@@ -170,7 +183,7 @@ if os.getenv('APP_CONFIG') == 'production':
 
     # 1) logging 설정
     dictConfig({
-        'version': 1, # 1 고정값 사용. 버전무관하게 만들어주는 안전장치
+        'version': 1,  # 1 고정값 사용. 버전무관하게 만들어주는 안전장치
         'formatters': {
             # 출력형식 : 현재시간 / 로그레벨 / 로그호출 모듈명 / 출력내용
             'default': {
