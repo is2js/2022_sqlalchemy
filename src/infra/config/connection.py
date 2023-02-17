@@ -12,8 +12,6 @@ class DBConnectionHandler:
         # self.__engine = self.__create_database_engine()
         self.__engine = self.__create_database_engine(echo)
         self.session = None
-        # session생성해서 가져가기용
-        self.__session_generator = self.__create_session_generator()
 
     def __create_database_engine(self, echo):
         # engine = create_engine(self.__connection_string)
@@ -33,7 +31,8 @@ class DBConnectionHandler:
     def get_engine(self):
         return self.__engine
 
-    def __create_session_generator(self):
+    def __get_db_session(self):
+        # 1회성이지만 generator로 만들어야, return후 대기했다가 추가동작을 할 수 있다.
         Session = sessionmaker(bind=self.__engine)
         #### 생성된 세션은 yield로 보내고, 다음 next()호출 전까지는, 대기하며, try/finally를 이용하여
         #### 일단 생성후, 사용되었다면, close()까지 자동으로 되도록 한다.
@@ -47,9 +46,11 @@ class DBConnectionHandler:
             db_session.close()
         # return Session()
 
+    #### property로 만들어야, 함수생성 -> 추가로직을 동시에 바깥에서 ()한번으로 할 수 있다.
+    @property
     def get_session(self):
-        # return next(self.__session_generator)
-        return next(self.__session_generator)
+        # return next(self.__get_db_session())
+        return self.__get_db_session().__next__
 
     def __enter__(self):
         Session = sessionmaker(bind=self.__engine)
