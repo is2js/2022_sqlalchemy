@@ -141,7 +141,7 @@ class BaseMixin(Base, BaseQuery):
         User.filter_by().order_by(User.id.desc()).all()
         """
         self._query = self._query \
-            .order_by(*self.createorder_bys(args))
+            .order_by(*self.create_order_bys(args))
 
         return self
 
@@ -238,8 +238,9 @@ class BaseMixin(Base, BaseQuery):
 
     def __repr__(self):
         info: str = f"{self.__class__.__name__}["
-        for c in self.columns_except_pk_and_default:
-            info += f"{c.key}={getattr(self, c.key)!r},"
+        # for c in self.columns_except_pk_and_default:
+        for name in self.pks + self.uks:
+            info += f"{name}={getattr(self, name)!r},"
         info += "]"
         return info
 
@@ -369,14 +370,22 @@ class BaseMixin(Base, BaseQuery):
         # print('self.column_names  >> ', self.column_names)
         # 2) 여러개 중에 1개만 뽑은 뒤
         self_unique_key = next((column_name for column_name in self.column_names if column_name in self.uks), None)
-        # print('unique_key  >> ', self_unique_key)
+        print('unique_key  >> ', self_unique_key)
         if not self_unique_key:
             # 3) 유니크 키가 없는 경우, 필터링해서 존재하는지 확인할 순 없다.
-            raise Exception(f'생성에 필요한 unique key가 존재하지 않습니다.')
+            raise Exception(f'생성 전, 이미 존재 하는지 유무 확인을 위한 unique key가 존재하지 않습니다.')
 
-        existing_obj = self.filter_by(session=self._session,
-                                      **{self_unique_key: getattr(self, self_unique_key)}) \
+        print('self.__dict__  >> ', self.__dict__)
+
+
+        print('{self_unique_key: getattr(self, self_unique_key)}  >> ', {self_unique_key: getattr(self, self_unique_key)})
+        # {self_unique_key: getattr(self, self_unique_key)}  >>  {'username': None}
+        # existing_obj  >>  None
+        existing_obj = self.filter_by(
+            session=self._session,
+            **{self_unique_key: getattr(self, self_unique_key)}) \
             .first()
+        print('existing_obj  >> ', existing_obj)
 
         return existing_obj
 
@@ -419,6 +428,7 @@ class BaseMixin(Base, BaseQuery):
     def check_session(self, session):
         if not hasattr(self, '_session') or not self._session:
             self._session = self._get_session(session)
+            self._query = None #
 
     def update(self, session: Session = None, auto_commit: bool = False, **kwargs):
         #### 문제는 User.get()으로 찾을 시, cls() obj가 내포되지 않아 self내부 _session이 없다.
@@ -428,22 +438,113 @@ class BaseMixin(Base, BaseQuery):
         # => self.check_session(session)
         """
         1. filter_by로 객체 생성하면서, session보급받은 상태
-        c = Category.filter_by(name='555')
-        c.update(auto_commit=True, name='666')
+        Category.get_all()
+        [Category[name='ㅏㅏ'], Category[name='456'], Category[name='555']]
+
+        Category.filter_by(id=1).update(auto_commit=True, name='aa')
+
+        Category.get_all()
+        [Category[name='aa'], Category[name='456'], Category[name='555']]
+
 
         2. filter_by없이 결과메서드 이후 결과객체에서 _session없는 상태 => 내부 self.check_session으로 보급받게 함.
-        c = Category.get(id=1)
-        c.update(auto_commit=True, name='345')
+        Category.get_all()
+        [Category[name='ㅓㅓ'], Category[name='456'], Category[name='555']]
+        c1.update(auto_commit=True, name='ㅏㅏ')
 
         """
         #### 실행 후 순수model객체(filter_by안거친)의 실행메서드로서 실행 전 session보급
+        # filter_by로 실행안한 상태의 객체를 검사 => 미리 세션보급 필요함.
         self.check_session(session)
 
-        # filter_by로 실행안한 상태의 객체를 검사
+        # 1) filter_by로 생성된 경우(self._query가 차있는 경우) => statment은 불린처리 안됨.
+        #    => 여러개 필터링 될 수도 있다..
+        if self._query is not None:
+            try:
+                result = self.one()
+            except Exception as e:
+                print(e)
+                return False
+            # 찾은 객체를 바꾼 뒤 현재 세션으로 add
+            self._session.add(result.fill(**kwargs))
+            self._session.flush()
+
+            if auto_commit:
+                self._session.commit()
+
+        # 2) filter_by로 생성된 상황이 아닌, 순수모델객체에서 호출되는 경우
+        # => 순수모델객체의 정보로 exists_self()로 확인 후 업데이트 like create
+        else:
+            #### filter_by후에는 작동안함.
+            # => create시 입력된 정보(중 uk)로 존재 검사하는 self.exsits_self  VS
+
+            # => update/delete시
+            #    1) get() or filter_by() first로 찾은 순수모델객체도 정보가 미리 있다.
+            #       => session이 없기 때문에 self.check_session을 했다.
+            #    2) 찾은 순수모델객체가 아닌 경우, filter_by.update()를 한다면 내부에서 first()먼저하고 검사 검사해야해가 때문에 self.exists_self(X)
+            #      => self.check_session은 filter_by()내부에 있어서 필요없지만,(알아서 잇으면 pass)
+            #      ==> 문제는 first() 수행한 뒤 그 객체로 update해야한다??
+            #      filter_by()는 내부 self._query가 차 있으니 그것을 first()로 수행한 뒤, 처리한다.
+
+            ## => 여기서는 이미 존재하는 객체를 업뎃하므로 존재검사 필요없음.
+            # if not self.exists_self():
+            #     return False
+
+            return self.fill(**kwargs).save(auto_commit=auto_commit)
+
+    # delete
+    def delete(self, session: Session = None, auto_commit: bool = False):
+        self.check_session(session)
+
         if not self.exists_self():
             return False
 
-        return self.fill(**kwargs).save(auto_commit=auto_commit)
+        self._session.delete(self)
+        # delete시 내부세션이라면,
+        # self._session.flush()  # 자체세션용
+
+        if auto_commit:
+            self._session.commit()
+
+        return self
+
+    #### 공통으로 쓸 session을 필수로 받아서, 한번에 commit
+    @classmethod
+    def delete_by_ids(cls, session: Session, *ids, auto_commit: bool = False, ):
+        # filter_by(객체+query생성) 없이  => cls용 check_session
+        session = db.get_session(session)
+
+        for id_ in ids:
+            obj = cls.get(id=id_)
+            if obj:
+                # auto_commit 주지말아서 flush만 시행되게 나중에 한번에 commit
+                obj.delete(session=session, auto_commit=False)
+
+        session.flush()
+
+        if auto_commit:
+            session.commit()
+
+    @classmethod
+    def get_all(cls, session: Session = False, order_bys=None):
+        """
+        User.get_all(order_bys="id")
+        [User[id=1,username='admin',], User[id=2,username='asdf15253',]]
+
+        User.get_all(order_bys="-id")
+        [User[id=2,username='asdf15253',], User[id=1,username='admin',]]
+        """
+        obj = cls.filter_by(session=session)
+
+        if order_bys:
+            if not isinstance(order_bys, (list, tuple, set)):
+                order_bys = [order_bys]
+
+            obj = obj.order_by(*order_bys)
+
+        result = obj.all()
+
+        return result
 
     # def insert(self, title, genre, age):
     #     with self.__ConnectionHandler() as db:
