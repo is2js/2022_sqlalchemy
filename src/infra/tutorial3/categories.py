@@ -3,7 +3,6 @@ import enum
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, Table, BigInteger
 from sqlalchemy.orm import relationship, backref
 
-from src.infra.config.db_creator import engine
 from src.infra.tutorial3.common.base import BaseModel  # , IntEnum
 from src.infra.tutorial3.common.int_enum import IntEnum
 from src.infra.config.base import Base

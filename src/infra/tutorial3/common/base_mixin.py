@@ -1,11 +1,19 @@
 """
 base_query 기반으로 각 model들의 쿼리들을 실행할 수 있는 mixin 구현
 """
+from sqlalchemy import inspect, UniqueConstraint, ForeignKeyConstraint
 from sqlalchemy.orm import Session
 
 from src.infra.config.base import Base
 from src.infra.config.connection import db
 from src.infra.tutorial3.common.base_query import BaseQuery
+from src.infra.utils import class_property
+
+constraints_map = {
+    'pk': UniqueConstraint,
+    'fk': ForeignKeyConstraint,
+    'unique': UniqueConstraint,
+}
 
 
 # 1. model들이 자신의 정보를 cls.로 사용할 예정(객체 만들어서 chaining)이라면, Base를 상속해서 Mixin을 만들고, model은 Mixin을 상ㅅ속한다.
@@ -58,6 +66,7 @@ class BaseMixin(Base, BaseQuery):
             self._session.flush()
 
     # 3. obj의 내부 _query쿼리를 2.0스타일로 실행
+    #   first()/all()/count() 등의 실행메서드는 생성된 객체.method()로 작동하므로 일반 self메서드로 작성한다.
     def first(self):
         result = self._session.scalars(self._query).first()
         self.close()
@@ -90,12 +99,44 @@ class BaseMixin(Base, BaseQuery):
         self.close()
         return result
 
-    #### 5. Create/Get/Filter는 내부에서 객체생성 with session => 실행까지 될 예정이므로
-    ####   @classmethod로 작성한다.
-    ####   first()/all()/count() 등의 실행메서드는 생성된 객체.method()로 작동하므로 일반 self메서드로 작성한다.
+    # 추가) for db에 반영하는 commit이 포함된 경우, close()는 생략된다. -> 외부 sessoin을 flush()만하고 더 쓰던지, commit()으로 끝낸다.
+    # => Committing will also just expire the state of all instances in the session so that they receive fresh state on next access.
+    #    Closing expunges (removes) all instances from the session.
+    def add_self(self, auto_commit=False):
+        self._session.add(self)
+        # 1. add후 id, 등 반영하기 위해 [자체생성/외부받은 session 상관없이] flush를 때려준다.
+        self._session.flush()
+        # 2. 외부session인 경우, 더이상 사용안한다면 commit()을 때려 close시킨다.
+        # => self.close()는 외부session을 flush()만 시키는데, 외부session이 CUD만 하고 끝내는 경우, 자체적으로 commit()해야한다.
+        #    외부session을 외부에서 더 쓰는 경우에만, 쓰다가 commit()을 알아서 할 것이다.
+        if auto_commit:
+            self._session.commit()
 
+        return self
+
+    # 추가) order_by도 filter_by이후 실행메서드 처럼 객체에서 하는 것이다.
+    # => 이 때, 인자가 튜플로 들어온다.
+    # => 문제은 BaseQuery에 cls메서드로 작성해놨다 => self.classmethod로도 쓸 수 있지만, model인자가 문제다.
+    #    일단 classmehotd의 model을 model=None으로 주고, 없을 경우, model = cls로 줬다.
+    # => print(model)하면 cls가 그대로 들어가있다. <class 'src.infra.tutorial3.auth.users.User'>
+    def order_by(self, *args):
+        """
+        User.filter_by().order_by("-id").all()
+        User.filter_by().order_by(User.id).all()
+        User.filter_by().order_by(User.id.desc()).all()
+        """
+        self._query = self._query \
+            .order_by(*self.createorder_bys(args))
+
+        return self
+
+    # 추가) order_by는 filter_by없이 class메소드로도 쓰일 것 같음
+    # => 이럴 경우, order_by에서 cls() obj를 만들어줘야한다.
+
+    #### 5. Filter-> Get / Create부터는 내부에서 객체생성 with session => 실행까지 될 예정이므로
+    ####   @classmethod로 작성한다.
     @classmethod
-    def filter_by(cls, session: Session = None, selects=None, order_bys=None, **kwargs):
+    def filter_by(cls, session: Session = None, selects=None, **kwargs):
         """
         User.filter_by(id=1)
         -> User[id=None]
@@ -104,11 +145,115 @@ class BaseMixin(Base, BaseQuery):
         -> ['admin']
 
         """
-        query = cls.create_select_statement(cls, filters=kwargs,
-                                            selects=selects, order_bys=order_bys)
+        query = cls.create_select_statement(cls, filters=kwargs, selects=selects)
         obj = cls(session=session, query=query)  # served는 session여부에 따라서 알아서 입력 됨.
 
         return obj
+
+    # mapper(cls.__mapper__) == inpsect(cls) 와 cls.__table__은 둘다 .columns for Column객체(Table객체용 객체칼럼 db.Column) 를 가지고 있지만,
+    # => mapper.attrs for Properties(ORM hybridproperty 포함 )을 가지고 있다. ColumnProperty / RelationshipProperty
+    # => mapper.all_orm_descriptors => hybrid_property  +  InstrumentedAttribute (ColumnProperty + RelationshipProperty)
+    #    => keys()로 이름만 가능.
+    #    for hybrid_property
+    # => mapper.attrs => RelationshipProperty + ColumnProperty => .keys() 이름만
+    #    순회) mapper.iterate_properties
+    #    for RelationshipProperty
+
+    # => mapper.column_attrs => ColumnProperty => .keys() 이름만
+    #    for 순수칼럼(관계X) property
+
+    # => mapper.columns OR  cls.__table__.columns => .keys() 이름만
+    #    for 순수칼럼(관계X) column
+    #    => Note that __table__.columns will give you the SQL field names,
+    #       not the attribute names that you've used in your ORM definitions (if the two differ).
+
+    # => mapper.primary_key => (Column('id', Variant(), table=<users>, primary_key=True, nullable=False),)
+    #    => pk칼럼명을 가져올 순 있으나, fk에 관련된 정보는 없다.
+
+    # => cls.__table___ => pk외 fk, index, 제약조건을 통한 unique도 가능?
+    #   .primary_key => PrimaryKeyConstraint(Column('id', Variant(), table=<users>, primary_key=True, nullable=False))
+    #   .foreign_keys =>  {ForeignKey('roles.id')}
+    #    .indexes =>  {Index('ix_users_email', Column('email', String(length=128), table=<users>, nullable=False), unique=True)}
+    #    .User.__table__.constraints =>
+    #           UniqueConstraint(Column('username', String(length=128), table=<users>, nullable=False)),
+    #           PrimaryKeyConstraint(Column('id', Variant(), table=<users>, primary_key=True, nullable=False))}
+    #           ForeignKeyConstraint(<sqlalchemy.sql.base.DedupeColumnCollection object at 0x00000230E47A53B8>, None, name='fk_users_role_id_roles', table=Table('users', MetaData(), Column('add_date', DateTime(), table=<users>, nullable=False, default=ColumnDef
+    # for c in User.__table__.constraints:
+    # ...     print(c.name, c.columns._all_columns)
+    # ...
+    # fk_users_role_id_roles [Column('role_id', Integer(), ForeignKey('roles.id'), table=<users>, nullable=False)]
+    # uq_users_username [Column('username', String(length=128), table=<users>, nullable=False)]
+    # pk_users [Column('id', Variant(), table=<users>, primary_key=True, nullable=False)]
+
+    #  table=<users>, primary_key=True, nullable=False))}
+    # => RelationshipProperty 포함 칼럼종류 => .attrs / mapper.attrs.keys()
+    #                               ['role', 'inviters', 'invitees', 'add_date', 'pub_date', 'id', 'username', 'password_hash', 'email', 'last_seen', 'is_active', 'avatar', 'sex', 'address', 'phone', 'role_id', 'employee']
+    # => hybrid property제외 함 칼럼종류 => .attrs / mapper.column_attrs.keys()
+    #                               ['add_date', 'pub_date', 'id', 'username', 'password_hash', 'email', 'last_seen', 'is_active', 'avatar', 'sex', 'address', 'phone', 'role_id']
+    # self.__table__.columns will "only" give you the columns defined in that particular class,
+    # i.e. without inherited ones.
+    # if you need all, use self.__mapper__.columns. in your example i'd probably use something like this:
+
+    # Base기반의 선언적 mapping을 사용한다면, __mapper__나 inpsect()를 쓰는게 좋다?
+    # type(inspect(User))
+    # <class 'sqlalchemy.orm.mapper.Mapper'>
+    # mapper = User.__mapper__
+    # <class 'sqlalchemy.orm.mapper.Mapper'>
+    # mapper.attrs
+    # <sqlalchemy.util._collections.ImmutableProperties object at 0x00000230E4C4C908>
+    # attr = [c for c in mapper.attrs if c.key=='username'][0]
+    # type(attr)
+    # <class 'sqlalchemy.orm.properties.ColumnProperty'>
+    # type(attr.expression)
+    # <class 'sqlalchemy.sql.schema.Column'>
+    # attr.expression.unique
+    # True
+
+    #### 제약조건 칼럼확인은 low level인 cls.__table__에서 .consraints로 확인한다.
+    @class_property
+    def column_names(cls):
+        return inspect(cls).columns.keys()
+
+    @class_property
+    def pks(cls):
+        return cls.const_column_names(target='pk')
+
+    @class_property
+    def fks(cls):
+        return cls.const_column_names(target='fk')
+
+    @class_property
+    def uks(cls):
+        return cls.const_column_names(target='unique')
+
+    @classmethod
+    def const_column_names(cls, target='pk'):
+        """
+        User.const_column_names(target='unique')
+        ['username']
+
+        User.pks
+        ['username']
+        User.fks
+        ['role_id']
+        User.uks
+        ['username']
+        """
+        # 제약조건 관련은 .__table__.constrains에서 꺼내 쓴다.
+        if isinstance(target, str) and target.lower() not in constraints_map.keys():
+            raise NotImplementedError(f'해당 {target} 제약조건의 칼럼명 목록 조회는 구현되지 않았습니다.')
+
+        constraints = cls.__table__.constraints
+        # User.__table__.constraints =>
+        # {ForeignKeyConstraint( ..  , UniqueConstraint(Column('username', String(length=128), table=<users>, nullable=False)), PrimaryKeyConstraint(Column('id', Variant(),
+        #  table=<users>, primary_key=True, nullable=False))}
+        target_constraint = next((c for c in constraints if isinstance(c, constraints_map.get(target))), None)
+
+        # 해당 제약조건의 칼럼이 없으면, 그냥 빈 리스트 반환
+        if not target_constraint:
+            return []
+
+        return target_constraint.columns.keys()
 
     @classmethod
     def get(cls, session: Session = None, **kwargs):
@@ -119,7 +264,7 @@ class BaseMixin(Base, BaseQuery):
         => print(User.get(id=1))
         User[id=1]
         """
-        obj = cls.filter_by(session=session, **kwargs) # 메서드엔 filters=가 아니라 keyword방식으로 들어가야한다.
+        obj = cls.filter_by(session=session, **kwargs)  # 메서드엔 filters=가 아니라 keyword방식으로 그대로 들어가야한다.
         # => obj.one()으로 처리하면, None일때도 에러난다. => .all()로 받아서, 갯수카운팅
         results = obj.all()
 
@@ -128,3 +273,66 @@ class BaseMixin(Base, BaseQuery):
 
         #### 있으면 첫번재 것 없으면 None은 next( iterator, None )로 구현한다.
         return next(iter(results), None)
+
+    #### create/update/delete는 session을 받아올 경우 auto_commt여부도 받아야한다.
+    @classmethod
+    def create(cls, session: Session = None, auto_commit: bool = False, **kwargs):
+        obj = cls(session=session, **kwargs)
+        return obj.add_self(auto_commit=auto_commit)
+
+    # def insert(self, title, genre, age):
+    #     with self.__ConnectionHandler() as db:
+    #         try:
+    #             data_insert = Filmes(title=title, genre=genre, age=age)
+    #             db.session.add(data_insert)
+    #             db.session.commit()
+    #             return data_insert
+    #         except Exception as exception:
+    #             db.session.rollback()
+    #             raise exception
+    #
+    # def delete(self, title):
+    #     with self.__ConnectionHandler() as db:
+    #         db.session.query(Filmes).filter(Filmes.title == title).delete()
+    #         db.session.commit()
+    #
+    # def update(self, title, age):
+    #     with self.__ConnectionHandler() as db:
+    #         db.session.query(Filmes).filter(Filmes.title == title).update({"age": age})
+    #         db.session.commit()
+
+    # try:
+    #     pass
+    #     session.commit()
+    # except MyException:
+    #     session.rollback()
+    # finally:
+    #     session.close()
+
+    # class Rails(object):
+    #     @property
+    #     def save(self):
+    #         # 增加rollback防止一个异常导致后续SQL不可使用
+    #         try:
+    #             db.session.add(self)
+    #             db.session.commit()
+    #         except Exception as e:
+    #             db.session.rollback()
+    #             raise e
+    #
+    #         return self
+    #
+    #     @property
+    #     def delete(self):
+    #         db.session.delete(self)
+    #         db.session.commit()
+    #         return self
+
+    # def __eq__(self, other):
+    #         return (
+    #             self.id == other.id
+    #             and self.name == other.name
+    #             and self.specie == other.specie
+    #             and self.age == other.age
+    #             and self.user_id == other.user_id
+    #         )
