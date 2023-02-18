@@ -2,7 +2,7 @@
 base_query 기반으로 각 model들의 쿼리들을 실행할 수 있는 mixin 구현
 """
 from sqlalchemy import inspect, UniqueConstraint, ForeignKeyConstraint
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, RelationshipProperty
 
 from src.infra.config.base import Base
 from src.infra.config.connection import db
@@ -255,6 +255,19 @@ class BaseMixin(Base, BaseQuery):
 
         return target_constraint.columns.keys()
 
+    #### relations 칼럼은 .__table__이 아니라 high-level ORM의 mapper를 이용해야한다.
+    @class_property
+    def relations(cls):
+        """
+        User.relations
+        ['role', 'inviters', 'invitees', 'employee']
+        """
+        mapper = cls.__mapper__
+        # mapper.relationships.items()
+        # ('role', <RelationshipProperty at 0x2c0c8947ec8; role>), ('inviters', <RelationshipProperty at 0x2c0c8947f48; inviters>),
+
+        return [prop.key for prop in mapper.iterate_properties if isinstance(prop, RelationshipProperty)]
+
     @classmethod
     def get(cls, session: Session = None, **kwargs):
         """
@@ -275,6 +288,28 @@ class BaseMixin(Base, BaseQuery):
         return next(iter(results), None)
 
     #### create/update/delete는 session을 받아올 경우 auto_commt여부도 받아야한다.
+    def exists(self):
+        """
+        User(username='관리자', sex=0, email='tingstyle1@gmail.com').exists()
+        self.uks  >>  ['username']
+        self.column_names  >>  ['add_date', 'pub_date', 'id', 'username', 'password_hash', 'email', 'last_seen', 'is_active', 'avatar', 'sex', 'address', 'phone', 'role_id']
+        self_unique_key  >>  username
+        """
+        # 1) 생성하려고 준 정보중에 unique 칼럼을 찾고, 그것으로 조회한다.
+        print('self.uks  >> ', self.uks)
+        # 2) 이미 obj = cls()가 생성되면, 각 칼럼columns에 값이 입력된 상태다. super().__init__(**kwags)에 의해
+        print('self.column_names  >> ', self.column_names)
+        # 2) 여러개 중에 1개만 뽑은 뒤
+        self_unique_key = next((column_name for column_name in self.column_names if column_name in self.uks), None)
+        print('unique_key  >> ', self_unique_key)
+        if not self_unique_key:
+            # 3) 유니크 키가 없는 경우, 필터링해서 존재하는지 확인할 순 없다.
+            raise Exception(f'생성에 필요한 unique key가 존재하지 않습니다.')
+
+        existing_obj = self.filter_by(session=self._session, **{self_unique_key: getattr(self, self_unique_key)}).first()
+
+        return existing_obj
+
     @classmethod
     def create(cls, session: Session = None, auto_commit: bool = False, **kwargs):
         obj = cls(session=session, **kwargs)
