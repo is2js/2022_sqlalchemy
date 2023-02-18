@@ -1,7 +1,8 @@
 """
 base_query 기반으로 각 model들의 쿼리들을 실행할 수 있는 mixin 구현
 """
-from sqlalchemy import inspect, UniqueConstraint, ForeignKeyConstraint, exists
+from sqlalchemy import PrimaryKeyConstraint, UniqueConstraint, ForeignKeyConstraint, exists
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Session, RelationshipProperty
 
 from src.infra.config.base import Base
@@ -11,7 +12,7 @@ from src.infra.utils import class_property
 
 # for def const_column_names()
 constraints_map = {
-    'pk': UniqueConstraint,
+    'pk': PrimaryKeyConstraint,
     'fk': ForeignKeyConstraint,
     'unique': UniqueConstraint,
 }
@@ -115,11 +116,7 @@ class BaseMixin(Base, BaseQuery):
     # 추가) for db에 반영하는 commit이 포함된 경우, close()는 생략된다. -> 외부 sessoin을 flush()만하고 더 쓰던지, commit()으로 끝낸다.
     # => Committing will also just expire the state of all instances in the session so that they receive fresh state on next access.
     #    Closing expunges (removes) all instances from the session.
-    def add_self(self, auto_commit: bool = False):
-        existing_obj = self.exists_self()
-        if existing_obj:
-            return existing_obj, False
-
+    def save(self, auto_commit: bool = False):
         #### try/catch는 외부세션을 넣어주는데서 할 것이다?
         self._session.add(self)
         # 1. add후 id, 등 반영하기 위해 [자체생성/외부받은 session 상관없이] flush를 때려준다.
@@ -130,7 +127,7 @@ class BaseMixin(Base, BaseQuery):
         if auto_commit:
             self._session.commit()
 
-        return self, True
+        return self
 
     # 추가) order_by도 filter_by이후 실행메서드 처럼 객체에서 하는 것이다.
     # => 이 때, 인자가 튜플로 들어온다.
@@ -233,7 +230,8 @@ class BaseMixin(Base, BaseQuery):
         # pk(id)와 default값이 있는 칼럼들은 비교에서 제외시키기 위해, 해당 칼럼들을 제외해서 가져온다.
         return [c for c in cls.__table__.columns if c.primary_key is False or c.default is None]
 
-    # columns를 활용하여 eq, repr 정의하기
+    # columns_except_pk_and_default를 활용하여 eq, repr 정의하기
+    # => pk와 deafult칼럼을 제외하고 비교한다.
     def __eq__(self, other):
         # commit안된 객체 출력을 대비, id 빼고 칼럼들을 비교함.
         return all(getattr(self, c.key) == getattr(other, c.key) for c in self.columns_except_pk_and_default)
@@ -294,37 +292,68 @@ class BaseMixin(Base, BaseQuery):
 
     #### relations 칼럼은 .__table__이 아니라 high-level ORM의 mapper를 이용해야한다.
     @class_property
-    def relations(cls):
+    def relation_names(cls):
         """
-        User.relations
+        User.relation_names
         ['role', 'inviters', 'invitees', 'employee']
         """
         mapper = cls.__mapper__
         # mapper.relationships.items()
         # ('role', <RelationshipProperty at 0x2c0c8947ec8; role>), ('inviters', <RelationshipProperty at 0x2c0c8947f48; inviters>),
 
-        return [prop.key for prop in mapper.iterate_properties if isinstance(prop, RelationshipProperty)]
+        return [prop.key for prop in mapper.iterate_properties
+                if isinstance(prop, RelationshipProperty)]
+
+    @class_property
+    def settable_relation_names(cls):
+        """
+        User.settable_relation_names
+        ['role', 'inviters', 'invitees', 'employee']
+        """
+        return [key for key in cls.relation_names
+                if getattr(cls, key).property.viewonly is False]
+
+    # hybrid_property도 mapper에서 꺼낸다.
+    @class_property
+    def hybrid_property_names(cls):
+        """
+        User.hybrid_property_names
+        ['is_staff', 'is_chiefstaff', 'is_executive', 'is_administrator', 'is_employee_active', 'has_employee_history']
+        """
+        mapper = cls.__mapper__
+        props = mapper.all_orm_descriptors
+        # [ hybrid_property  +  InstrumentedAttribute (ColumnProperty + RelationshipProperty) ]
+        return [prop.__name__ for prop in props
+                if isinstance(prop, hybrid_property)]
 
     @classmethod
     def get(cls, session: Session = None, **kwargs):
         """
         filter_by와 동일과정 시행후  실행메서드를 all()로 -> next( , None)로 있으면 첫번째 것 없으면 None 반환
-        => print(User.get(id=111111111))
-        None
-        => print(User.get(id=1))
-        User[id=1]
-        """
-        obj = cls.filter_by(session=session, **kwargs)  # 메서드엔 filters=가 아니라 keyword방식으로 그대로 들어가야한다.
-        # => obj.one()으로 처리하면, None일때도 에러난다. => .all()로 받아서, 갯수카운팅
-        results = obj.all()
 
-        if len(results) > 1:
-            raise Exception(f'get method only supports one row result, but got more than one.')
+        User.get(id=1))
+        => User[id=1]
+
+        User.get(id=111111111)
+        => None
+
+        User.get(email='asdf')
+        => KeyError: 'Only pk or unique로만 검색가능합니다.'
+        """
+        if not all(key in cls.pks + cls.uks for key in kwargs.keys()):
+            raise KeyError(f'Only pk or unique key search allowed.')
+
+        # 실행메서드지만, filter_by에 의해 세션보급됨.
+        obj = cls.filter_by(session=session, **kwargs)  # 메서드엔 filters=가 아니라 keyword방식으로 그대로 들어가야한다.
+
+        # => obj.one()으로 처리하면, None일때도 에러난다. => .all()로 받아서, 갯수카운팅
+        result = obj.first()
 
         #### 있으면 첫번재 것 없으면 None은 next( iterator, None )로 구현한다.
-        return next(iter(results), None)
+        return result
 
     #### create/update/delete는 session을 받아올 경우 auto_commt여부도 받아야한다.
+    #### 아직 add되지 않은 객체용.
     def exists_self(self):
         """
         그냥 존재검사(.exists())가 아니라, 생성시 kwargs를 바탕으로 유니크key를 골라내서 검사함
@@ -346,7 +375,8 @@ class BaseMixin(Base, BaseQuery):
             raise Exception(f'생성에 필요한 unique key가 존재하지 않습니다.')
 
         existing_obj = self.filter_by(session=self._session,
-                                      **{self_unique_key: getattr(self, self_unique_key)}).first()
+                                      **{self_unique_key: getattr(self, self_unique_key)}) \
+            .first()
 
         return existing_obj
 
@@ -363,11 +393,57 @@ class BaseMixin(Base, BaseQuery):
         """
         obj = cls(session=session, **kwargs)
 
-        new_obj, result = obj.add_self(auto_commit=auto_commit)
+        # db들어가기 전 객체의 unique key로 존재 검사
+        if obj.exists_self():
+            return False
 
-        return new_obj, result
+        return obj.save(auto_commit=auto_commit)
 
+    #### update는 filter_by로 객체를 찾아놓은 과정에서, 생성된  obj에 _query에 update만 하도록 되어있어
+    # => 내부 self._session을 가지고 있는 obj상태로서, 실행메서드(self 인스턴스 메서드)에 가깝다
+    # => auto_commit여부를 받는다.
+    # => setattr()로 받은 인자를 넣어주는데, 여러 검증이 필요하기 때문에 fill이라는 메서드로 빼준다.
+    @class_property
+    def settable_column_names(cls):
+        return cls.column_names + cls.settable_relation_names + cls.hybrid_property_names
 
+    def fill(self, **kwargs):
+        for key, value in kwargs.items():
+            if key not in self.settable_column_names:
+                raise KeyError(f"Invalid column name: {key}")
+            setattr(self, key, value)
+
+        return self
+
+    # 실행메서드 결과로 나온 객체들(filter_by안한)의 session 보급
+    def check_session(self, session):
+        if not hasattr(self, '_session') or not self._session:
+            self._session = self._get_session(session)
+
+    def update(self, session: Session = None, auto_commit: bool = False, **kwargs):
+        #### 문제는 User.get()으로 찾을 시, cls() obj가 내포되지 않아 self내부 _session이 없다.
+        # => filter_by()로 찾은 객체는, 아직 실행하지 않았으면 cls() obj로서 내부 _session을 가지고 있다.
+        # => 실행해버리면.. 없다.
+        # => 자체적으로 현재 self에 보급해주는 로직을 만들어야한다.
+        # => self.check_session(session)
+        """
+        1. filter_by로 객체 생성하면서, session보급받은 상태
+        c = Category.filter_by(name='555')
+        c.update(auto_commit=True, name='666')
+
+        2. filter_by없이 결과메서드 이후 결과객체에서 _session없는 상태 => 내부 self.check_session으로 보급받게 함.
+        c = Category.get(id=1)
+        c.update(auto_commit=True, name='345')
+
+        """
+        #### 실행 후 순수model객체(filter_by안거친)의 실행메서드로서 실행 전 session보급
+        self.check_session(session)
+
+        # filter_by로 실행안한 상태의 객체를 검사
+        if not self.exists_self():
+            return False
+
+        return self.fill(**kwargs).save(auto_commit=auto_commit)
 
     # def insert(self, title, genre, age):
     #     with self.__ConnectionHandler() as db:
