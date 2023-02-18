@@ -6,19 +6,22 @@ from dateutil.relativedelta import relativedelta
 from pyecharts.charts import Bar
 from sqlalchemy import and_, or_, select, func, distinct, inspect, Table, cast, Integer, literal_column, text, column, \
     Numeric, desc, asc
-from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import aliased, Session
+from sqlalchemy.orm import InstrumentedAttribute
+from sqlalchemy.sql import ColumnElement
+from sqlalchemy.sql.elements import UnaryExpression
 from sqlalchemy.util import classproperty
 
 from src.config import db_config
 from src.infra.config.connection import DBConnectionHandler
+
 
 #### import Error유발해서 직접 정의해서 사용
 # from src.main.utils.to_string import to_string_date
 
 def to_string_date(last_month):
     return datetime.strftime(last_month, '%Y-%m-%d')
+
 
 """
 BaseQuery 참고1(flask): https://vscode.dev/github/adpmhel24/BakeryProject/blob/master/bakery_project/bakery_app/_helpers.py
@@ -370,7 +373,7 @@ class BaseQuery:
         return cls.get_column_names(model) + cls.get_hybrid_property_names(model)
 
     @classmethod
-    def create_order_bys(cls, model, column_names):
+    def create_order_bys(cls, column_names, model=None):
         """
         StaticsQuery.create_order_bys(User, '-id')
         ->[<sqlalchemy.sql.elements.UnaryExpression object at 0x0000011E9E339B70>]
@@ -379,6 +382,11 @@ class BaseQuery:
         column_names를 인자 1개만 들어와도 list(tuple)로 다루면 된다.
 
         """
+        #### Mixin에서 obj(self)가 쓸 수 있도록 mode을 키워드로 바꿈
+        # => none일 경우 자기자신으로
+        if not model:
+            model = cls
+
         if not column_names:
             return []
 
@@ -386,7 +394,25 @@ class BaseQuery:
             column_names = [column_names]
 
         order_by_columns = []
+
         for column_name in column_names:
+            #### column_name이 아니라, 칼럼(InstrumentedAttribute) or 증감칼럼(UnaryExpression)으로 들어올 경우
+            # => 바로 append시킨다.
+            # >>> type(User.id)
+            # <class 'sqlalchemy.orm.attributes.InstrumentedAttribute'> <- 일반칼럼을 입력한 경우
+            # >>> type(User.id.desc())
+            # <class 'sqlalchemy.sql.elements.UnaryExpression'> <- ColumnElement
+            # => 변경해줘야한다.
+            if not isinstance(column_name, str):
+                if isinstance(column_name, InstrumentedAttribute):
+                    column_name = column_name.asc()
+                    order_by_columns.append(column_name)
+                elif isinstance(column_name, UnaryExpression):
+                    order_by_columns.append(column_name)
+                else:
+                    raise ValueError(f'잘못된 입력입니다 : {column_names}')
+                continue
+
             # 지연으로 맥일 함수를 ()호출없이 가지고만 있는다.
             # -를 달고 있으면, 역순으로 맥인다.
             # order_func = desc if column_name.startswith(DESC_PREFIX) else asc
@@ -411,10 +437,10 @@ class BaseQuery:
 
     @classmethod
     def create_select_statement(cls, model,
-                            selects=None,
-                            filters=None,
-                            order_bys=None,
-                            ):
+                                selects=None,
+                                filters=None,
+                                order_bys=None,
+                                ):
         """
         1. 필터만 걸 때 -> 모든 칼럼
         print(StaticsQuery.create_select_statement(User, filters={'id__in': [1,2,3,4]}))
@@ -440,8 +466,10 @@ class BaseQuery:
         stmt = (
             select(*cls.create_columns(model, column_names=selects))
             .where(*cls.create_filters(model, filters=filters))
-            .order_by(*cls.create_order_bys(model, column_names=order_bys))
+            #### order_by는 Mixin에서 self메서드로 사용되므로, cls용 model은 키워드로 바꿈 => 사용시 인자 위치도 바뀜.
+            .order_by(*cls.create_order_bys(order_bys, model=model))
         )
+
         return stmt
 
     # columns, filters를 둘다 받아 내부에서 사용 + 실행은 안한 쿼리 -> 외부에서 .first()일지 .all()일지도 밖에서 결정한다.
