@@ -257,10 +257,11 @@ class User(BaseModel):
         for k, v in kwargs.items():
             setattr(self, k, v)
 
-    def __repr__(self):
-        info: str = f"{self.__class__.__name__}" \
-                    f"[id={self.id!r}]"
-        return info
+    # 생략시 basemixin에
+    # def __repr__(self):
+    #     info: str = f"{self.__class__.__name__}"
+    #     #             f"[id={self.id!r}]"
+    #     return info
 
     #### with other entity
     def get_my_departments(self, as_leader=False, as_employee=False, as_min_level=False):

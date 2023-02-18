@@ -1,7 +1,7 @@
 """
 base_query 기반으로 각 model들의 쿼리들을 실행할 수 있는 mixin 구현
 """
-from sqlalchemy import inspect, UniqueConstraint, ForeignKeyConstraint
+from sqlalchemy import inspect, UniqueConstraint, ForeignKeyConstraint, exists
 from sqlalchemy.orm import Session, RelationshipProperty
 
 from src.infra.config.base import Base
@@ -9,6 +9,7 @@ from src.infra.config.connection import db
 from src.infra.tutorial3.common.base_query import BaseQuery
 from src.infra.utils import class_property
 
+# for def const_column_names()
 constraints_map = {
     'pk': UniqueConstraint,
     'fk': ForeignKeyConstraint,
@@ -43,25 +44,27 @@ class BaseMixin(Base, BaseQuery):
         self._query = query
         # 4. 객체를 생성하는 순간 chaining이 시작될 땐, 외부에서 사용중이던 session이 안들어오면 새 session을 배급한다.
         # => 배급한 session은 실행메서드들이 close를 꼭 해줄 것이다.
+        self.served = None  # => 뒤에서 self._get_session에서 초기화해준다.
         self._session = self._get_session(session)
-        self.served = None
 
     # 1. obj의 session처리
     def _get_session(self, session):
         # 새로 만든 session일 경우 되돌려주기(close처리) 상태(self.served=)를  아직 False상태로 만들어놓는다.
+
         if not session:
             session, self.served = db.get_session(), False
             return session
 
+        # 외부에서 받은 session을 받았으면 served로 확인한다.
         self.served = True
         return session
 
     # 2. obj의 served상태에 따라 close(내부생성) or flush(외부받아온 것) 되도록
     def close(self):
-        # 아직 되돌려주지 않은 상태면 -> close()
+        # 외부에서 받은 상태가 아니면 자체session을 -> close()
         if not self.served:
             self._session.close()
-        # 되돌려줄 없이 [외부 쓰던 session은 close 대신] -> [flush()로 db 반영시켜주기]
+        # 외부세션이면 close할 필요없이 반영만  [외부 쓰던 session은 close 대신] -> [flush()로 db 반영시켜주기]
         else:
             self._session.flush()
 
@@ -99,20 +102,35 @@ class BaseMixin(Base, BaseQuery):
         self.close()
         return result
 
+    # 객체에서 self.check_exists()로 생성 kwargs로 자체적으로 검사하고 있으면 반환하도록 설계된 상태임.
+    def exists(self):
+        # 자식들은 따로 overide하겠지만,
+        # self._query => exists(self._query)로 싼 뒤(실행불가 sql 상태)
+        #             => .select() (실행가능 sql=select)
+        #             => scalar => T/F로 반환한다.
+        result = self._session.scalar(exists(self._query).select())
+        self.close()
+        return result
+
     # 추가) for db에 반영하는 commit이 포함된 경우, close()는 생략된다. -> 외부 sessoin을 flush()만하고 더 쓰던지, commit()으로 끝낸다.
     # => Committing will also just expire the state of all instances in the session so that they receive fresh state on next access.
     #    Closing expunges (removes) all instances from the session.
-    def add_self(self, auto_commit=False):
+    def add_self(self, auto_commit: bool = False):
+        existing_obj = self.exists_self()
+        if existing_obj:
+            return existing_obj, False
+
+        #### try/catch는 외부세션을 넣어주는데서 할 것이다?
         self._session.add(self)
         # 1. add후 id, 등 반영하기 위해 [자체생성/외부받은 session 상관없이] flush를 때려준다.
         self._session.flush()
-        # 2. 외부session인 경우, 더이상 사용안한다면 commit()을 때려 close시킨다.
-        # => self.close()는 외부session을 flush()만 시키는데, 외부session이 CUD만 하고 끝내는 경우, 자체적으로 commit()해야한다.
-        #    외부session을 외부에서 더 쓰는 경우에만, 쓰다가 commit()을 알아서 할 것이다.
+        # 2. 외부session인 경우, 외부의 마지막 옵션으로 더이상 사용안한다면 밖에서 auto_commit=True로 -> commit()을 때려 close시킨다.
+        # => self.close()는 외부session을 flush()만 시키는데, 외부session이 CUD하는 경우, 자체적으로 commit()해야한다.
+        # => 외부에서 더 쓴다면, 외부에서 sessino=sesion만 넣고 auto_commit 안하면 된다.
         if auto_commit:
             self._session.commit()
 
-        return self
+        return self, True
 
     # 추가) order_by도 filter_by이후 실행메서드 처럼 객체에서 하는 것이다.
     # => 이 때, 인자가 튜플로 들어온다.
@@ -146,7 +164,7 @@ class BaseMixin(Base, BaseQuery):
 
         """
         query = cls.create_select_statement(cls, filters=kwargs, selects=selects)
-        obj = cls(session=session, query=query)  # served는 session여부에 따라서 알아서 입력 됨.
+        obj = cls(session=session, query=query)  # served는 session여부에 따라서 알아서 내부 초기화 됨.
 
         return obj
 
@@ -209,10 +227,29 @@ class BaseMixin(Base, BaseQuery):
     # attr.expression.unique
     # True
 
+    @class_property
+    def columns_except_pk_and_default(cls):
+        # columns_names   for pk, fk, uk 찾기와 달리,
+        # pk(id)와 default값이 있는 칼럼들은 비교에서 제외시키기 위해, 해당 칼럼들을 제외해서 가져온다.
+        return [c for c in cls.__table__.columns if c.primary_key is False or c.default is None]
+
+    # columns를 활용하여 eq, repr 정의하기
+    def __eq__(self, other):
+        # commit안된 객체 출력을 대비, id 빼고 칼럼들을 비교함.
+        return all(getattr(self, c.key) == getattr(other, c.key) for c in self.columns_except_pk_and_default)
+
+    def __repr__(self):
+        info: str = f"{self.__class__.__name__}["
+        for c in self.columns_except_pk_and_default:
+            info += f"{c.key}={getattr(self, c.key)!r},"
+        info += "]"
+        return info
+
     #### 제약조건 칼럼확인은 low level인 cls.__table__에서 .consraints로 확인한다.
     @class_property
     def column_names(cls):
-        return inspect(cls).columns.keys()
+        # return inspect(cls).columns.keys()
+        return cls.__table__.columns.keys()
 
     @class_property
     def pks(cls):
@@ -288,32 +325,49 @@ class BaseMixin(Base, BaseQuery):
         return next(iter(results), None)
 
     #### create/update/delete는 session을 받아올 경우 auto_commt여부도 받아야한다.
-    def exists(self):
+    def exists_self(self):
         """
+        그냥 존재검사(.exists())가 아니라, 생성시 kwargs를 바탕으로 유니크key를 골라내서 검사함
+
         User(username='관리자', sex=0, email='tingstyle1@gmail.com').exists()
         self.uks  >>  ['username']
         self.column_names  >>  ['add_date', 'pub_date', 'id', 'username', 'password_hash', 'email', 'last_seen', 'is_active', 'avatar', 'sex', 'address', 'phone', 'role_id']
         self_unique_key  >>  username
         """
         # 1) 생성하려고 준 정보중에 unique 칼럼을 찾고, 그것으로 조회한다.
-        print('self.uks  >> ', self.uks)
+        # print('self.uks  >> ', self.uks)
         # 2) 이미 obj = cls()가 생성되면, 각 칼럼columns에 값이 입력된 상태다. super().__init__(**kwags)에 의해
-        print('self.column_names  >> ', self.column_names)
+        # print('self.column_names  >> ', self.column_names)
         # 2) 여러개 중에 1개만 뽑은 뒤
         self_unique_key = next((column_name for column_name in self.column_names if column_name in self.uks), None)
-        print('unique_key  >> ', self_unique_key)
+        # print('unique_key  >> ', self_unique_key)
         if not self_unique_key:
             # 3) 유니크 키가 없는 경우, 필터링해서 존재하는지 확인할 순 없다.
             raise Exception(f'생성에 필요한 unique key가 존재하지 않습니다.')
 
-        existing_obj = self.filter_by(session=self._session, **{self_unique_key: getattr(self, self_unique_key)}).first()
+        existing_obj = self.filter_by(session=self._session,
+                                      **{self_unique_key: getattr(self, self_unique_key)}).first()
 
         return existing_obj
 
     @classmethod
     def create(cls, session: Session = None, auto_commit: bool = False, **kwargs):
+        """
+        1. session안받고 내부에서 생성 -> auto_commit 필수
+        2. session받아서 외부세션으로 생성 -> 1) 더 사용할거면 auto_commit안해도됨(flush) 2) 마지막사용이면 auto_commit 넣기
+        User.create(
+            session=session,
+            auto_commit=True, => 외부세션 사용중이라면, 맨 CUD에만(중간사용이면 flush만) <-> 내부는 항상 auto_commit True
+            username='asdf15253', password='aasdf2sadf5sdf132',email='as5df1235@asdf.com', is_active=True
+            )
+        """
         obj = cls(session=session, **kwargs)
-        return obj.add_self(auto_commit=auto_commit)
+
+        new_obj, result = obj.add_self(auto_commit=auto_commit)
+
+        return new_obj, result
+
+
 
     # def insert(self, title, genre, age):
     #     with self.__ConnectionHandler() as db:
@@ -362,12 +416,3 @@ class BaseMixin(Base, BaseQuery):
     #         db.session.delete(self)
     #         db.session.commit()
     #         return self
-
-    # def __eq__(self, other):
-    #         return (
-    #             self.id == other.id
-    #             and self.name == other.name
-    #             and self.specie == other.specie
-    #             and self.age == other.age
-    #             and self.user_id == other.user_id
-    #         )
