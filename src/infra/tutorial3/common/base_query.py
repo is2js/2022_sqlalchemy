@@ -95,6 +95,10 @@ class BaseQuery:
         BaseQuery.create_column(User, 'id__count')
         <sqlalchemy.sql.elements.Label object at 0x0000024B4989E748>
 
+        BaseQuery.create_column(User, 'id__count_distinct')
+        DISTINCT coalesce(count(users.id), :coalesce_1)
+
+
         """
         # 칼럼이 집계함수와 같이 들어온다면 집계함수를 적용할 수 있게 한다.
         if '__' in column_name:
@@ -103,14 +107,25 @@ class BaseQuery:
             column = cls.get_column(model, column_name)
 
             #### func 적용 apply_func = 인자 추가
-            if func_name == 'count':
-                return func.coalesce(func.count(column), 0).label(func_name)
-            elif func_name == 'sum':
-                return func.coalesce(func.sum(cast(column, Integer)), 0).label(func_name)
-            elif func_name == 'length':
-                return func.coalesce(func.length(column), 0).label(func_name)
+            if func_name.startswith('count'):
+                column = func.coalesce(func.count(column), 0).label(func_name)
+            elif func_name.startswith('sum'):
+                column = func.coalesce(func.sum(cast(column, Integer)), 0).label(func_name)
+            elif func_name.startswith('length'):
+                column = func.coalesce(func.length(column), 0).label(func_name)
             else:
                 raise NotImplementedError(f'Invalid column func_name: {func_name}')
+
+            # 집계함수에 distinct()씌우는 기능 추가
+            # id__count_distinct
+            if '_' in func_name:
+                additional_func_name = func_name.split('_')[-1]
+                if additional_func_name == 'distinct':
+                    column = distinct(column)
+                else:
+                    raise NotImplementedError(f'Invalid additional func_name: {additional_func_name}')
+
+            return column
 
         else:
             return cls.get_column(model, column_name)
