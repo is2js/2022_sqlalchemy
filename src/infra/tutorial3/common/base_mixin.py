@@ -47,7 +47,7 @@ class BaseMixin(Base, BaseQuery):
         # => 배급한 session은 실행메서드들이 close를 꼭 해줄 것이다.
         self.served = None  # => 뒤에서 self._get_session에서 초기화해준다.
         self._session = self._get_session(session)
-        print('create obj session >   >> ', self._session)
+        # print('create obj session >   >> ', self._session)
 
     # 감춰진 query를 setter만 가능하도록
     # => 생성자에서도 self._query에 query=로 주고 있음.
@@ -575,15 +575,6 @@ class BaseMixin(Base, BaseQuery):
 
             return self
 
-    def get_unique_key(self):
-        self_unique_key = next((column_name for column_name in self.column_names if column_name in self.uks), None)
-        # print('unique_key  >> ', self_unique_key)
-        if not self_unique_key:
-            # 3) 유니크 키가 없는 경우, 필터링해서 존재하는지 확인할 순 없다.
-            raise Exception(f'생성 전, 이미 존재 하는지 유무 확인을 위한 unique key가 존재하지 않습니다.')
-
-        return self_unique_key
-
     #### 공통으로 쓸 session을 필수로 받아서, 한번에 commit
     @classmethod
     def delete_by(cls, session: Session = None, auto_commit: bool = True, **kwargs):
@@ -658,7 +649,25 @@ class BaseMixin(Base, BaseQuery):
     @classmethod
     def get_by(cls, session: Session = None, **kwargs):
         """
+        인자는 pk 혹은 unique key만 허용한다.
 
+        1. 조회할려던 keyword 값이 1개이면,list든 값1개든, 1개의 값으로 반환 -> 객체 or None
+
+        Category.get_by(name='카테고리11')
+        => Category[name='카테고리11']
+
+        Category.get_by(name=['카테고리11'])
+        => Category[name='카테고리11']
+
+
+        2. 여러개를 조회 -> 객체list or 빈list [ ] 로 반환
+
+        Category.get_by(name=['카테고리11', '335'])
+        => [Category[name='카테고리11'], Category[name='335']]
+
+        Category.get_by(name=['ㅇㅁㄴㅇ','ㅁㄴㅇㄹ'])
+        => 조회에 실패한 목록: ['ㅇㅁㄴㅇ', 'ㅁㄴㅇㄹ']
+        => []
         """
         # filter_by(객체+query생성) 없이  => cls용 실행메서드이며, cls메서드 단위로 session보급하기.
         # => cls 내부에서 1번만 보급 or 생성 => obj의 delete()마다 여러번 돌려쓴 뒤, 맨 마지막에 commit
@@ -675,6 +684,7 @@ class BaseMixin(Base, BaseQuery):
 
         values = kwargs.get(pk_or_uk, [])
 
+        # 값이 1개라면, 한번만 get해서 보내주기
         if not isinstance(values, (list, tuple, set)):
             values = [values]
 
@@ -694,4 +704,11 @@ class BaseMixin(Base, BaseQuery):
             print(f'조회에 실패한 목록: {fails}')
 
         session.flush()
+
+        # 조회값(values list)이 1개였던 경우에는 list를 풀어서 반환(조회되면 [0], 조회값없으면 None)
+        if len(values) <= 1:
+            if results:
+                return results[0]
+            return None
+
         return results
