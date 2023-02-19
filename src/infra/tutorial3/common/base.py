@@ -7,7 +7,7 @@ from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import declared_attr
 
 from src.infra.config.base import Base
-from src.infra.tutorial3.common.base_mixin import BaseMixin
+from src.infra.tutorial3.mixins.crud_mixin import CRUDMixin
 from src.main.templates.filters import format_date, format_datetime
 
 default_table_args = {
@@ -16,7 +16,7 @@ default_table_args = {
 }
 
 
-class BaseModel(BaseMixin):
+class BaseModel(CRUDMixin):
     # 추상화 안해주면, does not have a __table__ or __tablename__ specified and does not inherit from an existing table-mapped class.
     __abstract__ = True
     # @declared_attr
@@ -40,6 +40,8 @@ class BaseModel(BaseMixin):
 
     add_date = Column(DateTime, nullable=False, default=datetime.datetime.now)
     pub_date = Column(DateTime, nullable=False, default=datetime.datetime.now, onupdate=datetime.datetime.now)
+
+
 
     def to_dict(self):
         # (1) inspect(self)시 관계필드까지 조회하는데, form이나 front에서 DetachedError난다.
