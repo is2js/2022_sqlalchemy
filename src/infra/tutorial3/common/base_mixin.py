@@ -116,7 +116,7 @@ class BaseMixin(Base, BaseQuery):
     # 추가) for db에 반영하는 commit이 포함된 경우, close()는 생략된다. -> 외부 sessoin을 flush()만하고 더 쓰던지, commit()으로 끝낸다.
     # => Committing will also just expire the state of all instances in the session so that they receive fresh state on next access.
     #    Closing expunges (removes) all instances from the session.
-    def save_self(self, session: Session = None, auto_commit: bool = False):
+    def save_self(self, session: Session = None, auto_commit: bool = True):
         self.set_session(session)
 
         #### try/catch는 외부세션을 넣어주는데서 할 것이다?
@@ -379,8 +379,8 @@ class BaseMixin(Base, BaseQuery):
 
         print('self.__dict__  >> ', self.__dict__)
 
-
-        print('{self_unique_key: getattr(self, self_unique_key)}  >> ', {self_unique_key: getattr(self, self_unique_key)})
+        print('{self_unique_key: getattr(self, self_unique_key)}  >> ',
+              {self_unique_key: getattr(self, self_unique_key)})
         # {self_unique_key: getattr(self, self_unique_key)}  >>  {'username': None}
         # existing_obj  >>  None
         existing_obj = self.filter_by(
@@ -392,7 +392,7 @@ class BaseMixin(Base, BaseQuery):
         return existing_obj
 
     @classmethod
-    def create(cls, session: Session = None, auto_commit: bool = False, **kwargs):
+    def create(cls, session: Session = None, auto_commit: bool = True, **kwargs):
         """
         1. session안받고 내부에서 생성 -> auto_commit 필수
         2. session받아서 외부세션으로 생성 -> 1) 더 사용할거면 auto_commit안해도됨(flush) 2) 마지막사용이면 auto_commit 넣기
@@ -430,7 +430,7 @@ class BaseMixin(Base, BaseQuery):
     def set_session(self, session):
         if not hasattr(self, '_session') or not self._session:
             self._session = self._get_session(session)
-            self._query = None #
+            self._query = None  #
 
     # self._query가 차있다면, filter_by에 의해 나온 session_obj
     # 없다면 model_obj
@@ -438,8 +438,7 @@ class BaseMixin(Base, BaseQuery):
     def has_session(self):
         return hasattr(self, '_session') and self._session
 
-
-    def update(self, session: Session = None, auto_commit: bool = False, **kwargs):
+    def update(self, session: Session = None, auto_commit: bool = True, **kwargs):
         #### 문제는 User.get()으로 찾을 시, cls() obj가 내포되지 않아 self내부 _session이 없다.
         # => filter_by()로 찾은 객체는, 아직 실행하지 않았으면 cls() obj로서 내부 _session을 가지고 있다.
         # => 실행해버리면.. 없다.
@@ -510,25 +509,43 @@ class BaseMixin(Base, BaseQuery):
             self.set_session(session)
             return self.fill(**kwargs).save_self(auto_commit=auto_commit)
 
-    # delete
-    def delete(self, session: Session = None, auto_commit: bool = False):
+    def delete_self(self, session: Session = None, auto_commit: bool = True):
         self.set_session(session)
 
-        if not self.exists_self():
-            return False
-
         self._session.delete(self)
-        # delete시 내부세션이라면,
-        self._session.flush()  # 자체세션용
+        self._session.flush()
 
         if auto_commit:
             self._session.commit()
 
         return self
 
+    # delete
+    def delete(self, session: Session = None, auto_commit: bool = True):
+        # 삭제시 FK 제약조건이 뜰 수 있다.
+        if self.has_session:
+            try:
+                model_obj = self.one()
+            except Exception as e:
+                print(e)
+                return False
+
+            return model_obj.delete_self(session=self._session, auto_commit=auto_commit)
+
+        else:
+            self.set_session(session)
+
+            self.delete_self(auto_commit=auto_commit)
+            self._session.flush()
+
+            if auto_commit:
+                self._session.commit()
+
+            return self
+
     #### 공통으로 쓸 session을 필수로 받아서, 한번에 commit
     @classmethod
-    def delete_by_ids(cls, session: Session, *ids, auto_commit: bool = False):
+    def delete_by_ids(cls, session: Session, *ids, auto_commit: bool = True):
         # filter_by(객체+query생성) 없이  => cls용 set_session
         session = db.get_session(session)
 
