@@ -116,7 +116,8 @@ class BaseMixin(Base, BaseQuery):
     # 추가) for db에 반영하는 commit이 포함된 경우, close()는 생략된다. -> 외부 sessoin을 flush()만하고 더 쓰던지, commit()으로 끝낸다.
     # => Committing will also just expire the state of all instances in the session so that they receive fresh state on next access.
     #    Closing expunges (removes) all instances from the session.
-    def save(self, auto_commit: bool = False):
+    def save_self(self, auto_commit: bool = False):
+
         #### try/catch는 외부세션을 넣어주는데서 할 것이다?
         self._session.add(self)
         # 1. add후 id, 등 반영하기 위해 [자체생성/외부받은 session 상관없이] flush를 때려준다.
@@ -406,7 +407,7 @@ class BaseMixin(Base, BaseQuery):
         if obj.exists_self():
             return False
 
-        return obj.save(auto_commit=auto_commit)
+        return obj.save_self(auto_commit=auto_commit)
 
     #### update는 filter_by로 객체를 찾아놓은 과정에서, 생성된  obj에 _query에 update만 하도록 되어있어
     # => 내부 self._session을 가지고 있는 obj상태로서, 실행메서드(self 인스턴스 메서드)에 가깝다
@@ -452,21 +453,36 @@ class BaseMixin(Base, BaseQuery):
         [Category[name='ㅓㅓ'], Category[name='456'], Category[name='555']]
         c1.update(auto_commit=True, name='ㅏㅏ')
 
+        3. filter_by로 걸었는데, 1개가 아닌 여러개가 발견되거 안발견되는 경우
+        Category.filter_by(id__gt=3).update(auto_commit=True, name='카테1')
+        => No row was found when one was required
+        => False
+        Category.filter_by(id__lt=3).update(auto_commit=True, name='카테1')
+        => Multiple rows were found when exactly one was required
+        => False
+
+
         """
         #### 실행 후 순수model객체(filter_by안거친)의 실행메서드로서 실행 전 session보급
         # filter_by로 실행안한 상태의 객체를 검사 => 미리 세션보급 필요함.
         self.check_session(session)
+        # => 만약 filter_by가 아니라 cls() X => self._session 없는 상태면, self._query도 None상태이므로 이것으로 감별한다.
+        #    session은 두 경우 모두 차있다.
 
         # 1) filter_by로 생성된 경우(self._query가 차있는 경우) => statment은 불린처리 안됨.
         #    => 여러개 필터링 될 수도 있다..
         if self._query is not None:
             try:
-                result = self.one()
+                model_obj = self.one()
             except Exception as e:
                 print(e)
                 return False
-            # 찾은 객체를 바꾼 뒤 현재 세션으로 add
-            self._session.add(result.fill(**kwargs))
+            # 찾은 model 객체를 바꾼 뒤, 현재 obj(filter_by)의 세션으로 add
+            # => mode_.obj에는 session이 안들어있어서, .save()를 호출 못한다?!
+            # => .save()도 session을 받을 수 있도록 변경하자?!
+            # => 자체 세션이 없는 model_obj만 .save()에 외부session을 주입해서 save하자.
+
+            self._session.add(model_obj.fill(**kwargs))
             self._session.flush()
 
             if auto_commit:
@@ -490,7 +506,7 @@ class BaseMixin(Base, BaseQuery):
             # if not self.exists_self():
             #     return False
 
-            return self.fill(**kwargs).save(auto_commit=auto_commit)
+            return self.fill(**kwargs).save_self(auto_commit=auto_commit)
 
     # delete
     def delete(self, session: Session = None, auto_commit: bool = False):
