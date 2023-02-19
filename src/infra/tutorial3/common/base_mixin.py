@@ -609,11 +609,11 @@ class BaseMixin(Base, BaseQuery):
         values = kwargs.get(pk_or_uk, [])
 
         if not isinstance(values, (list, tuple, set)):
-            values = tuple(values)
+            values = [values] # tuple()로 씌우면, 1개짜리 string은 iterable로 생각해서 '12' -> '1', '2'가 되어버림.
 
         fails = []
         for value in values:
-            obj = cls.get(**{pk_or_uk: value})
+            obj = cls.get(session=session, **{pk_or_uk: value})
 
             # 실패1) 해당 pk or uk로 검색시 객체가 없는 경우
             if not obj:
@@ -654,3 +654,44 @@ class BaseMixin(Base, BaseQuery):
         result = obj.all()
 
         return result
+
+    @classmethod
+    def get_by(cls, session: Session = None, **kwargs):
+        """
+
+        """
+        # filter_by(객체+query생성) 없이  => cls용 실행메서드이며, cls메서드 단위로 session보급하기.
+        # => cls 내부에서 1번만 보급 or 생성 => obj의 delete()마다 여러번 돌려쓴 뒤, 맨 마지막에 commit
+        if session is None:
+            session = db.get_session()
+
+        pk_or_uks = tuple(kwargs.keys())
+        if len(pk_or_uks) != 1:
+            raise Exception(f'keyword는 pk 혹은 uniqkue key 1개만 입력해주세요.: {pk_or_uks}')
+
+        pk_or_uk = pk_or_uks[0]
+        if pk_or_uk not in (cls.pks + cls.uks):
+            raise Exception(f'keyword는 pk 혹은 uniqkue key여야 합니다.: {pk_or_uk}')
+
+        values = kwargs.get(pk_or_uk, [])
+
+        if not isinstance(values, (list, tuple, set)):
+            values = [values]
+
+        results = []
+        fails = []
+        for value in values:
+            obj = cls.get(session=session, **{pk_or_uk: value})
+
+            # 실패1) 해당 pk or uk로 검색시 객체가 없는 경우
+            if not obj:
+                fails.append(value)
+                continue
+
+            results.append(obj)
+
+        if fails:
+            print(f'조회에 실패한 목록: {fails}')
+
+        session.flush()
+        return results
