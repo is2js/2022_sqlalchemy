@@ -116,7 +116,8 @@ class BaseMixin(Base, BaseQuery):
     # 추가) for db에 반영하는 commit이 포함된 경우, close()는 생략된다. -> 외부 sessoin을 flush()만하고 더 쓰던지, commit()으로 끝낸다.
     # => Committing will also just expire the state of all instances in the session so that they receive fresh state on next access.
     #    Closing expunges (removes) all instances from the session.
-    def save_self(self, auto_commit: bool = False):
+    def save_self(self, session: Session = None, auto_commit: bool = False):
+        self.check_session(session)
 
         #### try/catch는 외부세션을 넣어주는데서 할 것이다?
         self._session.add(self)
@@ -482,11 +483,8 @@ class BaseMixin(Base, BaseQuery):
             # => .save()도 session을 받을 수 있도록 변경하자?!
             # => 자체 세션이 없는 model_obj만 .save()에 외부session을 주입해서 save하자.
 
-            self._session.add(model_obj.fill(**kwargs))
-            self._session.flush()
+            model_obj.fill(**kwargs).save_self(session=self._session, auto_commit=auto_commit)
 
-            if auto_commit:
-                self._session.commit()
 
         # 2) filter_by로 생성된 상황이 아닌, 순수모델객체에서 호출되는 경우
         # => 순수모델객체의 정보로 exists_self()로 확인 후 업데이트 like create
