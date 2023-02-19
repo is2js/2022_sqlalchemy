@@ -117,7 +117,7 @@ class BaseMixin(Base, BaseQuery):
     # => Committing will also just expire the state of all instances in the session so that they receive fresh state on next access.
     #    Closing expunges (removes) all instances from the session.
     def save_self(self, session: Session = None, auto_commit: bool = False):
-        self.check_session(session)
+        self.set_session(session)
 
         #### try/catch는 외부세션을 넣어주는데서 할 것이다?
         self._session.add(self)
@@ -426,35 +426,47 @@ class BaseMixin(Base, BaseQuery):
 
         return self
 
-    # 실행메서드 결과로 나온 객체들(filter_by안한)의 session 보급
-    def check_session(self, session):
+    # 실행메서드 결과로 나온 순수 model obj 객체들(filter_by안한)의 session 보급
+    def set_session(self, session):
         if not hasattr(self, '_session') or not self._session:
             self._session = self._get_session(session)
             self._query = None #
+
+    # self._query가 차있다면, filter_by에 의해 나온 session_obj
+    # 없다면 model_obj
+    @property
+    def has_session(self):
+        return hasattr(self, '_session') and self._session
+
 
     def update(self, session: Session = None, auto_commit: bool = False, **kwargs):
         #### 문제는 User.get()으로 찾을 시, cls() obj가 내포되지 않아 self내부 _session이 없다.
         # => filter_by()로 찾은 객체는, 아직 실행하지 않았으면 cls() obj로서 내부 _session을 가지고 있다.
         # => 실행해버리면.. 없다.
         # => 자체적으로 현재 self에 보급해주는 로직을 만들어야한다.
-        # => self.check_session(session)
+        # => self.set_session(session)
         """
-        1. filter_by로 객체 생성하면서, session보급받은 상태
-        Category.get_all()
-        [Category[name='ㅏㅏ'], Category[name='456'], Category[name='555']]
+        1. filter_by없이 결과메서드 이후 결과객체에서 _session없는 상태
+        # 1) self.has_sessoin이 없으면 => self.set_session으로 순수model obj도 내/외부 session을 가질 수 있게 함.
+        # 2) 순수model obj가 받거나 생성한 session으로 fill(**kwargs)이후 .save_self()함
 
-        Category.filter_by(id=1).update(auto_commit=True, name='aa')
-
-        Category.get_all()
-        [Category[name='aa'], Category[name='456'], Category[name='555']]
-
-
-        2. filter_by없이 결과메서드 이후 결과객체에서 _session없는 상태 => 내부 self.check_session으로 보급받게 함.
         Category.get_all()
         [Category[name='ㅓㅓ'], Category[name='456'], Category[name='555']]
         c1.update(auto_commit=True, name='ㅏㅏ')
+        Category.get_all()
+        [Category[name='ㅏㅏ'], Category[name='456'], Category[name='555']]
+
+        2. filter_by로 객체 생성하면서, session보급받은 상태
+        # => 가진 세션으로 일단 update전 순수model 1개를 select한다.
+        # => 셀렉된  순수model obj는 session이 없는 상태이므로 fill은 가능 save는 불가능이다.
+        # => 실행메서드 .save_self(session=)에 바깥 filter_by obj의 session을 받아서, 자신의 session을 채우고, .save_self()를 수행한다
+
+        Category.filter_by(id=1).update(auto_commit=True, name='aa')
+        Category.get_all()
+        [Category[name='aa'], Category[name='456'], Category[name='555']]
 
         3. filter_by로 걸었는데, 1개가 아닌 여러개가 발견되거 안발견되는 경우
+
         Category.filter_by(id__gt=3).update(auto_commit=True, name='카테1')
         => No row was found when one was required
         => False
@@ -466,13 +478,17 @@ class BaseMixin(Base, BaseQuery):
         """
         #### 실행 후 순수model객체(filter_by안거친)의 실행메서드로서 실행 전 session보급
         # filter_by로 실행안한 상태의 객체를 검사 => 미리 세션보급 필요함.
-        self.check_session(session)
+        # self.set_session(session)
+
         # => 만약 filter_by가 아니라 cls() X => self._session 없는 상태면, self._query도 None상태이므로 이것으로 감별한다.
         #    session은 두 경우 모두 차있다.
+        # => self._query를 가졌는지 거기에 차있는지 확인하는 메서드 is_session_obj구현이후로는
+        #    그것의 else에 두도록 위치 변경
 
         # 1) filter_by로 생성된 경우(self._query가 차있는 경우) => statment은 불린처리 안됨.
         #    => 여러개 필터링 될 수도 있다..
-        if self._query is not None:
+        # if self._query is not None:
+        if self.has_session:
             try:
                 model_obj = self.one()
             except Exception as e:
@@ -483,39 +499,27 @@ class BaseMixin(Base, BaseQuery):
             # => .save()도 session을 받을 수 있도록 변경하자?!
             # => 자체 세션이 없는 model_obj만 .save()에 외부session을 주입해서 save하자.
 
-            model_obj.fill(**kwargs).save_self(session=self._session, auto_commit=auto_commit)
-
+            # 당근 순수model obj는 가진 세션이 없어서 외부session을 넣어준다.
+            # => 안넣어주면 자체적으로 set_session시 생성할 수 있지만, 1개를 재활용한다.
+            return model_obj.fill(**kwargs).save_self(session=self._session, auto_commit=auto_commit)
 
         # 2) filter_by로 생성된 상황이 아닌, 순수모델객체에서 호출되는 경우
-        # => 순수모델객체의 정보로 exists_self()로 확인 후 업데이트 like create
+        # => 이미 init_session을 해놨기 때문에 model obj라도 session이 보급된 상태다.
+        # => .save_self()는 객체 실행메서드로서 내부에서 session을 체크하고 확인한다.
         else:
-            #### filter_by후에는 작동안함.
-            # => create시 입력된 정보(중 uk)로 존재 검사하는 self.exsits_self  VS
-
-            # => update/delete시
-            #    1) get() or filter_by() first로 찾은 순수모델객체도 정보가 미리 있다.
-            #       => session이 없기 때문에 self.check_session을 했다.
-            #    2) 찾은 순수모델객체가 아닌 경우, filter_by.update()를 한다면 내부에서 first()먼저하고 검사 검사해야해가 때문에 self.exists_self(X)
-            #      => self.check_session은 filter_by()내부에 있어서 필요없지만,(알아서 잇으면 pass)
-            #      ==> 문제는 first() 수행한 뒤 그 객체로 update해야한다??
-            #      filter_by()는 내부 self._query가 차 있으니 그것을 first()로 수행한 뒤, 처리한다.
-
-            ## => 여기서는 이미 존재하는 객체를 업뎃하므로 존재검사 필요없음.
-            # if not self.exists_self():
-            #     return False
-
+            self.set_session(session)
             return self.fill(**kwargs).save_self(auto_commit=auto_commit)
 
     # delete
     def delete(self, session: Session = None, auto_commit: bool = False):
-        self.check_session(session)
+        self.set_session(session)
 
         if not self.exists_self():
             return False
 
         self._session.delete(self)
         # delete시 내부세션이라면,
-        # self._session.flush()  # 자체세션용
+        self._session.flush()  # 자체세션용
 
         if auto_commit:
             self._session.commit()
@@ -524,8 +528,8 @@ class BaseMixin(Base, BaseQuery):
 
     #### 공통으로 쓸 session을 필수로 받아서, 한번에 commit
     @classmethod
-    def delete_by_ids(cls, session: Session, *ids, auto_commit: bool = False, ):
-        # filter_by(객체+query생성) 없이  => cls용 check_session
+    def delete_by_ids(cls, session: Session, *ids, auto_commit: bool = False):
+        # filter_by(객체+query생성) 없이  => cls용 set_session
         session = db.get_session(session)
 
         for id_ in ids:
