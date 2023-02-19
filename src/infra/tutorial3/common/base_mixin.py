@@ -47,6 +47,17 @@ class BaseMixin(Base, BaseQuery):
         # => 배급한 session은 실행메서드들이 close를 꼭 해줄 것이다.
         self.served = None  # => 뒤에서 self._get_session에서 초기화해준다.
         self._session = self._get_session(session)
+        print('create obj session >   >> ', self._session)
+
+    # 감춰진 query를 setter만 가능하도록
+    # => 생성자에서도 self._query에 query=로 주고 있음.
+    @property
+    def query(self):
+        raise AttributeError("query can't not read.")
+
+    @query.setter
+    def query(self, query):
+        self._query = query
 
     # 1. obj의 session처리
     def _get_session(self, session):
@@ -357,7 +368,7 @@ class BaseMixin(Base, BaseQuery):
 
     #### create/update/delete는 session을 받아올 경우 auto_commt여부도 받아야한다.
     #### 아직 add되지 않은 객체용.
-    def exists_self(self):
+    def exists_self(self, session: Session = None, auto_commit=True):
         """
         그냥 존재검사(.exists())가 아니라, 생성시 kwargs를 바탕으로 유니크key를 골라내서 검사함
 
@@ -366,30 +377,38 @@ class BaseMixin(Base, BaseQuery):
         self.column_names  >>  ['add_date', 'pub_date', 'id', 'username', 'password_hash', 'email', 'last_seen', 'is_active', 'avatar', 'sex', 'address', 'phone', 'role_id']
         self_unique_key  >>  username
         """
+        self.set_session(session)
+
         # 1) 생성하려고 준 정보중에 unique 칼럼을 찾고, 그것으로 조회한다.
         # print('self.uks  >> ', self.uks)
         # 2) 이미 obj = cls()가 생성되면, 각 칼럼columns에 값이 입력된 상태다. super().__init__(**kwags)에 의해
         # print('self.column_names  >> ', self.column_names)
         # 2) 여러개 중에 1개만 뽑은 뒤
         self_unique_key = next((column_name for column_name in self.column_names if column_name in self.uks), None)
-        print('unique_key  >> ', self_unique_key)
+        # print('unique_key  >> ', self_unique_key)
         if not self_unique_key:
             # 3) 유니크 키가 없는 경우, 필터링해서 존재하는지 확인할 순 없다.
             raise Exception(f'생성 전, 이미 존재 하는지 유무 확인을 위한 unique key가 존재하지 않습니다.')
 
-        print('self.__dict__  >> ', self.__dict__)
+        # print('self.__dict__  >> ', self.__dict__)
 
-        print('{self_unique_key: getattr(self, self_unique_key)}  >> ',
-              {self_unique_key: getattr(self, self_unique_key)})
+        # print('{self_unique_key: getattr(self, self_unique_key)}  >> ',
+        #       {self_unique_key: getattr(self, self_unique_key)})
         # {self_unique_key: getattr(self, self_unique_key)}  >>  {'username': None}
         # existing_obj  >>  None
-        existing_obj = self.filter_by(
-            session=self._session,
-            **{self_unique_key: getattr(self, self_unique_key)}) \
-            .first()
-        print('existing_obj  >> ', existing_obj)
 
-        return existing_obj
+        # existing_obj = self.filter_by(
+        #     session=self._session,
+        #     **{self_unique_key: getattr(self, self_unique_key)}) \
+        #     .first()
+
+        #### create로 obj생성후 filter_by로 또 obj 생성하는 것 방지하기 위해, filter_by내부로직을 차용
+        obj_query = self.create_select_statement(model=self.__class__,
+                                                 filters={self_unique_key: getattr(self, self_unique_key)},
+                                                 )
+        self.query = obj_query
+
+        return self.exists()
 
     @classmethod
     def create(cls, session: Session = None, auto_commit: bool = True, **kwargs):
@@ -405,7 +424,7 @@ class BaseMixin(Base, BaseQuery):
         obj = cls(session=session, **kwargs)
 
         # db들어가기 전 객체의 unique key로 존재 검사
-        if obj.exists_self():
+        if obj.exists_self(auto_commit=False):
             return False
 
         return obj.save_self(auto_commit=auto_commit)
@@ -430,7 +449,7 @@ class BaseMixin(Base, BaseQuery):
     def set_session(self, session):
         if not hasattr(self, '_session') or not self._session:
             self._session = self._get_session(session)
-            self._query = None  #
+            self.query = None  #
 
     # self._query가 차있다면, filter_by에 의해 나온 session_obj
     # 없다면 model_obj
@@ -522,6 +541,12 @@ class BaseMixin(Base, BaseQuery):
 
     # delete
     def delete(self, session: Session = None, auto_commit: bool = True):
+        """
+
+        :param session:
+        :param auto_commit:
+        :return:
+        """
         # 삭제시 FK 제약조건이 뜰 수 있다.
         if self.has_session:
             try:
@@ -545,7 +570,7 @@ class BaseMixin(Base, BaseQuery):
 
     #### 공통으로 쓸 session을 필수로 받아서, 한번에 commit
     @classmethod
-    def delete_by_ids(cls, session: Session, *ids, auto_commit: bool = True):
+    def delete_by_ids(cls, session: Session, auto_commit: bool = True, *ids):
         # filter_by(객체+query생성) 없이  => cls용 set_session
         session = db.get_session(session)
 
