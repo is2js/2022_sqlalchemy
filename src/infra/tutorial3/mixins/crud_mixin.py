@@ -1,11 +1,14 @@
 """
 base_query 기반으로 각 model들의 쿼리들을 실행할 수 있는 mixin 구현
 """
-from sqlalchemy import PrimaryKeyConstraint, UniqueConstraint, ForeignKeyConstraint, exists
+from sqlalchemy import PrimaryKeyConstraint, UniqueConstraint, ForeignKeyConstraint, exists, MetaData
+from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Session, RelationshipProperty
 
-from src.infra.config.base import Base
+# from src.infra.config.base import Base
+from sqlalchemy.util import classproperty
+
 from src.infra.config.connection import db
 from src.infra.tutorial3.mixins.base_query import BaseQuery
 from src.infra.utils import class_property
@@ -17,10 +20,22 @@ constraints_map = {
     'unique': UniqueConstraint,
 }
 
-
 # 1. model들이 자신의 정보를 cls.로 사용할 예정(객체 만들어서 chaining)이라면, Base를 상속해서 Mixin을 만들고, model은 Mixin을 상ㅅ속한다.
 # => 그외 객체생성없이 메서드만 추가할 Mixin은 부모상속없이 그냥 만들면 된다.
 # 1-2. 정의해준 BaseQuery의 class메서드들을 쓸 수 있게 한다?! => 그냥 import한 것으로 사용만할까?
+Base = declarative_base()
+naming_convention = {
+    "ix": 'ix_%(column_0_label)s',
+    "uq": "uq_%(table_name)s_%(column_0_name)s",
+    "ck": "ck_%(table_name)s_%(column_0_name)s",
+    "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+    "pk": "pk_%(table_name)s"
+}
+Base.metadata = MetaData(naming_convention=naming_convention)
+
+
+# class CRUDMixin(Base, BaseQuery):
+# mixin 2. Mixin의 Base는 BaseModel Base가 아닌 새로운 Base를 기능이용을 위해 땡겨쓰는 것이다.
 class CRUDMixin(Base, BaseQuery):
     __abstract__ = True  # Base상속 model인데, tablename안정해줄거면 있어야한다.
 
@@ -37,17 +52,19 @@ class CRUDMixin(Base, BaseQuery):
     """
 
     # 4. 자식으로서 chaning시 객체가 생성될 텐데, 그 때 넘겨주고 싶으면 인자를 **kwargs 앞에 너어주면 된다.
-    def __init__(self, session=None, query=None, **kwargs):
-        # 3. super() 인자 생략하면, super(나, self)로서 => [나의 상위(super)]에서부터 찾아쓰게
-        # 인자 super(나 or 부모class중 택1, self)를 줘서 구체적인 부모를 지정할 수 있다.
-        # => 나를 첫번째 인자로 주면, 나(BaseMixin)의 부모(super) -> Base부터 찾는다는 뜻이다.
-        super(CRUDMixin, self).__init__(**kwargs)
-        self._query = query
-        # 4. 객체를 생성하는 순간 chaining이 시작될 땐, 외부에서 사용중이던 session이 안들어오면 새 session을 배급한다.
-        # => 배급한 session은 실행메서드들이 close를 꼭 해줄 것이다.
-        self.served = None  # => 뒤에서 self._get_session에서 초기화해준다.
-        self._session = self._get_session(session)
-        # print('create obj session >   >> ', self._session)
+    # mixin 3. 믹스인은 생성자를 재정의해선 안된다. 하더라도 BaseModel에서 해야하는데,
+    # => Mixin은 동적 필드를 setter로 채워주는 식으로 변경한다.
+    # def __init__(self, session=None, query=None, **kwargs):
+    #     # 3. super() 인자 생략하면, super(나, self)로서 => [나의 상위(super)]에서부터 찾아쓰게
+    #     # 인자 super(나 or 부모class중 택1, self)를 줘서 구체적인 부모를 지정할 수 있다.
+    #     # => 나를 첫번째 인자로 주면, 나(BaseMixin)의 부모(super) -> Base부터 찾는다는 뜻이다.
+    #     super(CRUDMixin, self).__init__(**kwargs)
+    #     self._query = query
+    #     # 4. 객체를 생성하는 순간 chaining이 시작될 땐, 외부에서 사용중이던 session이 안들어오면 새 session을 배급한다.
+    #     # => 배급한 session은 실행메서드들이 close를 꼭 해줄 것이다.
+    #     self.served = None  # => 뒤에서 self._get_session에서 초기화해준다.
+    #     self._session = self._get_session_and_mark_served(session)
+    #     # print('create obj session >   >> ', self._session)
 
     # 감춰진 query를 setter만 가능하도록
     # => 생성자에서도 self._query에 query=로 주고 있음.
@@ -60,15 +77,17 @@ class CRUDMixin(Base, BaseQuery):
         self._query = query
 
     # 1. obj의 session처리
-    def _get_session(self, session):
-        # 새로 만든 session일 경우 되돌려주기(close처리) 상태(self.served=)를  아직 False상태로 만들어놓는다.
+    # mixin 7. 이것도 cls메서드로 바꾼다.
+    @classmethod
+    def _get_session_and_mark_served(cls, session):
+        # 새로 만든 session일 경우 되돌려주기(close처리) 상태(cls.served=)를  아직 False상태로 만들어놓는다.
 
         if not session:
-            session, self.served = db.get_session(), False
+            session, cls.served = db.get_session(), False
             return session
 
         # 외부에서 받은 session을 받았으면 served로 확인한다.
-        self.served = True
+        cls.served = True
         return session
 
     # 2. obj의 served상태에 따라 close(내부생성) or flush(외부받아온 것) 되도록
@@ -127,8 +146,9 @@ class CRUDMixin(Base, BaseQuery):
     # 추가) for db에 반영하는 commit이 포함된 경우, close()는 생략된다. -> 외부 sessoin을 flush()만하고 더 쓰던지, commit()으로 끝낸다.
     # => Committing will also just expire the state of all instances in the session so that they receive fresh state on next access.
     #    Closing expunges (removes) all instances from the session.
-    def save_self(self, session: Session = None, auto_commit: bool = True):
-        self.set_session(session)
+    def save_self(self, auto_commit: bool = True):
+        # => self메서드들은 이미 session_obj상태에서 호출하도록 변경
+        # self.set_session_and_query(session)
 
         #### try/catch는 외부세션을 넣어주는데서 할 것이다?
         self._session.add(self)
@@ -174,7 +194,19 @@ class CRUDMixin(Base, BaseQuery):
 
         """
         query = cls.create_select_statement(cls, filters=kwargs, selects=selects)
-        obj = cls(session=session, query=query)  # served는 session여부에 따라서 알아서 내부 초기화 됨.
+        # mixin 6. 더이상 Model들의 생성자에서 session과 query를 받는게 아니라
+        # => setter로 생성후 setter로 주입한다.
+        # obj = cls(session=session, query=query)  # served는 session여부에 따라서 알아서 내부 초기화 됨.
+
+        # mixin 9. 반복되는 session주입 model객체 -> session_obj를 만드는 과정을 메서드로 추출
+        # obj = cls().set_session_and_query(session, query=query)
+        return cls.create_session_obj(session, query)
+
+    # mixin 11. create에서 사용시 **kwargs를 다 받으므로, 인자에 추가. query
+    # def create_session_obj(cls, session, query=None):
+    @classmethod
+    def create_session_obj(cls, session, query=None, **kwargs):
+        obj = cls(**kwargs).set_session_and_query(session, query=query)
 
         return obj
 
@@ -366,7 +398,7 @@ class CRUDMixin(Base, BaseQuery):
         #### 있으면 첫번재 것 없으면 None은 next( iterator, None )로 구현한다.
         return result
 
-    def get_unique_key(self):
+    def first_unique_key(self):
         self_unique_key = next((column_name for column_name in self.column_names if column_name in self.uks), None)
         # print('unique_key  >> ', self_unique_key)
         if not self_unique_key:
@@ -377,7 +409,10 @@ class CRUDMixin(Base, BaseQuery):
 
     #### create/update/delete는 session을 받아올 경우 auto_commt여부도 받아야한다.
     #### 아직 add되지 않은 객체용.
-    def exists_self(self, session: Session = None):
+
+    # mixin 12. create -> session_obj를 만들어서 호출되므로, session은 보장된 상태다?
+    # => _self메서드들은 session_obj를 만들고 난 뒤, 호출될 예정이므로, 상관없다.?!
+    def exists_self(self):
         """
         그냥 존재검사(.exists())가 아니라, 생성시 kwargs를 바탕으로 유니크key를 골라내서 검사함
 
@@ -386,14 +421,15 @@ class CRUDMixin(Base, BaseQuery):
         self.column_names  >>  ['add_date', 'pub_date', 'id', 'username', 'password_hash', 'email', 'last_seen', 'is_active', 'avatar', 'sex', 'address', 'phone', 'role_id']
         self_unique_key  >>  username
         """
-        self.set_session(session)
+        # mixin 13. session 보장받음.
+        # self.set_session_and_query(session)
 
         # 1) 생성하려고 준 정보중에 unique 칼럼을 찾고, 그것으로 조회한다.
         # print('self.uks  >> ', self.uks)
         # 2) 이미 obj = cls()가 생성되면, 각 칼럼columns에 값이 입력된 상태다. super().__init__(**kwags)에 의해
         # print('self.column_names  >> ', self.column_names)
         # 2) 여러개 중에 1개만 뽑은 뒤
-        self_unique_key = self.get_unique_key()
+        self_unique_key = self.first_unique_key()
 
         # print('self.__dict__  >> ', self.__dict__)
 
@@ -408,14 +444,12 @@ class CRUDMixin(Base, BaseQuery):
         #     .first()
 
         #### create로 obj생성후 filter_by로 또 obj 생성하는 것 방지하기 위해, filter_by내부로직을 차용
-        obj_query = self.create_select_statement(model=self.__class__,
-                                                 filters={self_unique_key: getattr(self, self_unique_key)},
-                                                 )
-        self.query = obj_query
+        query = self.create_select_statement(model=self.__class__,
+                                             filters={self_unique_key: getattr(self, self_unique_key)},
+                                             )
+        self.query = query
 
         return self.exists()
-
-
 
     @classmethod
     def create(cls, session: Session = None, auto_commit: bool = True, **kwargs):
@@ -428,13 +462,17 @@ class CRUDMixin(Base, BaseQuery):
             username='asdf15253', password='aasdf2sadf5sdf132',email='as5df1235@asdf.com', is_active=True
             )
         """
-        obj = cls(session=session, **kwargs)
+        # mixin 10. filter_by처럼 create도 cls메서드로 session_obj를 만든다.
+        # => 이 떄, query는 없고, **kwargs를 다 받는가 차이점.
+        # obj = cls(session=session, **kwargs)
+        # obj = cls(session=session, **kwargs)
+        session_obj = cls.create_session_obj(session=session, **kwargs)
 
         # db들어가기 전 객체의 unique key로 존재 검사
-        if obj.exists_self(auto_commit=False):
+        if session_obj.exists_self():
             return False
 
-        return obj.save_self(auto_commit=auto_commit)
+        return session_obj.save_self(auto_commit=auto_commit)
 
     #### update는 filter_by로 객체를 찾아놓은 과정에서, 생성된  obj에 _query에 update만 하도록 되어있어
     # => 내부 self._session을 가지고 있는 obj상태로서, 실행메서드(self 인스턴스 메서드)에 가깝다
@@ -453,23 +491,54 @@ class CRUDMixin(Base, BaseQuery):
         return self
 
     # 실행메서드 결과로 나온 순수 model obj 객체들(filter_by안한)의 session 보급
-    def set_session(self, session):
-        if not hasattr(self, '_session') or not self._session:
-            self._session = self._get_session(session)
-            self.query = None  #
+    # mixin 4. 생성자재정의를 없애고 mixin이 setter를 가지고 생성된 객체에 동적 필드를 주입하도록 바꾼다.
+    # => 추가로 query까지 생성자에 받던 것을 Optional로 받게 한다.
+    # => 추가로 setter가 반영된 객체를 반영하게 하여 obj = cls().setter()형식으로 바로 받을 수 있게 한다.
+    # def set_session_and_query(self, session):
+    #     if not hasattr(self, '_session') or not self._session:
+    #         self._session = self._get_session_and_mark_served(session)
+    #         self.query = None  #
+    # @classmethod
+    # => cls()만들고주입하므로 다시 self 메서드로 변경
+    def set_session_and_query(self, session, query=None):
+        # mixin 15. filter_by()이후, 세션을 재주입 받는 상황이라면, 우선적으로 주입되어야한다.
+        # 1) filter_by이후 session_obj가 되었지만, [외부 세션을 새로 주입] 받는 경우
+        # => query는 건들지말고, session만 바꿔야한다.
+        # if session :
+        #     self._session = session
+        #     self.served = True
+        #     # filter_by 이후 query를 가진 상태면 query는 보존하고 session만 바꾼다.
+        #     self._query = None
+        #     return self
+        #
+        # # 2) session_obj로 처음 변하나는 순간 -> query도 주입받는다?
+        # # if not hasattr(self, '_session') :
+        # else:
+        # self.served = None  # _get_session시 자동 served가 체킹 되지만, 명시적으로 나타내기
+        self._session = self._get_session_and_mark_served(session)
+        if query is not None:
+            self._query = query  #
+        return self
 
     # self._query가 차있다면, filter_by에 의해 나온 session_obj
     # 없다면 model_obj
+    # @property
+    # mixin 5.
+    # @class_property# => self메서드 내부  self.is_session_obj시 인식 안됨.
+    # def has_query(cls):
+    #     print('hasattr(cls, _session)  >> ', hasattr(cls, '_session')) # => False
+    #     print('cls._session  >> ', cls._session) # type object 'User' has no attribute '_session'
+    #     return hasattr(cls, '_session') and cls._session
     @property
-    def has_session(self):
-        return hasattr(self, '_session') and self._session
+    def has_query(self):
+        return hasattr(self, '_query') and self._query is not None
 
     def update(self, session: Session = None, auto_commit: bool = True, **kwargs):
         #### 문제는 User.get()으로 찾을 시, cls() obj가 내포되지 않아 self내부 _session이 없다.
         # => filter_by()로 찾은 객체는, 아직 실행하지 않았으면 cls() obj로서 내부 _session을 가지고 있다.
         # => 실행해버리면.. 없다.
         # => 자체적으로 현재 self에 보급해주는 로직을 만들어야한다.
-        # => self.set_session(session)
+        # => self.set_session_and_query(session)
         """
         1. filter_by없이 결과메서드 이후 결과객체에서 _session없는 상태
         # 1) self.has_sessoin이 없으면 => self.set_session으로 순수model obj도 내/외부 session을 가질 수 있게 함.
@@ -503,7 +572,7 @@ class CRUDMixin(Base, BaseQuery):
         """
         #### 실행 후 순수model객체(filter_by안거친)의 실행메서드로서 실행 전 session보급
         # filter_by로 실행안한 상태의 객체를 검사 => 미리 세션보급 필요함.
-        # self.set_session(session)
+        # self.set_session_and_query(session)
 
         # => 만약 filter_by가 아니라 cls() X => self._session 없는 상태면, self._query도 None상태이므로 이것으로 감별한다.
         #    session은 두 경우 모두 차있다.
@@ -513,7 +582,7 @@ class CRUDMixin(Base, BaseQuery):
         # 1) filter_by로 생성된 경우(self._query가 차있는 경우) => statment은 불린처리 안됨.
         #    => 여러개 필터링 될 수도 있다..
         # if self._query is not None:
-        if self.has_session:
+        if self.has_query:
             try:
                 model_obj = self.one()
             except Exception as e:
@@ -532,48 +601,72 @@ class CRUDMixin(Base, BaseQuery):
         # => 이미 init_session을 해놨기 때문에 model obj라도 session이 보급된 상태다.
         # => .save_self()는 객체 실행메서드로서 내부에서 session을 체크하고 확인한다.
         else:
-            self.set_session(session)
+            self.set_session_and_query(session)
             return self.fill(**kwargs).save_self(auto_commit=auto_commit)
 
-    def delete_self(self, session: Session = None, auto_commit: bool = True):
-        self.set_session(session)
+    # def delete_self(self, session: Session = None, auto_commit: bool = True):
+    def delete_self(self, target=None, auto_commit: bool = True):
+        # mixin 15.  앞으로 session_obj에서 보장받아서 호출 된다.
+        # self.set_session_and_query(session)
+        if not target:
+            target = self
 
-        self._session.delete(self)
+        self._session.delete(target)
         self._session.flush()
 
         if auto_commit:
             self._session.commit()
 
-        return self
+        return target
 
     # delete
+    # => session인자: filter_by시에는 필요없지만, model_obj호출시 외부session을 받는 경우 + filter_by에 내부생성했어도 외부껄로 바꿀 때
+    #   원래는 filter_by시 외부세션을 넣어주는게 더 좋다.
     def delete(self, session: Session = None, auto_commit: bool = True):
         """
+        1. filter_by()조건에 1개의 obj만 검색될 경우, 바로 delete
+            1) 내부 .one()에서 하나도 안나온 경우
+            Category.filter_by(name='2').delete()
+            => No row was found when one was required
+            => False
 
-        :param session:
-        :param auto_commit:
-        :return:
+            2) 1개만 나온 경우
+            Category.filter_by(name='333').delete()
+            => Category[name='333']
+
+
+        2. model_obj에서 .delete()호출
+            c3 = Category.filter_by(name='3').first()
+            c3.delete()
+            => Category[name='3']
+
         """
         # 삭제시 FK 제약조건이 뜰 수 있다.
-        if self.has_session:
+
+        # mixin 18.
+        #  filter_by를 통해 오는 경우, 이미 session을 가지고 있지만, 그것으로 .one()검색하는데, 그전에 바꾸려면 미리 바꿔야한다.
+        # => 메서드에서 session이 새로 들어올 경우만 바꾸도록 작성한다.
+        # 1) filter_by를 거쳐오는 경우 session가진 상태 => session만 여기서 바꾸고 내부에서 query는 건들지 않는다.
+        # 2) mode_obj인 경우, session을 안가진 상태 => session 내부생성 or 외부 주입
+        # => 2경우 모두 공통이므로 앞으로 뺀다.
+        # => 그렇다면 model_obj(객체.delete) vs session_obj(filter_by.delete) 구분 => query로 한다
+        self.set_session_and_query(session)
+
+        # 1) filter_by에 의해 query + session이 들어왔을 때 => 찾아서 session으로 delete
+        # => User.filter_by().delete90
+        if self.has_query:
             try:
                 model_obj = self.one()
             except Exception as e:
                 print(e)
                 return False
 
-            return model_obj.delete_self(session=self._session, auto_commit=auto_commit)
+            return self.delete_self(target=model_obj, auto_commit=auto_commit)
 
         else:
-            self.set_session(session)
-
-            self.delete_self(auto_commit=auto_commit)
-            self._session.flush()
-
-            if auto_commit:
-                self._session.commit()
-
-            return self
+            # 2) model_obj.delete(session)으로 들어왓을 때 => query가 is None 상태다.
+            # => u1.delete()
+            return self.delete_self(auto_commit=auto_commit)
 
     #### 공통으로 쓸 session을 필수로 받아서, 한번에 commit
     @classmethod
@@ -600,7 +693,7 @@ class CRUDMixin(Base, BaseQuery):
         values = kwargs.get(pk_or_uk, [])
 
         if not isinstance(values, (list, tuple, set)):
-            values = [values] # tuple()로 씌우면, 1개짜리 string은 iterable로 생각해서 '12' -> '1', '2'가 되어버림.
+            values = [values]  # tuple()로 씌우면, 1개짜리 string은 iterable로 생각해서 '12' -> '1', '2'가 되어버림.
 
         fails = []
         for value in values:
@@ -634,6 +727,7 @@ class CRUDMixin(Base, BaseQuery):
         [User[id=2,username='asdf15253',], User[id=1,username='admin',]]
         """
         # filter_by를 사용하는 cls메서드는 따로 BaseQuery를 사용하지 않고, obj를 반환받는다.
+        # mixin 8. cls.filter_by()의 객체 생성은,
         obj = cls.filter_by(session=session)
 
         if order_bys:
@@ -642,9 +736,9 @@ class CRUDMixin(Base, BaseQuery):
 
             obj = obj.order_by(*order_bys)
 
-        result = obj.all()
+        results = obj.all()
 
-        return result
+        return results
 
     @classmethod
     def get_by(cls, session: Session = None, **kwargs):
