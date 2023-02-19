@@ -366,9 +366,18 @@ class BaseMixin(Base, BaseQuery):
         #### 있으면 첫번재 것 없으면 None은 next( iterator, None )로 구현한다.
         return result
 
+    def get_unique_key(self):
+        self_unique_key = next((column_name for column_name in self.column_names if column_name in self.uks), None)
+        # print('unique_key  >> ', self_unique_key)
+        if not self_unique_key:
+            # 3) 유니크 키가 없는 경우, 필터링해서 존재하는지 확인할 순 없다.
+            raise Exception(f'생성 전, 이미 존재 하는지 유무 확인을 위한 unique key가 존재하지 않습니다.')
+
+        return self_unique_key
+
     #### create/update/delete는 session을 받아올 경우 auto_commt여부도 받아야한다.
     #### 아직 add되지 않은 객체용.
-    def exists_self(self, session: Session = None, auto_commit=True):
+    def exists_self(self, session: Session = None):
         """
         그냥 존재검사(.exists())가 아니라, 생성시 kwargs를 바탕으로 유니크key를 골라내서 검사함
 
@@ -384,11 +393,7 @@ class BaseMixin(Base, BaseQuery):
         # 2) 이미 obj = cls()가 생성되면, 각 칼럼columns에 값이 입력된 상태다. super().__init__(**kwags)에 의해
         # print('self.column_names  >> ', self.column_names)
         # 2) 여러개 중에 1개만 뽑은 뒤
-        self_unique_key = next((column_name for column_name in self.column_names if column_name in self.uks), None)
-        # print('unique_key  >> ', self_unique_key)
-        if not self_unique_key:
-            # 3) 유니크 키가 없는 경우, 필터링해서 존재하는지 확인할 순 없다.
-            raise Exception(f'생성 전, 이미 존재 하는지 유무 확인을 위한 unique key가 존재하지 않습니다.')
+        self_unique_key = self.get_unique_key()
 
         # print('self.__dict__  >> ', self.__dict__)
 
@@ -409,6 +414,8 @@ class BaseMixin(Base, BaseQuery):
         self.query = obj_query
 
         return self.exists()
+
+
 
     @classmethod
     def create(cls, session: Session = None, auto_commit: bool = True, **kwargs):
@@ -568,19 +575,60 @@ class BaseMixin(Base, BaseQuery):
 
             return self
 
+    def get_unique_key(self):
+        self_unique_key = next((column_name for column_name in self.column_names if column_name in self.uks), None)
+        # print('unique_key  >> ', self_unique_key)
+        if not self_unique_key:
+            # 3) 유니크 키가 없는 경우, 필터링해서 존재하는지 확인할 순 없다.
+            raise Exception(f'생성 전, 이미 존재 하는지 유무 확인을 위한 unique key가 존재하지 않습니다.')
+
+        return self_unique_key
+
     #### 공통으로 쓸 session을 필수로 받아서, 한번에 commit
     @classmethod
-    def delete_by_ids(cls, session: Session, auto_commit: bool = True, *ids):
-        # filter_by(객체+query생성) 없이  => cls용 set_session
-        session = db.get_session(session)
+    def delete_by(cls, session: Session = None, auto_commit: bool = True, **kwargs):
+        """
+        pk나 unique key 1개를 keyword로 받고, value에는 1개 혹은 list를 받아서
+        => 여러 데이터를 지울 수 있다.
+        Category.delete_by(id=3)
+        Category.delete_by(name=['335', '12'])
+        """
+        # filter_by(객체+query생성) 없이  => cls용 실행메서드이며, cls메서드 단위로 session보급하기.
+        # => cls 내부에서 1번만 보급 or 생성 => obj의 delete()마다 여러번 돌려쓴 뒤, 맨 마지막에 commit
+        if session is None:
+            session = db.get_session()
 
-        for id_ in ids:
-            obj = cls.get(id=id_)
-            if obj:
-                # auto_commit 주지말아서 flush만 시행되게 나중에 한번에 commit
-                obj.delete(session=session, auto_commit=False)
+        pk_or_uks = tuple(kwargs.keys())
+        if len(pk_or_uks) != 1:
+            raise Exception(f'keyword는 pk 혹은 uniqkue key 1개만 입력해주세요.: {pk_or_uks}')
 
-        session.flush()
+        pk_or_uk = pk_or_uks[0]
+        if pk_or_uk not in (cls.pks + cls.uks):
+            raise Exception(f'keyword는 pk 혹은 uniqkue key여야 합니다.: {pk_or_uk}')
+
+        values = kwargs.get(pk_or_uk, [])
+
+        if not isinstance(values, (list, tuple, set)):
+            values = tuple(values)
+
+        fails = []
+        for value in values:
+            obj = cls.get(**{pk_or_uk: value})
+
+            # 실패1) 해당 pk or uk로 검색시 객체가 없는 경우
+            if not obj:
+                fails.append(value)
+                continue
+
+            # 실패2) delete에 실패한 경우
+
+            # auto_commit 주지말고 외부session 재활용으로 이어나가도록 함.
+            result = obj.delete(session=session, auto_commit=False)
+            if not result:
+                fails.append(value)
+
+        if fails:
+            print(f'삭제에 실패한 목록: {fails}')
 
         if auto_commit:
             session.commit()
@@ -594,6 +642,7 @@ class BaseMixin(Base, BaseQuery):
         User.get_all(order_bys="-id")
         [User[id=2,username='asdf15253',], User[id=1,username='admin',]]
         """
+        # filter_by를 사용하는 cls메서드는 따로 BaseQuery를 사용하지 않고, obj를 반환받는다.
         obj = cls.filter_by(session=session)
 
         if order_bys:
@@ -605,51 +654,3 @@ class BaseMixin(Base, BaseQuery):
         result = obj.all()
 
         return result
-
-    # def insert(self, title, genre, age):
-    #     with self.__ConnectionHandler() as db:
-    #         try:
-    #             data_insert = Filmes(title=title, genre=genre, age=age)
-    #             db.session.add(data_insert)
-    #             db.session.commit()
-    #             return data_insert
-    #         except Exception as exception:
-    #             db.session.rollback()
-    #             raise exception
-    #
-    # def delete(self, title):
-    #     with self.__ConnectionHandler() as db:
-    #         db.session.query(Filmes).filter(Filmes.title == title).delete()
-    #         db.session.commit()
-    #
-    # def update(self, title, age):
-    #     with self.__ConnectionHandler() as db:
-    #         db.session.query(Filmes).filter(Filmes.title == title).update({"age": age})
-    #         db.session.commit()
-
-    # try:
-    #     pass
-    #     session.commit()
-    # except MyException:
-    #     session.rollback()
-    # finally:
-    #     session.close()
-
-    # class Rails(object):
-    #     @property
-    #     def save(self):
-    #         # 增加rollback防止一个异常导致后续SQL不可使用
-    #         try:
-    #             db.session.add(self)
-    #             db.session.commit()
-    #         except Exception as e:
-    #             db.session.rollback()
-    #             raise e
-    #
-    #         return self
-    #
-    #     @property
-    #     def delete(self):
-    #         db.session.delete(self)
-    #         db.session.commit()
-    #         return self
