@@ -1,19 +1,24 @@
 """
 base_query 기반으로 각 model들의 쿼리들을 실행할 수 있는 mixin 구현
 """
+
+import inspect
+
 from sqlalchemy import PrimaryKeyConstraint, UniqueConstraint, ForeignKeyConstraint, exists, MetaData
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import Session, RelationshipProperty
+from sqlalchemy.orm import Session, RelationshipProperty, DeclarativeMeta
 
 # from src.infra.config.base import Base
-from sqlalchemy.util import classproperty
+from sqlalchemy.util import hybridmethod
 
 from src.infra.config.connection import db
 from src.infra.tutorial3.mixins.base_query import BaseQuery
-from src.infra.utils import class_property
 
 # for def const_column_names()
+from src.infra.tutorial3.mixins.utils.classorinstancemethod import class_or_instancemethod
+from src.infra.tutorial3.mixins.utils.classproperty import class_property
+
 constraints_map = {
     'pk': PrimaryKeyConstraint,
     'fk': ForeignKeyConstraint,
@@ -333,7 +338,11 @@ class CRUDMixin(Base, BaseQuery):
         return session_obj.save_self(auto_commit=auto_commit)
 
     # create_select_statement + create_query_obj + query
-    @classmethod
+    @class_property
+    def has_query_obj(cls):
+        return hasattr(cls, '_query')
+
+    @class_or_instancemethod
     def filter_by(cls, session: Session = None, selects=None, **kwargs):
         """
         User.filter_by(id=1)
@@ -343,6 +352,8 @@ class CRUDMixin(Base, BaseQuery):
         -> ['admin']
 
         """
+
+
         query = cls.create_select_statement(cls, filters=kwargs, selects=selects)
         # mixin 6. 더이상 Model들의 생성자에서 session과 query를 받는게 아니라
         # => setter로 생성후 setter로 주입한다.
@@ -351,6 +362,14 @@ class CRUDMixin(Base, BaseQuery):
         # mixin 9. 반복되는 session주입 model객체 -> session_obj를 만드는 과정을 메서드로 추출
         # obj = cls().set_session_and_query(session, query=query)
         return cls.create_query_obj(session, query)
+
+    @filter_by.instancemethod
+    def filter_by(self, **kwargs):
+        self._query = (
+            self._query
+            .where(*self.create_filters(self.__class__, kwargs))
+        )
+        return self
 
     # mapper(cls.__mapper__) == inpsect(cls) 와 cls.__table__은 둘다 .columns for Column객체(Table객체용 객체칼럼 db.Column) 를 가지고 있지만,
     # => mapper.attrs for Properties(ORM hybridproperty 포함 )을 가지고 있다. ColumnProperty / RelationshipProperty
