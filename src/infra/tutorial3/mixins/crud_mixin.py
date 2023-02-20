@@ -181,6 +181,26 @@ class CRUDMixin(Base, BaseQuery):
 
         return self
 
+    def limit(self, count: int):
+        """
+        User.filter_by().order_by().limit(3).all()
+        => [User[id=1,username='admin',], User[id=2,username='asdf15251',], User[id=3,username='asdf15252',]]
+
+        User.filter_by().order_by().limit(2).all()
+        => [User[id=1,username='admin',], User[id=2,username='asdf15251',]]
+
+        User.filter_by().order_by().limit(1).all()
+        => [User[id=1,username='admin',]]
+
+        """
+        if not isinstance(count, int):
+            raise Exception(f'Invalid count(not int type): {count}')
+
+        self._query = self._query \
+            .limit(count)
+
+        return self
+
     # 추가) order_by는 filter_by없이 class메소드로도 쓰일 것 같음
     # => 이럴 경우, order_by에서 cls() obj를 만들어줘야한다.
     ###############################################################
@@ -827,7 +847,7 @@ class CRUDMixin(Base, BaseQuery):
             print(f'조회에 실패한 목록: {fails}')
 
         session.flush()
-        
+
         # 외부보급session이 아니라, 자체 생성한 session이면, 직접 close까지
         if not is_served:
             session.close()
