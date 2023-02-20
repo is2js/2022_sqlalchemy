@@ -22,7 +22,7 @@ def make_shell_context():
     return dict(db=db,
                 select=select, inspect=inspect, aliased=aliased, func=func,
                 User=User, Role=Role, Post=Post, Category=Category, Tag=Tag, posttags=posttags,
-                StaticsQuery=StaticsQuery,
+                # StaticsQuery=StaticsQuery,
                 chart=Chart(),
                 today=datetime.date.today(),
                 )

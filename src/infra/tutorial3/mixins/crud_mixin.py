@@ -229,6 +229,7 @@ class CRUDMixin(Base, BaseQuery):
         return obj
 
     # for exists_self
+    @property
     def first_unique_key(self):
         self_unique_key = next((column_name for column_name in self.column_names if column_name in self.uks), None)
         # print('unique_key  >> ', self_unique_key)
@@ -263,8 +264,7 @@ class CRUDMixin(Base, BaseQuery):
         # 2) 이미 obj = cls()가 생성되면, 각 칼럼columns에 값이 입력된 상태다. super().__init__(**kwags)에 의해
         # print('self.column_names  >> ', self.column_names)
         # 2) 여러개 중에 1개만 뽑은 뒤
-        self_unique_key = self.first_unique_key()
-
+        self_unique_key = self.first_unique_key
         # print('self.__dict__  >> ', self.__dict__)
 
         # print('{self_unique_key: getattr(self, self_unique_key)}  >> ',

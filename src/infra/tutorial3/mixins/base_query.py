@@ -100,6 +100,8 @@ class BaseQuery:
 
 
         """
+
+
         # 칼럼이 집계함수와 같이 들어온다면 집계함수를 적용할 수 있게 한다.
         if '__' in column_name:
             column_name, func_name = cls.split_and_check_name(column_name)  # split결과 3개이상나오면 에러 1개, 2개는 넘어감
@@ -702,6 +704,7 @@ class BaseQuery:
             return func.strftime(date_format, date_column).label('date')
         else:
             raise NotImplementedError(f'Invalid dialect : {cls.DIALECT_NAME}')
+
 
 
 class StaticsQuery(BaseQuery):
