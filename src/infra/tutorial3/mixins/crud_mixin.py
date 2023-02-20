@@ -123,6 +123,10 @@ class CRUDMixin(Base, BaseQuery):
 
     def execute(self):
         result = self._session.execute(self._query)
+        # execute한 것은 list()로 풀어해쳐줘야 밖에서 쓸 수 있다.?
+        # 내부 session일 경우, 외부에서 자유롭게 쓰기 위해 순회해서 session걸린 것을 없애자
+        if not self.served:
+            result = list(result)
         self.close()
         return result
 
