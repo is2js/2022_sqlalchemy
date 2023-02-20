@@ -5,6 +5,13 @@ from .crud_mixin import CRUDMixin
 from ...utils import class_property
 
 
+# 나중에는 self._query도 객체로 만들어서... : https://stackoverflow.com/questions/629551/how-to-query-as-group-by-in-django
+# => query.group_by = ['designation'] 처럼 넣을 수 있게
+# => 실행메서드들에서 최종 create_query 한 뒤 -> 실행하게..
+# query = Members.objects.all().query
+# query.group_by = ['designation']
+# results = QuerySet(query=query, model=Members)
+
 class StaticsMixin(CRUDMixin):
     __abstract__ = True
 
@@ -36,7 +43,7 @@ class StaticsMixin(CRUDMixin):
 
     # 1) query가 필용한 메서드 -> @classmehotd + query + create_query_obj  like filter_by
     ################
-    # cls.실행메서드 #
+    # cls.실행메서드 # => obj + query 생성 후 -> self.실행메서드까지
     ################
     @classmethod
     def count_until(cls, srt_date_column_name, end_date,
@@ -77,7 +84,7 @@ class StaticsMixin(CRUDMixin):
 
     # use count_until
     ################
-    # cls.실행메서드 #
+    # cls.실행메서드 # => obj + query 생성 후 -> self.실행메서드까지
     ################
     @classmethod
     def count_and_rate_between(cls, date_column_name, from_date, to_date,
@@ -127,3 +134,40 @@ class StaticsMixin(CRUDMixin):
             between_rate = round(between_count / from_count * 100, 2)
 
         return between_count, between_rate
+
+    # use count_until
+    #####################
+    # cls.객체 생성 메서드 # => obj + query 생성 까지만 => 차후 실행메서드 like filter_by
+    #####################
+    # 객체 or 개별칼럼 -> all() or exceute 선택#
+    #####################
+    @classmethod
+    def group_by(cls, *group_by_column_names, session: Session = None, selects=None, filters=None):
+        """
+        1. selects 칼럼을 안고른 경우 => model obj가 select 자동 => .all()
+        User.group_by('username', session=None).all()
+        => [User[id=1,username='admin',], User[id=2,username='asdf15251',], User[id=3,username='asdf15252',], User[id=4,username='asdf15253',]]
+
+        2. selects로 개별칼럼들을 가져오는 경우 => .execute()
+        User.group_by('id', selects=['username', 'id__count'], session=None).execute()
+        => [('admin', 1), ('asdf15251', 1), ('asdf15252', 1), ('asdf15253', 1)]
+
+        User.group_by('id', 'username', selects=['id', 'id__count', 'username__length'], session=None).order_by('-username__length').execute()
+        => [(2, 1, 9), (3, 1, 9), (4, 1, 9), (1, 1, 5)]
+
+        """
+        # 1) groupby 칼럼들 만들기
+        group_by_columns = cls.create_columns(cls, group_by_column_names)
+
+        # 2) selects(집계칼럼)칼럼 만들기 => 없다면, None이 들어가서 자동으로 cls.create_column에서 모델이 올라간다.
+        # if not selects:
+        #     select_columns = [cls]
+        if selects:
+            if not isinstance(selects, (list, tuple, set)):
+                selects = [selects]
+
+        query = cls.create_select_statement(cls, filters=filters, selects=selects)
+
+        query = query.group_by(*group_by_columns)
+
+        return cls.create_query_obj(session, query)

@@ -442,8 +442,12 @@ class BaseQuery:
             order_func, column_name = (desc, column_name[1:]) if column_name.startswith(DESC_PREFIX) \
                 else (asc, column_name)
 
-            if column_name not in cls.get_sortable_columns(model):
-                raise KeyError(f'Invalid order by column: {column_name}')
+            #### 추가 column_name에 id__count 등 집계함수가 있을 수 있다. => 검사는 순수 칼럼네임만 받아야한다.
+            if OPERATOR_OR_FUNC_SPLITTER in column_name:
+                column_name_for_check, func_name = column_name.split(OPERATOR_OR_FUNC_SPLITTER)
+                cls.check_sortable_column(column_name_for_check, model)
+            else:
+                cls.check_sortable_column(column_name, model)
 
             # column을 만들고, desc()나 asc()를 지연으로 맥인다.
             order_by_column = order_func(cls.create_column(model, column_name))
@@ -451,6 +455,11 @@ class BaseQuery:
             order_by_columns.append(order_by_column)
 
         return order_by_columns
+
+    @classmethod
+    def check_sortable_column(cls, column_name_for_check, model):
+        if column_name_for_check not in cls.get_sortable_columns(model):
+            raise KeyError(f'Invalid order by column: {column_name_for_check}')
 
     @classmethod
     def create_select_statement(cls, model,
