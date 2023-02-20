@@ -6,10 +6,9 @@ from pyecharts.charts.chart import Chart
 from sqlalchemy import select, inspect, func
 from sqlalchemy.orm import aliased
 
-from src.config import db_config
-from src.infra.config.connection import DBConnectionHandler, db
+from src.infra.config.connection import db
 from src.infra.tutorial3 import *
-from src.infra.tutorial3.mixins.base_query import StaticsQuery
+from src.infra.tutorial3.mixins.base_query import BaseQuery
 from src.main.config import create_app
 
 
@@ -23,7 +22,7 @@ def make_shell_context():
     return dict(db=db,
                 select=select, inspect=inspect, aliased=aliased, func=func,
                 User=User, Role=Role, Post=Post, Category=Category, Tag=Tag, posttags=posttags,
-                # StaticsQuery=StaticsQuery,
+                BaseQuery=BaseQuery,
                 chart=Chart(),
                 today=datetime.date.today(),
                 relativedelta=relativedelta,

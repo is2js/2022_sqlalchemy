@@ -7,7 +7,7 @@ from pyecharts.charts import Bar
 from sqlalchemy import and_, or_, select, func, distinct, inspect, Table, cast, Integer, literal_column, text, column, \
     Numeric, desc, asc
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import InstrumentedAttribute
+from sqlalchemy.orm import InstrumentedAttribute, joinedload, subqueryload, selectinload
 from sqlalchemy.sql import ColumnElement
 from sqlalchemy.sql.elements import UnaryExpression
 from sqlalchemy.util import classproperty
@@ -60,6 +60,104 @@ op_dict = {
     "between": "between"
 }
 
+# for create_eager_options
+# 상수로 만든 뒤, 사용시 import해서 쓰도록
+## eager types
+JOINED = 'joined'
+SUBQUERY = 'subquery'
+SELECTIN = 'selectin'
+
+## eager load map
+eager_load_map = {
+    'joined': lambda c_name: joinedload(c_name),
+    'subquery': lambda c_name: subqueryload(c_name),
+    'selectin': lambda c_name: selectinload(c_name)
+}
+
+# for create_eager_options
+def _flat_schema(schema: dict):
+    """
+    schema = {
+        'user': JOINED, # joinedload user
+        'comments': (SUBQUERY, {  # load comments in separate query
+            'user': JOINED  # but, in this separate query, join user
+        })
+    }
+    => {'user': JOINED, 'comments': SUBQUERY, 'comments.users': JOINED'}
+
+
+    # the same schema using class properties:
+    schema = {
+        Post.user: JOINED,
+        Post.comments: (SUBQUERY, {
+            Comment.user: JOINED
+        })
+    }
+
+    """
+
+    # 3) 꼬리재귀를 위해, 인자에 level마다 바뀌는 schema->innser_schmea  + 자식이 자신이될(parent_xx) 칼럼명 이은 것, 누적변수 result를 추가한 뒤
+    #  => 내부메서드로 만든 다음, 기초값을 자신과 누적변수에 초기값을 넣어서 호출한다.
+    def _flat_recursive(schema, parent_column_name, result):
+        for rel_column_name_or_prop, value in schema.items():
+            # 1) Post.user 등 관계속성을 사용하는 경우 => 관계 칼럼명을 가져온다.
+            if isinstance(rel_column_name_or_prop, InstrumentedAttribute):
+                rel_column_name_or_prop = rel_column_name_or_prop.key
+
+            # 2-1) value가 tuple로 입력된 경우는, { Post.user : ( SUBQUERY, { 'user': JOINED } ) } 의 재귀형태다.
+            # => 내부 eager type + 내부 schema로 분리한다.
+            if isinstance(value, tuple):
+                eager_type, inner_schema = value[0], value[1]
+
+            # 2-2) value가 dict로 입력된 경우는, { User.posts: {  Post.comments : { Comment.user: JOINED }}}
+            # => eager type이 JOINED로 고정이며 + value가 내부shcema를 의미한다.
+            elif isinstance(value, dict):
+                eager_type, inner_schema = JOINED, value
+
+            # 2-3) 그외의 경우는 내부schema는 없는 것이며, value가 eager_type인 경우다.
+            else:
+                eager_type, inner_schema = value, None
+
+            # 5) 시작부터 부모의 것이 있다고 생각하고 부모의 정보를 받아 사용하여 나를 처리한다.
+            # => 부모의 관계속성명.나의관계속성명 을 연결한다. 부모가 있으면 부모를 앞에 두고 연결한다.
+            current_column_name = parent_column_name + '.' + rel_column_name_or_prop if parent_column_name \
+                else rel_column_name_or_prop
+            # 6) result라는 dict 누적변수에 earger type을 [현재 이은 경로]를 key로 value로 넣어준다.
+            result[current_column_name] = eager_type
+
+            # 7) 만약 연결될 내부 schema( value에 dict or tuple[1]의 dict가 존재할 경우 다시 재귀를 호출한다.
+            # => 꼬리재귀 + 누적변수를 가지고 다녀서, 호출만 해주면 알아서 누적된다.
+            if inner_schema:
+                _flat_recursive(inner_schema, current_column_name, result)
+
+
+    # 4) 초기값 투입
+    result = {}
+    _flat_recursive(schema, '', result)
+
+    return result
+
+
+# for create_eager_options
+# depth가 .으로 연결된 칼럼명 조합으로 들어온다.
+def _to_eager_options(flatten_schema):
+    """{'user': JOINED, 'comments': SUBQUERY, 'comments.users': JOINED'}
+
+    => [<sqlalchemy.orm.strategy_options._UnboundLoad object at 0x0000025E9DBF7D68>,   # Load(strategy=None)
+    <sqlalchemy.orm.strategy_options._UnboundLoad object at 0x0000025E9DBF7E10>,   # Load(strategy=None)
+    <sqlalchemy.orm.strategy_options._UnboundLoad object at 0x0000025E9DBF7EF0>]   # Load(strategy=None)
+
+    """
+    # 1) 입력한 flattend_schema(dict)를 순회(순서 상관없음. depth는 .이 해결)하면서 종류에 따라 load모듈을 list에 append한다.
+    result = []
+    for column_name, eager_type in flatten_schema.items():
+        if eager_type not in eager_load_map.keys():
+            raise NotImplementedError(f'Invalid eager load type: {eager_type} by column name: {column_name}')
+
+        result.append(eager_load_map[eager_type](column_name))
+
+    return result
+
 
 class BaseQuery:
     DIALECT_NAME = db_config.get_dialect_name()
@@ -100,7 +198,6 @@ class BaseQuery:
 
 
         """
-
 
         # 칼럼이 집계함수와 같이 들어온다면 집계함수를 적용할 수 있게 한다.
         if '__' in column_name:
@@ -378,16 +475,24 @@ class BaseQuery:
         #       list(inspect(User).all_orm_descriptors)
         return inspect(model).columns.keys()
 
+    # for create_order_bys
     # @classproperty
     @classmethod
     def get_hybrid_property_names(cls, model):
         items = inspect(model).all_orm_descriptors
         return [item.__name__ for item in items if isinstance(item, hybrid_property)]
 
+    # for create_order_bys
     # @classproperty
     @classmethod
     def get_sortable_columns(cls, model):
         return cls.get_column_names(model) + cls.get_hybrid_property_names(model)
+
+    # for create_order_bys
+    @classmethod
+    def check_sortable_column(cls, column_name_for_check, model):
+        if column_name_for_check not in cls.get_sortable_columns(model):
+            raise KeyError(f'Invalid order by column: {column_name_for_check}')
 
     @classmethod
     def create_order_bys(cls, column_names, model=None):
@@ -456,10 +561,15 @@ class BaseQuery:
 
         return order_by_columns
 
+    # for create_eager_options
+    #### 추가) join과 유사한 eagerload를  위한 statement
     @classmethod
-    def check_sortable_column(cls, column_name_for_check, model):
-        if column_name_for_check not in cls.get_sortable_columns(model):
-            raise KeyError(f'Invalid order by column: {column_name_for_check}')
+    def create_eager_options(cls, schema=None):
+        if not schema:
+            return []
+
+        flatten_schema = _flat_schema(schema)
+        return _to_eager_options(flatten_schema)
 
     @classmethod
     def create_select_statement(cls, model,
@@ -713,7 +823,6 @@ class BaseQuery:
             return func.strftime(date_format, date_column).label('date')
         else:
             raise NotImplementedError(f'Invalid dialect : {cls.DIALECT_NAME}')
-
 
 
 class StaticsQuery(BaseQuery):

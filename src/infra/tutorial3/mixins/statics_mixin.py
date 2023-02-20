@@ -1,8 +1,8 @@
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
+from src.infra.tutorial3.mixins.utils.classproperty import class_property
 from .crud_mixin import CRUDMixin
-from ...utils import class_property
 
 
 # 나중에는 self._query도 객체로 만들어서... : https://stackoverflow.com/questions/629551/how-to-query-as-group-by-in-django
@@ -145,6 +145,7 @@ class StaticsMixin(CRUDMixin):
     def group_by(cls, *group_by_column_names, session: Session = None, selects=None, filters=None):
         """
         1. selects 칼럼을 안고른 경우 => model obj가 select 자동 => .all()
+
         User.group_by('username', session=None).all()
         => [User[id=1,username='admin',], User[id=2,username='asdf15251',], User[id=3,username='asdf15252',], User[id=4,username='asdf15253',]]
 
