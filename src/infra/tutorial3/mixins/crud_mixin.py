@@ -101,7 +101,7 @@ class CRUDMixin(Base, BaseQuery):
 
     # 3. obj의 내부 _query쿼리를 2.0스타일로 실행
     #   first()/all()/count() 등의 실행메서드는 생성된 객체.method()로 작동하므로 일반 self메서드로 작성한다.
-    def first(self):
+    def first(self, auto_close: bool = True):
         result = self._session.scalars(self._query).first()
         self.close()
         return result
@@ -146,12 +146,15 @@ class CRUDMixin(Base, BaseQuery):
     # 추가) for db에 반영하는 commit이 포함된 경우, close()는 생략된다. -> 외부 sessoin을 flush()만하고 더 쓰던지, commit()으로 끝낸다.
     # => Committing will also just expire the state of all instances in the session so that they receive fresh state on next access.
     #    Closing expunges (removes) all instances from the session.
-    def save_self(self, auto_commit: bool = True):
+    def save_self(self, target=None, auto_commit: bool = True):
         # => self메서드들은 이미 session_obj상태에서 호출하도록 변경
         # self.set_session_and_query(session)
 
+        if not target:
+            target = self
+
         #### try/catch는 외부세션을 넣어주는데서 할 것이다?
-        self._session.add(self)
+        self._session.add(target)
         # 1. add후 id, 등 반영하기 위해 [자체생성/외부받은 session 상관없이] flush를 때려준다.
         self._session.flush()
         # 2. 외부session인 경우, 외부의 마지막 옵션으로 더이상 사용안한다면 밖에서 auto_commit=True로 -> commit()을 때려 close시킨다.
@@ -160,7 +163,7 @@ class CRUDMixin(Base, BaseQuery):
         if auto_commit:
             self._session.commit()
 
-        return self
+        return target
 
     # 추가) order_by도 filter_by이후 실행메서드 처럼 객체에서 하는 것이다.
     # => 이 때, 인자가 튜플로 들어온다.
@@ -180,9 +183,133 @@ class CRUDMixin(Base, BaseQuery):
 
     # 추가) order_by는 filter_by없이 class메소드로도 쓰일 것 같음
     # => 이럴 경우, order_by에서 cls() obj를 만들어줘야한다.
+    ###############################################################
+    #### Model에서 바로 호출되어 객체 생성시 session_obj로 만드는 함수 ####
+    #### create + filter_by => cls.create_query_obj() 사용    ####
+    #### filter_by => session 외 query까지 들어감.                ####
+    ###############################################################
 
-    #### 5. Filter-> Get / Create부터는 내부에서 객체생성 with session => 실행까지 될 예정이므로
-    ####   @classmethod로 작성한다.
+    # for create_query_obj ->filter_by/create   OR  for  model_obj(update/delete) to session_obj
+    # 실행메서드 결과로 나온 순수 model obj 객체들(filter_by안한)의 session 보급
+    # mixin 4. 생성자재정의를 없애고 mixin이 setter를 가지고 생성된 객체에 동적 필드를 주입하도록 바꾼다.
+    # => 추가로 query까지 생성자에 받던 것을 Optional로 받게 한다.
+    # => 추가로 setter가 반영된 객체를 반영하게 하여 obj = cls().setter()형식으로 바로 받을 수 있게 한다.
+    # def set_session_and_query(self, session):
+    #     if not hasattr(self, '_session') or not self._session:
+    #         self._session = self._get_session_and_mark_served(session)
+    #         self.query = None  #
+    # @classmethod
+    # => cls()만들고주입하므로 다시 self 메서드로 변경
+    def set_session_and_query(self, session, query=None):
+        # mixin 15. filter_by()이후, 세션을 재주입 받는 상황이라면, 우선적으로 주입되어야한다.
+        # 1) filter_by이후 session_obj가 되었지만, [외부 세션을 새로 주입] 받는 경우
+        # => query는 건들지말고, session만 바꿔야한다.
+        # if session :
+        #     self._session = session
+        #     self.served = True
+        #     # filter_by 이후 query를 가진 상태면 query는 보존하고 session만 바꾼다.
+        #     self._query = None
+        #     return self
+        #
+        # # 2) session_obj로 처음 변하나는 순간 -> query도 주입받는다?
+        # # if not hasattr(self, '_session') :
+        # else:
+        # self.served = None  # _get_session시 자동 served가 체킹 되지만, 명시적으로 나타내기
+        self._session = self._get_session_and_mark_served(session)
+        if query is not None:
+            self._query = query  #
+        return self
+
+
+    # mixin 11. create에서 사용시 **kwargs를 다 받으므로, 인자에 추가. query
+    # def create_query_obj(cls, session, query=None):
+    @classmethod
+    def create_query_obj(cls, session, query=None, **kwargs):
+        obj = cls(**kwargs).set_session_and_query(session, query=query)
+
+        return obj
+
+    # for exists_self
+    def first_unique_key(self):
+        self_unique_key = next((column_name for column_name in self.column_names if column_name in self.uks), None)
+        # print('unique_key  >> ', self_unique_key)
+        if not self_unique_key:
+            # 3) 유니크 키가 없는 경우, 필터링해서 존재하는지 확인할 순 없다.
+            raise Exception(f'생성 전, 이미 존재 하는지 유무 확인을 위한 unique key가 존재하지 않습니다.')
+
+        return self_unique_key
+
+    # for create                #
+    #############################
+    # _self류(session이미확보)인데, query가 필요한 exists_self   #
+    # create_select_statement   #
+    # query 만들고 .exists()     #
+    #############################
+    # mixin 12. create -> session_obj를 만들어서 호출되므로, session은 보장된 상태다?
+    # => _self메서드들은 session_obj를 만들고 난 뒤, 호출될 예정이므로, 상관없다.?!
+    def exists_self(self):
+        """
+        그냥 존재검사(.exists())가 아니라, 생성시 kwargs를 바탕으로 유니크key를 골라내서 검사함
+
+        User(username='관리자', sex=0, email='tingstyle1@gmail.com').exists()
+        self.uks  >>  ['username']
+        self.column_names  >>  ['add_date', 'pub_date', 'id', 'username', 'password_hash', 'email', 'last_seen', 'is_active', 'avatar', 'sex', 'address', 'phone', 'role_id']
+        self_unique_key  >>  username
+        """
+        # mixin 13. session 보장받음.
+        # self.set_session_and_query(session)
+
+        # 1) 생성하려고 준 정보중에 unique 칼럼을 찾고, 그것으로 조회한다.
+        # print('self.uks  >> ', self.uks)
+        # 2) 이미 obj = cls()가 생성되면, 각 칼럼columns에 값이 입력된 상태다. super().__init__(**kwags)에 의해
+        # print('self.column_names  >> ', self.column_names)
+        # 2) 여러개 중에 1개만 뽑은 뒤
+        self_unique_key = self.first_unique_key()
+
+        # print('self.__dict__  >> ', self.__dict__)
+
+        # print('{self_unique_key: getattr(self, self_unique_key)}  >> ',
+        #       {self_unique_key: getattr(self, self_unique_key)})
+        # {self_unique_key: getattr(self, self_unique_key)}  >>  {'username': None}
+        # existing_obj  >>  None
+
+        # existing_obj = self.filter_by(
+        #     session=self._session,
+        #     **{self_unique_key: getattr(self, self_unique_key)}) \
+        #     .first()
+
+        #### create로 obj생성후 filter_by로 또 obj 생성하는 것 방지하기 위해, filter_by내부로직을 차용
+        query = self.create_select_statement(model=self.__class__,
+                                             filters={self_unique_key: getattr(self, self_unique_key)},
+                                             )
+        self._query = query
+
+        return self.exists()
+
+    @classmethod
+    def create(cls, session: Session = None, auto_commit: bool = True, **kwargs):
+        """
+        1. session안받고 내부에서 생성 -> auto_commit 필수
+        2. session받아서 외부세션으로 생성 -> 1) 더 사용할거면 auto_commit안해도됨(flush) 2) 마지막사용이면 auto_commit 넣기
+        User.create(
+            session=session,
+            auto_commit=True, => 외부세션 사용중이라면, 맨 CUD에만(중간사용이면 flush만) <-> 내부는 항상 auto_commit True
+            username='asdf15253', password='aasdf2sadf5sdf132',email='as5df1235@asdf.com', is_active=True
+            )
+        """
+        # mixin 10. filter_by처럼 create도 cls메서드로 session_obj를 만든다.
+        # => 이 떄, query는 없고, **kwargs를 다 받는가 차이점.
+        # obj = cls(session=session, **kwargs)
+        # obj = cls(session=session, **kwargs)
+        session_obj = cls.create_query_obj(session=session, **kwargs)
+
+        # db들어가기 전 객체의 unique key로 존재 검사
+        if session_obj.exists_self():
+            return False
+
+        return session_obj.save_self(auto_commit=auto_commit)
+
+    # create_select_statement + create_query_obj + query
     @classmethod
     def filter_by(cls, session: Session = None, selects=None, **kwargs):
         """
@@ -200,15 +327,7 @@ class CRUDMixin(Base, BaseQuery):
 
         # mixin 9. 반복되는 session주입 model객체 -> session_obj를 만드는 과정을 메서드로 추출
         # obj = cls().set_session_and_query(session, query=query)
-        return cls.create_session_obj(session, query)
-
-    # mixin 11. create에서 사용시 **kwargs를 다 받으므로, 인자에 추가. query
-    # def create_session_obj(cls, session, query=None):
-    @classmethod
-    def create_session_obj(cls, session, query=None, **kwargs):
-        obj = cls(**kwargs).set_session_and_query(session, query=query)
-
-        return obj
+        return cls.create_query_obj(session, query)
 
     # mapper(cls.__mapper__) == inpsect(cls) 와 cls.__table__은 둘다 .columns for Column객체(Table객체용 객체칼럼 db.Column) 를 가지고 있지만,
     # => mapper.attrs for Properties(ORM hybridproperty 포함 )을 가지고 있다. ColumnProperty / RelationshipProperty
@@ -269,26 +388,6 @@ class CRUDMixin(Base, BaseQuery):
     # attr.expression.unique
     # True
 
-    @class_property
-    def columns_except_pk_and_default(cls):
-        # columns_names   for pk, fk, uk 찾기와 달리,
-        # pk(id)와 default값이 있는 칼럼들은 비교에서 제외시키기 위해, 해당 칼럼들을 제외해서 가져온다.
-        return [c for c in cls.__table__.columns if c.primary_key is False or c.default is None]
-
-    # columns_except_pk_and_default를 활용하여 eq, repr 정의하기
-    # => pk와 deafult칼럼을 제외하고 비교한다.
-    def __eq__(self, other):
-        # commit안된 객체 출력을 대비, id 빼고 칼럼들을 비교함.
-        return all(getattr(self, c.key) == getattr(other, c.key) for c in self.columns_except_pk_and_default)
-
-    def __repr__(self):
-        info: str = f"{self.__class__.__name__}["
-        # for c in self.columns_except_pk_and_default:
-        for name in self.pks + self.uks:
-            info += f"{name}={getattr(self, name)!r},"
-        info += "]"
-        return info
-
     #### 제약조건 칼럼확인은 low level인 cls.__table__에서 .consraints로 확인한다.
     @class_property
     def column_names(cls):
@@ -336,6 +435,59 @@ class CRUDMixin(Base, BaseQuery):
 
         return target_constraint.columns.keys()
 
+    # for __eq__
+    @class_property
+    def columns_except_pk_and_default(cls):
+        # columns_names   for pk, fk, uk 찾기와 달리,
+        # pk(id)와 default값이 있는 칼럼들은 비교에서 제외시키기 위해, 해당 칼럼들을 제외해서 가져온다.
+        return [c for c in cls.__table__.columns if c.primary_key is False or c.default is None]
+
+    # columns_except_pk_and_default를 활용하여 eq, repr 정의하기
+    # => pk와 deafult칼럼을 제외하고 비교한다.
+    def __eq__(self, other):
+        # commit안된 객체 출력을 대비, id 빼고 칼럼들을 비교함.
+        return all(getattr(self, c.key) == getattr(other, c.key) for c in self.columns_except_pk_and_default)
+
+    def __repr__(self):
+        info: str = f"{self.__class__.__name__}["
+        # for c in self.columns_except_pk_and_default:
+        for name in self.pks + self.uks:
+            info += f"{name}={getattr(self, name)!r},"
+        info += "]"
+        return info
+
+
+
+    ###################
+    # filter_by 하위   #
+    ###################
+    @classmethod
+    def get(cls, session: Session = None, **kwargs):
+        """
+        filter_by와 동일과정 시행후  실행메서드를 all()로 -> next( , None)로 있으면 첫번째 것 없으면 None 반환
+
+        User.get(id=1))
+        => User[id=1]
+
+        User.get(id=111111111)
+        => None
+
+        User.get(email='asdf')
+        => KeyError: 'Only pk or unique로만 검색가능합니다.'
+        """
+        if not all(key in cls.pks + cls.uks for key in kwargs.keys()):
+            raise KeyError(f'Only pk or unique key search allowed.')
+
+        # 실행메서드지만, filter_by에 의해 세션보급됨.
+        obj = cls.filter_by(session=session, **kwargs)  # 메서드엔 filters=가 아니라 keyword방식으로 그대로 들어가야한다.
+
+        # => obj.one()으로 처리하면, None일때도 에러난다. => .all()로 받아서, 갯수카운팅
+        result = obj.first()
+
+        #### 있으면 첫번재 것 없으면 None은 next( iterator, None )로 구현한다.
+        return result
+
+    # for update
     #### relations 칼럼은 .__table__이 아니라 high-level ORM의 mapper를 이용해야한다.
     @class_property
     def relation_names(cls):
@@ -372,108 +524,7 @@ class CRUDMixin(Base, BaseQuery):
         return [prop.__name__ for prop in props
                 if isinstance(prop, hybrid_property)]
 
-    @classmethod
-    def get(cls, session: Session = None, **kwargs):
-        """
-        filter_by와 동일과정 시행후  실행메서드를 all()로 -> next( , None)로 있으면 첫번째 것 없으면 None 반환
-
-        User.get(id=1))
-        => User[id=1]
-
-        User.get(id=111111111)
-        => None
-
-        User.get(email='asdf')
-        => KeyError: 'Only pk or unique로만 검색가능합니다.'
-        """
-        if not all(key in cls.pks + cls.uks for key in kwargs.keys()):
-            raise KeyError(f'Only pk or unique key search allowed.')
-
-        # 실행메서드지만, filter_by에 의해 세션보급됨.
-        obj = cls.filter_by(session=session, **kwargs)  # 메서드엔 filters=가 아니라 keyword방식으로 그대로 들어가야한다.
-
-        # => obj.one()으로 처리하면, None일때도 에러난다. => .all()로 받아서, 갯수카운팅
-        result = obj.first()
-
-        #### 있으면 첫번재 것 없으면 None은 next( iterator, None )로 구현한다.
-        return result
-
-    def first_unique_key(self):
-        self_unique_key = next((column_name for column_name in self.column_names if column_name in self.uks), None)
-        # print('unique_key  >> ', self_unique_key)
-        if not self_unique_key:
-            # 3) 유니크 키가 없는 경우, 필터링해서 존재하는지 확인할 순 없다.
-            raise Exception(f'생성 전, 이미 존재 하는지 유무 확인을 위한 unique key가 존재하지 않습니다.')
-
-        return self_unique_key
-
-    #### create/update/delete는 session을 받아올 경우 auto_commt여부도 받아야한다.
-    #### 아직 add되지 않은 객체용.
-
-    # mixin 12. create -> session_obj를 만들어서 호출되므로, session은 보장된 상태다?
-    # => _self메서드들은 session_obj를 만들고 난 뒤, 호출될 예정이므로, 상관없다.?!
-    def exists_self(self):
-        """
-        그냥 존재검사(.exists())가 아니라, 생성시 kwargs를 바탕으로 유니크key를 골라내서 검사함
-
-        User(username='관리자', sex=0, email='tingstyle1@gmail.com').exists()
-        self.uks  >>  ['username']
-        self.column_names  >>  ['add_date', 'pub_date', 'id', 'username', 'password_hash', 'email', 'last_seen', 'is_active', 'avatar', 'sex', 'address', 'phone', 'role_id']
-        self_unique_key  >>  username
-        """
-        # mixin 13. session 보장받음.
-        # self.set_session_and_query(session)
-
-        # 1) 생성하려고 준 정보중에 unique 칼럼을 찾고, 그것으로 조회한다.
-        # print('self.uks  >> ', self.uks)
-        # 2) 이미 obj = cls()가 생성되면, 각 칼럼columns에 값이 입력된 상태다. super().__init__(**kwags)에 의해
-        # print('self.column_names  >> ', self.column_names)
-        # 2) 여러개 중에 1개만 뽑은 뒤
-        self_unique_key = self.first_unique_key()
-
-        # print('self.__dict__  >> ', self.__dict__)
-
-        # print('{self_unique_key: getattr(self, self_unique_key)}  >> ',
-        #       {self_unique_key: getattr(self, self_unique_key)})
-        # {self_unique_key: getattr(self, self_unique_key)}  >>  {'username': None}
-        # existing_obj  >>  None
-
-        # existing_obj = self.filter_by(
-        #     session=self._session,
-        #     **{self_unique_key: getattr(self, self_unique_key)}) \
-        #     .first()
-
-        #### create로 obj생성후 filter_by로 또 obj 생성하는 것 방지하기 위해, filter_by내부로직을 차용
-        query = self.create_select_statement(model=self.__class__,
-                                             filters={self_unique_key: getattr(self, self_unique_key)},
-                                             )
-        self.query = query
-
-        return self.exists()
-
-    @classmethod
-    def create(cls, session: Session = None, auto_commit: bool = True, **kwargs):
-        """
-        1. session안받고 내부에서 생성 -> auto_commit 필수
-        2. session받아서 외부세션으로 생성 -> 1) 더 사용할거면 auto_commit안해도됨(flush) 2) 마지막사용이면 auto_commit 넣기
-        User.create(
-            session=session,
-            auto_commit=True, => 외부세션 사용중이라면, 맨 CUD에만(중간사용이면 flush만) <-> 내부는 항상 auto_commit True
-            username='asdf15253', password='aasdf2sadf5sdf132',email='as5df1235@asdf.com', is_active=True
-            )
-        """
-        # mixin 10. filter_by처럼 create도 cls메서드로 session_obj를 만든다.
-        # => 이 떄, query는 없고, **kwargs를 다 받는가 차이점.
-        # obj = cls(session=session, **kwargs)
-        # obj = cls(session=session, **kwargs)
-        session_obj = cls.create_session_obj(session=session, **kwargs)
-
-        # db들어가기 전 객체의 unique key로 존재 검사
-        if session_obj.exists_self():
-            return False
-
-        return session_obj.save_self(auto_commit=auto_commit)
-
+    # for fill
     #### update는 filter_by로 객체를 찾아놓은 과정에서, 생성된  obj에 _query에 update만 하도록 되어있어
     # => 내부 self._session을 가지고 있는 obj상태로서, 실행메서드(self 인스턴스 메서드)에 가깝다
     # => auto_commit여부를 받는다.
@@ -482,6 +533,7 @@ class CRUDMixin(Base, BaseQuery):
     def settable_column_names(cls):
         return cls.column_names + cls.settable_relation_names + cls.hybrid_property_names
 
+    # for update
     def fill(self, **kwargs):
         for key, value in kwargs.items():
             if key not in self.settable_column_names:
@@ -490,48 +542,33 @@ class CRUDMixin(Base, BaseQuery):
 
         return self
 
-    # 실행메서드 결과로 나온 순수 model obj 객체들(filter_by안한)의 session 보급
-    # mixin 4. 생성자재정의를 없애고 mixin이 setter를 가지고 생성된 객체에 동적 필드를 주입하도록 바꾼다.
-    # => 추가로 query까지 생성자에 받던 것을 Optional로 받게 한다.
-    # => 추가로 setter가 반영된 객체를 반영하게 하여 obj = cls().setter()형식으로 바로 받을 수 있게 한다.
-    # def set_session_and_query(self, session):
-    #     if not hasattr(self, '_session') or not self._session:
-    #         self._session = self._get_session_and_mark_served(session)
-    #         self.query = None  #
-    # @classmethod
-    # => cls()만들고주입하므로 다시 self 메서드로 변경
-    def set_session_and_query(self, session, query=None):
-        # mixin 15. filter_by()이후, 세션을 재주입 받는 상황이라면, 우선적으로 주입되어야한다.
-        # 1) filter_by이후 session_obj가 되었지만, [외부 세션을 새로 주입] 받는 경우
-        # => query는 건들지말고, session만 바꿔야한다.
-        # if session :
-        #     self._session = session
-        #     self.served = True
-        #     # filter_by 이후 query를 가진 상태면 query는 보존하고 session만 바꾼다.
-        #     self._query = None
-        #     return self
-        #
-        # # 2) session_obj로 처음 변하나는 순간 -> query도 주입받는다?
-        # # if not hasattr(self, '_session') :
-        # else:
-        # self.served = None  # _get_session시 자동 served가 체킹 되지만, 명시적으로 나타내기
-        self._session = self._get_session_and_mark_served(session)
-        if query is not None:
-            self._query = query  #
-        return self
 
+    # for update / delete => filter_by VS model_obj 구분 by query
     # self._query가 차있다면, filter_by에 의해 나온 session_obj
     # 없다면 model_obj
     # @property
     # mixin 5.
     # @class_property# => self메서드 내부  self.is_session_obj시 인식 안됨.
-    # def has_query(cls):
+    # def is_query_obj(cls):
     #     print('hasattr(cls, _session)  >> ', hasattr(cls, '_session')) # => False
     #     print('cls._session  >> ', cls._session) # type object 'User' has no attribute '_session'
     #     return hasattr(cls, '_session') and cls._session
     @property
-    def has_query(self):
+    def is_query_obj(self):
         return hasattr(self, '_query') and self._query is not None
+
+    # for filter_by. + model_obj. 둘다 호출될 수있는 메서드 ex> .update / .delete에서 필수
+    # => cf) model_obj를 cls()로 만들 땐, .set_session_and_query를 .create_query_obj에서 호출하게 됨.
+    #### filter_by/create에서 발생된 query_obj냐 VS model_obj냐에 따라서 알아서 session을 주입한다.
+    def set_session(self, session):
+        # 1) query_obj가 아니면, 순수model_obj로서, 무조건 session을 주입한다.
+        if not self.is_query_obj:
+            self.set_session_and_query(session)
+        # 2) query_obj인 경우, 새 session이 들어온 경우만 그 session으로 업뎃한다.
+        else:
+            if session:
+                self.set_session_and_query(session)
+
 
     def update(self, session: Session = None, auto_commit: bool = True, **kwargs):
         #### 문제는 User.get()으로 찾을 시, cls() obj가 내포되지 않아 self내부 _session이 없다.
@@ -540,73 +577,69 @@ class CRUDMixin(Base, BaseQuery):
         # => 자체적으로 현재 self에 보급해주는 로직을 만들어야한다.
         # => self.set_session_and_query(session)
         """
-        1. filter_by없이 결과메서드 이후 결과객체에서 _session없는 상태
-        # 1) self.has_sessoin이 없으면 => self.set_session으로 순수model obj도 내/외부 session을 가질 수 있게 함.
-        # 2) 순수model obj가 받거나 생성한 session으로 fill(**kwargs)이후 .save_self()함
+        1. 기본 model_obj에서 사용
+        c2 = Category.filter_by(name='2').first()
+        c2.update(name='22')
+        Category[id=4,name='22',]
 
-        Category.get_all()
-        [Category[name='ㅓㅓ'], Category[name='456'], Category[name='555']]
-        c1.update(auto_commit=True, name='ㅏㅏ')
-        Category.get_all()
-        [Category[name='ㅏㅏ'], Category[name='456'], Category[name='555']]
+        2. filter_by로 사용
+        1) filter_by에서 생성된 session_obj에서 model_obj를 업뎃 후 commit => updated_model_obj를 반환하면 session에러
+        Category.filter_by(name='334').update(session=s1, name='335')
+        => True
 
-        2. filter_by로 객체 생성하면서, session보급받은 상태
-        # => 가진 세션으로 일단 update전 순수model 1개를 select한다.
-        # => 셀렉된  순수model obj는 session이 없는 상태이므로 fill은 가능 save는 불가능이다.
-        # => 실행메서드 .save_self(session=)에 바깥 filter_by obj의 session을 받아서, 자신의 session을 채우고, .save_self()를 수행한다
-
-        Category.filter_by(id=1).update(auto_commit=True, name='aa')
-        Category.get_all()
-        [Category[name='aa'], Category[name='456'], Category[name='555']]
-
-        3. filter_by로 걸었는데, 1개가 아닌 여러개가 발견되거 안발견되는 경우
-
-        Category.filter_by(id__gt=3).update(auto_commit=True, name='카테1')
-        => No row was found when one was required
-        => False
-        Category.filter_by(id__lt=3).update(auto_commit=True, name='카테1')
-        => Multiple rows were found when exactly one was required
-        => False
-
-
+        2) 외부세션에서 auto_commit=False상태라면, updated_model_obj가 session에 남아 사용가능
+        s1 = db.get_session()
+        Category.filter_by(name='335').update(session=s1, auto_commit=False, name='336')
+        => Category[id=2,name='336',]
+        s1.commit()
         """
-        #### 실행 후 순수model객체(filter_by안거친)의 실행메서드로서 실행 전 session보급
-        # filter_by로 실행안한 상태의 객체를 검사 => 미리 세션보급 필요함.
-        # self.set_session_and_query(session)
-
-        # => 만약 filter_by가 아니라 cls() X => self._session 없는 상태면, self._query도 None상태이므로 이것으로 감별한다.
-        #    session은 두 경우 모두 차있다.
-        # => self._query를 가졌는지 거기에 차있는지 확인하는 메서드 is_session_obj구현이후로는
-        #    그것의 else에 두도록 위치 변경
+        # update/delete는 filter_by의 session_obj(query_obj)든  model_obj든 session을 미리 확보한다
+        # 1) filter_by에 의해 session과 query가 이미 있는 경우는 외부session이 들어올때만 업뎃한다.
+        # => 이미 filter_by내부 cls.create_session_obj에 의해 session이 차있는데 또 다시 생성한다.
+        # 2) model_obj에서 호출된다면, 외부session여부와 상관없이 무조건 호출되어야한다.
+        self.set_session(session)
 
         # 1) filter_by로 생성된 경우(self._query가 차있는 경우) => statment은 불린처리 안됨.
         #    => 여러개 필터링 될 수도 있다..
         # if self._query is not None:
-        if self.has_query:
+        if self.is_query_obj:
             try:
                 model_obj = self.one()
             except Exception as e:
                 print(e)
                 return False
-            # 찾은 model 객체를 바꾼 뒤, 현재 obj(filter_by)의 세션으로 add
-            # => mode_.obj에는 session이 안들어있어서, .save()를 호출 못한다?!
-            # => .save()도 session을 받을 수 있도록 변경하자?!
-            # => 자체 세션이 없는 model_obj만 .save()에 외부session을 주입해서 save하자.
 
-            # 당근 순수model obj는 가진 세션이 없어서 외부session을 넣어준다.
-            # => 안넣어주면 자체적으로 set_session시 생성할 수 있지만, 1개를 재활용한다.
-            return model_obj.fill(**kwargs).save_self(session=self._session, auto_commit=auto_commit)
+            # return model_obj.fill(**kwargs).save_self(session=self._session, auto_commit=auto_commit)
+            # model_obj를 save_self하려면 setter로 만들어야한다
+            # => save_self는 더이상 self류에게 session을 주지 안흔ㄴ다.
+
+            # => 새로 생긴 결과물 model_obj를 update 데이터를 fill하되,
+            # => model에게 save하라고 하지말고 target을 넘겨서 self로 한다?!
+            #    like self.delete_self(target=model_obj, auto_commit=auto_commit)
+            # return self.save_self(target=model_obj.fill(**kwargs), auto_commit=auto_commit)
+
+            #### self가 아닌 차 model_obj가 update가 끝나 commit까지 했다면, 밖으로 return시 Detached된 상태가 된다.
+            # => 이 경우, repr가 찍힐 때 session에러 난다.
+            # => 외부session + auto_commit False가 아닌 경우에는 [commit끝난 updated model_obj를 외부에서 쓸 순 없다]
+            updated_model_obj = self.save_self(target=model_obj.fill(**kwargs), auto_commit=auto_commit)
+            # => 외부세션이라서 auto_commit=False 일 때만 updated_model_obj가 sessoin에 남아 외부에 return할 수 있다.
+            # => self._sesion에서 타 mode_obj를 업뎃 후 commit했다면 session에서 사라진 상태라 repr 등 .name에 접근할 수 없다.
+            if auto_commit is False:
+                return updated_model_obj
+            return True
 
         # 2) filter_by로 생성된 상황이 아닌, 순수모델객체에서 호출되는 경우
         # => 이미 init_session을 해놨기 때문에 model obj라도 session이 보급된 상태다.
         # => .save_self()는 객체 실행메서드로서 내부에서 session을 체크하고 확인한다.
         else:
-            self.set_session_and_query(session)
+            # self.set_session_and_query(session) # => 앞으로 뺀다.
             return self.fill(**kwargs).save_self(auto_commit=auto_commit)
 
-    # def delete_self(self, session: Session = None, auto_commit: bool = True):
+
+    # for delete
     def delete_self(self, target=None, auto_commit: bool = True):
-        # mixin 15.  앞으로 session_obj에서 보장받아서 호출 된다.
+        # mixin 15.  앞으로 session_obj든 model_obj든 session_obj은 setter로 set_session으로  보장받는다.
+        # => query가 차이만 난다.
         # self.set_session_and_query(session)
         if not target:
             target = self
@@ -650,11 +683,11 @@ class CRUDMixin(Base, BaseQuery):
         # 2) mode_obj인 경우, session을 안가진 상태 => session 내부생성 or 외부 주입
         # => 2경우 모두 공통이므로 앞으로 뺀다.
         # => 그렇다면 model_obj(객체.delete) vs session_obj(filter_by.delete) 구분 => query로 한다
-        self.set_session_and_query(session)
+        self.set_session(session)
 
         # 1) filter_by에 의해 query + session이 들어왔을 때 => 찾아서 session으로 delete
         # => User.filter_by().delete90
-        if self.has_query:
+        if self.is_query_obj:
             try:
                 model_obj = self.one()
             except Exception as e:
