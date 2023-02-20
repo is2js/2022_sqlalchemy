@@ -39,8 +39,12 @@ class StaticsMixin(CRUDMixin):
     # cls.실행메서드 #
     ################
     @classmethod
-    def count_until(cls, srt_date_column_name, end_date, session: Session = None, filters=None, count_column_name=None,
-                    is_distinct=False):
+    def count_until(cls, srt_date_column_name, end_date,
+                    session: Session = None,
+                    filters=None,
+                    is_distinct=False,
+                    count_column_name=None,
+                    ):
         """
         Category.count_until('add_date', today)
         => 3
@@ -63,7 +67,7 @@ class StaticsMixin(CRUDMixin):
 
         query = (
             select(count_column)
-            .where(func.date(srt_date_column <= end_date))
+            .where(func.date(srt_date_column) <= end_date)
             .where(*cls.create_filters(cls, filters=filters))
         )
 
@@ -71,3 +75,55 @@ class StaticsMixin(CRUDMixin):
 
         return query_obj.scalar()
 
+    # use count_until
+    ################
+    # cls.실행메서드 #
+    ################
+    @classmethod
+    def count_and_rate_between(cls, date_column_name, from_date, to_date,
+                               session: Session = None,
+                               filters=None,
+                               is_distinct=False,
+                               count_column_name=None,
+                               ):
+        """
+        between으로 한번에 필터링 하지 않는 이유는, rate계산때 문이다.(to - from / from)의 from의 값을 알아야하기 때문
+        => from_date는 포함안하고 계싼된다.
+        from_date = 오늘 - (오늘을 포함한 보고싶은 지난 x일의) x
+
+        from_date = (오늘 - 오늘로부터 3일전) = 지난 4일 전
+        to_date   = 오늘
+        => between 계산은  [from_date(4일전) + 1(3일전)] ~  to_date(오늘)을 하므로 => to_date를 포함한 지난 3일을 보게 된다.
+        1 2 3 4 5 6 7 8
+        ↓ [ 지난7주일  ]
+        8 - relativedelta(days=7)
+
+        1. 지난 3일간의 count와 증감률
+        Category.count_and_rate_between('add_date',today-relativedelta(days=3), today)
+        => (2, 100.0)
+
+        2. 지난 2개월 간의 count와 증감률 filter -> 'name'이 1233인 것 제외하고
+        Category.count_and_rate_between('add_date',today-relativedelta(months=2), today, filters=dict(name__ne='1233'))
+        => (3, 300)
+
+        """
+        to_count = cls.count_until(date_column_name, to_date, session=session,
+                                   filters=filters,
+                                   is_distinct=is_distinct,
+                                   count_column_name=count_column_name
+                                   )
+
+        from_count = cls.count_until(date_column_name, from_date, session=session,
+                                     filters=filters,
+                                     is_distinct=is_distinct,
+                                     count_column_name=count_column_name
+                                     )
+
+        between_count = to_count - from_count
+
+        if from_count == 0:
+            between_rate = round(to_count * 100, 2)
+        else:
+            between_rate = round(between_count / from_count * 100, 2)
+
+        return between_count, between_rate

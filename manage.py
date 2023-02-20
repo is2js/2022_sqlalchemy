@@ -1,6 +1,7 @@
 import datetime
 import os
 
+from dateutil.relativedelta import relativedelta
 from pyecharts.charts.chart import Chart
 from sqlalchemy import select, inspect, func
 from sqlalchemy.orm import aliased
@@ -25,4 +26,5 @@ def make_shell_context():
                 # StaticsQuery=StaticsQuery,
                 chart=Chart(),
                 today=datetime.date.today(),
+                relativedelta=relativedelta,
                 )
