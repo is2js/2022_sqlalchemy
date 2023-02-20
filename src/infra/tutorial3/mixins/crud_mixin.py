@@ -220,7 +220,6 @@ class CRUDMixin(Base, BaseQuery):
             self._query = query  #
         return self
 
-
     # mixin 11. create에서 사용시 **kwargs를 다 받으므로, 인자에 추가. query
     # def create_query_obj(cls, session, query=None):
     @classmethod
@@ -456,8 +455,6 @@ class CRUDMixin(Base, BaseQuery):
         info += "]"
         return info
 
-
-
     ###################
     # filter_by 하위   #
     ###################
@@ -542,7 +539,6 @@ class CRUDMixin(Base, BaseQuery):
 
         return self
 
-
     # for update / delete => filter_by VS model_obj 구분 by query
     # self._query가 차있다면, filter_by에 의해 나온 session_obj
     # 없다면 model_obj
@@ -568,7 +564,6 @@ class CRUDMixin(Base, BaseQuery):
         else:
             if session:
                 self.set_session_and_query(session)
-
 
     def update(self, session: Session = None, auto_commit: bool = True, **kwargs):
         #### 문제는 User.get()으로 찾을 시, cls() obj가 내포되지 않아 self내부 _session이 없다.
@@ -634,7 +629,6 @@ class CRUDMixin(Base, BaseQuery):
         else:
             # self.set_session_and_query(session) # => 앞으로 뺀다.
             return self.fill(**kwargs).save_self(auto_commit=auto_commit)
-
 
     # for delete
     def delete_self(self, target=None, auto_commit: bool = True):
@@ -798,7 +792,9 @@ class CRUDMixin(Base, BaseQuery):
         """
         # filter_by(객체+query생성) 없이  => cls용 실행메서드이며, cls메서드 단위로 session보급하기.
         # => cls 내부에서 1번만 보급 or 생성 => obj의 delete()마다 여러번 돌려쓴 뒤, 맨 마지막에 commit
+        is_served = True
         if session is None:
+            is_served = False
             session = db.get_session()
 
         pk_or_uks = tuple(kwargs.keys())
@@ -831,6 +827,10 @@ class CRUDMixin(Base, BaseQuery):
             print(f'조회에 실패한 목록: {fails}')
 
         session.flush()
+        
+        # 외부보급session이 아니라, 자체 생성한 session이면, 직접 close까지
+        if not is_served:
+            session.close()
 
         # 조회값(values list)이 1개였던 경우에는 list를 풀어서 반환(조회되면 [0], 조회값없으면 None)
         if len(values) <= 1:
