@@ -641,7 +641,6 @@ class BaseQuery:
         FROM categories
         """
 
-
         stmt = (
             select(*cls.create_columns(model, column_names=selects))
             .options(*cls.create_eager_options(schema=eager_options))

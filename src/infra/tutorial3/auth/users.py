@@ -76,8 +76,11 @@ class User(BaseModel):
     role_id = Column(Integer, ForeignKey('roles.id'), nullable=False)
     #### role에 정의했던 관계속성 옮김
     # role = relationship('Role', backref=backref('users', lazy='dynamic'), lazy='subquery')
-    # => earger options 적용을 위해 lazy='dynamic' 옵션 제거
+    # => eager options 적용을 위해 lazy='dynamic' 옵션 제거 => jinja에서 갖다쓰는거 해결하고 처리해야함.
+    # role = relationship('Role', backref=backref('users'), lazy='subquery')
     role = relationship('Role', backref=backref('users'), lazy='subquery')
+    #### .join()에 관계칼럼을 사용하려면, lazy='subquery'를 주면 안된다.
+    # role = relationship('Role', backref=backref('users'))
 
     ## 직원(M)에 대해 1로서 relationship
     #### User(invite.inviter)로부터 직원(1:1)의 1로서 바로 접근가능하게 subquery+uselist=False
