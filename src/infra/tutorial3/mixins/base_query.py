@@ -8,7 +8,7 @@ from sqlalchemy import and_, or_, select, func, distinct, inspect, Table, cast, 
     Numeric, desc, asc
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import InstrumentedAttribute, joinedload, subqueryload, selectinload
-from sqlalchemy.sql import ColumnElement
+from sqlalchemy.sql import ColumnElement, Subquery, Alias
 from sqlalchemy.sql.elements import UnaryExpression
 from sqlalchemy.util import classproperty
 
@@ -171,8 +171,20 @@ class BaseQuery:
     @classmethod
     def get_column(cls, model, column_name):
         # ORM model이 아니라 Table() 객체일 경우 -> .c에서 getattr
-        if isinstance(model, Table):
+        print('type(model)  >> ', type(model))
+        # # '*' 처리 2
+        # if column_name == '*':
+        #     if isinstance(model, (Table, Subquery, Alias)):
+        #         return model.c
+        #     else:
+        #         return model
+
+        #### query_obj .join()시 현재까지의stmt -> Subquery or Alias로 만드는데, 거기서 칼럼 얻어내기
+        # if isinstance(model, (Table)):
+        if isinstance(model, (Table, Subquery, Alias)):
             column = getattr(model.c, column_name, None)
+        elif isinstance(model, str):
+            return text(model+'.'+ column_name)
         else:
             column = getattr(model, column_name, None)
         # Table()객체는 boolean 자리에 입력시 에러
@@ -251,11 +263,14 @@ class BaseQuery:
         """
         if not column_names:
             return [model]
+            # 처리1 - 들어오는 칼럼명이 없다면, '*'가 되도록?
+            # return ['*']
 
         if not isinstance(column_names, (list, tuple, set)):
             column_names = [column_names]
 
         columns = []
+
         for column_name in column_names:
             # 칼럼들이 들어올 때, str 'id'가 아니라, [('id', 'count')] 집계를 요구할 수 있다.
             # if not isinstance(column_name, str):
@@ -263,7 +278,6 @@ class BaseQuery:
             #         raise Exception(f'Invalid column name: {column_name}')
             #     column_name, apply_func = column_name
             # => 집계를 ['id__count', 'name']형식으로 바꾸자.
-
             columns.append(cls.create_column(model, column_name))
 
         return columns
@@ -642,14 +656,18 @@ class BaseQuery:
         SELECT categories.*
         FROM categories
         """
-
+        if not selects:
+            select_columns = [text('*')]
+        else:
+            select_columns = cls.create_columns(model, column_names=selects)
         stmt = (
-            select(*cls.create_columns(model, column_names=selects))
+            select(*select_columns)
             .options(*cls.create_eager_options(schema=eager_options))
             .where(*cls.create_filters(model, filters=filters))
             #### order_by는 Mixin에서 self메서드로 사용되므로, cls용 model은 키워드로 바꿈 => 사용시 인자 위치도 바뀜.
             .order_by(*cls.create_order_bys(order_bys, model=model))
         )
+
 
         return stmt
 
