@@ -297,6 +297,8 @@ class BaseQuery:
         if rel_column is None:
             raise Exception(f'Invalid relation_name: {relation_name} in {model}')
 
+        print("model, relation_name, rel_column", model, relation_name, rel_column)
+
         return rel_column.target
 
     @classmethod
@@ -656,17 +658,24 @@ class BaseQuery:
         SELECT categories.*
         FROM categories
         """
-        if not selects:
-            select_columns = [text('*')]
+        if not selects or '*' in selects:
+            # select_columns = [text('*')]
+            # => 이게 들어가는 순간..Query has only expression-based entities, which do not apply to relationship property "EmployeeDepartment.department"
+            # => 아무것도 안된다...
+            select_columns=[model]
         else:
             select_columns = cls.create_columns(model, column_names=selects)
         stmt = (
             select(*select_columns)
+            #### filter_by를 안하고, join이 들어갈 땐 SELECT *가 join의 left table이 되므로 select_from을 기본으로 추가
+            .select_from(cls)
             .options(*cls.create_eager_options(schema=eager_options))
             .where(*cls.create_filters(model, filters=filters))
             #### order_by는 Mixin에서 self메서드로 사용되므로, cls용 model은 키워드로 바꿈 => 사용시 인자 위치도 바뀜.
             .order_by(*cls.create_order_bys(order_bys, model=model))
         )
+
+        print('create_select_stmt  >> ', stmt)
 
 
         return stmt

@@ -1,4 +1,4 @@
-from sqlalchemy import MetaData, select, Table, join
+from sqlalchemy import MetaData, select, Table, join, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Session, InstrumentedAttribute, DeclarativeMeta, aliased, contains_eager, joinedload
 
@@ -56,7 +56,7 @@ class RelationMixin(Base, BaseQuery):
     """
 
     @class_or_instancemethod
-    def join(cls, schema: dict, session: Session = None):
+    def load(cls, schema: dict, session: Session = None):
         """
         관계칼럼 정의시 lazy=옵션을 안준 상태로 정의해야한다.
         1. 관계속성을 eager 로 subquery로 가져온 경우 => 접근 가능
@@ -126,16 +126,37 @@ class RelationMixin(Base, BaseQuery):
             # select_columns = '*'
             # current_table = self._query
 
+            ####  eager가 포함된다면 => (관계속성명/관계명을 받아도)
+            # => 최종은 관계 Entity class가 인자로 들어가야한다.
+            if isinstance(target, InstrumentedAttribute):
+                # 1) 관계속성 -> 관계속성명 -> 관계테이블 by get_relation_model
+                # => join + earget에는 관계속성을 그대로 넣어도 괜찮다.
+                # target_model, rel_name = self.get_relation_model(self.__class__, target.key), target.key
+                target_model = rel_name = target
+            elif isinstance(target, str):
+                # 2) 관계속성명 -> 관계테이블 join/관계속성명eager에 대입  by get_relation_model
+                target_model = self.get_relation_model(self.__class__, target)
+                rel_name = target
+            else:
+                # 3) 관계테이블만 => 관계명을 못찾아 eager불가.
+                raise Exception(f'관계속성이나 관계속성명을 입력해주세요.')
+
+            print('target_model, rel_name  >> ', target_model, rel_name)
+
+
+
             self._query = (
                 self._query
                 ##### eager만한다면 관계속성+관계속성명 가능하나,
                 ##### eager 이후 chainning join에서 join타겟을 못잡는다.
-                .options(joinedload(target))
+                # .options(joinedload(target))
                 #### 여기서는 관계속성/만  ->  (join + earger까지) -> 뒤에 체이닝 된다.
                 #### 하지만 체이닝시 select의 문제가
-                # .join(target, onclause=onclause, isouter=isouter, full=full)
-                # .options(contains_eager(target))
+                .join(target_model, onclause=onclause, isouter=isouter, full=full)
+                .options(contains_eager(rel_name))
             )
+
+            print(self._query)
 
         else:
 
@@ -151,6 +172,9 @@ class RelationMixin(Base, BaseQuery):
             elif isinstance(target, (DeclarativeMeta, Table)):
                 pass
 
+            print('target  >> ', target)
+
+
 
             select_columns = []
             ## aliased( stmt .subquery ) 와 stmt.alias() 둘다 되는 것 같다:
@@ -162,17 +186,18 @@ class RelationMixin(Base, BaseQuery):
             # => AttributeError: 'Subquery' object has no attribute 'label'
             current_table = self._query.alias(self.__class__.__name__)
             # current_table = self._query.alias()
-            joined_table_label= 'adc'
+
+            target_label= 'adc'
 
             if selects:
                 if not isinstance(selects, (list, tuple, set)):
                     selects = [selects]
                 # select_columns += self.create_columns(self.__table__.name, selects)
-                select_columns += self.create_columns(self.__table__.name, selects)
+                select_columns += [text(col_name) for col_name in selects]
             if target_selects:
                 if not isinstance(target_selects, (list, tuple, set)):
                     target_selects = [target_selects]
-                select_columns += self.create_columns(joined_table_label, target_selects)
+                select_columns += self.create_columns(target_label, target_selects)
 
             print('select_columns  >> ', select_columns)
 
@@ -186,8 +211,8 @@ class RelationMixin(Base, BaseQuery):
             self._query = (
                 select(select_columns)
                 .select_from(
-                    self._query.join(target.alias(name=joined_table_label),
-                         onclause=onclause, isouter=isouter, full=full).subquery(joined_table_label)
+                    self._query.join(target.alias(name=target_label),
+                         onclause=onclause, isouter=isouter, full=full).subquery(target_label)
                 )
             )
 
