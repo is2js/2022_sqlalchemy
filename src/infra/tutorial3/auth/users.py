@@ -75,7 +75,9 @@ class User(BaseModel):
     ## - role입장에선 1:m이다. 1user는 1role,  1role은 여러유저들에게 사용
     role_id = Column(Integer, ForeignKey('roles.id'), nullable=False)
     #### role에 정의했던 관계속성 옮김
-    role = relationship('Role', backref=backref('users', lazy='dynamic'), lazy='subquery')
+    # role = relationship('Role', backref=backref('users', lazy='dynamic'), lazy='subquery')
+    # => earger options 적용을 위해 lazy='dynamic' 옵션 제거
+    role = relationship('Role', backref=backref('users'), lazy='subquery')
 
     ## 직원(M)에 대해 1로서 relationship
     #### User(invite.inviter)로부터 직원(1:1)의 1로서 바로 접근가능하게 subquery+uselist=False

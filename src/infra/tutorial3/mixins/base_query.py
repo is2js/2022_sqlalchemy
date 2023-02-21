@@ -64,12 +64,14 @@ op_dict = {
 # 상수로 만든 뒤, 사용시 import해서 쓰도록
 ## eager types
 JOINED = 'joined'
+INNER_JOINED = 'inner_joined'
 SUBQUERY = 'subquery'
 SELECTIN = 'selectin'
 
 ## eager load map
 eager_load_map = {
-    'joined': lambda c_name: joinedload(c_name),
+    'joined': lambda c_name: joinedload(c_name, innerjoin=True),
+    'inner_joined': lambda c_name: joinedload(c_name),
     'subquery': lambda c_name: subqueryload(c_name),
     'selectin': lambda c_name: selectinload(c_name)
 }
@@ -83,7 +85,7 @@ def _flat_schema(schema: dict):
             'user': JOINED  # but, in this separate query, join user
         })
     }
-    => {'user': JOINED, 'comments': SUBQUERY, 'comments.users': JOINED'}
+    => {'user': JOINED, 'comments': SUBQUERY, 'comments.users': JOINED}
 
 
     # the same schema using class properties:
@@ -109,7 +111,7 @@ def _flat_schema(schema: dict):
             if isinstance(value, tuple):
                 eager_type, inner_schema = value[0], value[1]
 
-            # 2-2) value가 dict로 입력된 경우는, { User.posts: {  Post.comments : { Comment.user: JOINED }}}
+            # 2-2) value가 tuple[0]의 eager type이 생략된  dict로 입력된 경우는, { User.posts: {  Post.comments : { Comment.user: JOINED }}}
             # => eager type이 JOINED로 고정이며 + value가 내부shcema를 의미한다.
             elif isinstance(value, dict):
                 eager_type, inner_schema = JOINED, value
@@ -141,7 +143,11 @@ def _flat_schema(schema: dict):
 # for create_eager_options
 # depth가 .으로 연결된 칼럼명 조합으로 들어온다.
 def _to_eager_options(flatten_schema):
-    """{'user': JOINED, 'comments': SUBQUERY, 'comments.users': JOINED'}
+    """
+    input: {'user': JOINED, 'comments': SUBQUERY, 'comments.users': JOINED'}
+    => 이미 lazy='dynamic'으로 준 칼럼은 subqueryload를 할 수 없다.
+    => 할때마다 가져오는 lazy='dynamic' => sqlalchemy.orm.dynamic.AppenderQuery
+    => 옵션없다가 한번에 eagerload명시 가져오는 =>  sqlalchemy.orm.strategy_options.Load
 
     => [<sqlalchemy.orm.strategy_options._UnboundLoad object at 0x0000025E9DBF7D68>,   # Load(strategy=None)
     <sqlalchemy.orm.strategy_options._UnboundLoad object at 0x0000025E9DBF7E10>,   # Load(strategy=None)
@@ -565,6 +571,12 @@ class BaseQuery:
     #### 추가) join과 유사한 eagerload를  위한 statement
     @classmethod
     def create_eager_options(cls, schema=None):
+        """
+        BaseQuery.create_eager_options({'user' : 'joined', 'comments': ('subquery', {'users': 'joined'})})
+        => flatten_schema:  => {'user': JOINED, 'comments': SUBQUERY, 'comments.users': JOINED'}
+        => to_eager_options => [<sqlalchemy.orm.strategy_options._UnboundLoad object at 0x000002820F626D30>, <sqlalchemy.orm.strategy_options._UnboundLoad object at 0x000002820F626DD8>, <sqlalchemy.orm.strategy_options._UnboundLoad object at 0x000002820F626EB8>]
+
+        """
         if not schema:
             return []
 
@@ -573,34 +585,66 @@ class BaseQuery:
 
     @classmethod
     def create_select_statement(cls, model,
+                                eager_options=None,
                                 selects=None,
                                 filters=None,
                                 order_bys=None,
                                 ):
         """
         1. 필터만 걸 때 -> 모든 칼럼
-        print(StaticsQuery.create_select_statement(User, filters={'id__in': [1,2,3,4]}))
+        print(BaseQuery.create_select_statement(User, filters={'id__in': [1,2,3,4]}))
         ---
         SELECT users.add_date, users.pub_date, users.id, users.username, users.password_hash, users.email, users.last_seen, users.is_active, users.avatar, users.sex, users.address, users.phone, users.role_id
         FROM users
         WHERE users.id IN (__[POSTCOMPILE_id_1])
 
         2. selects에 뽑고 싶은 칼럼 기입
-        print(StaticsQuery.create_select_statement(User, selects=['username'], filters={'id__in': [1,2,3,4]}))
+        print(BaseQuery.create_select_statement(User, selects=['username'], filters={'id__in': [1,2,3,4]}))
         ---
         SELECT users.username
         FROM users
         WHERE users.id IN (__[POSTCOMPILE_id_1])
 
-        3.print(StaticsQuery.create_select_statement(User, selects=['username'], filters={'id__in': [1,2,3,4]}, order_bys=['-id', 'username']))
+        3.print(BaseQuery.create_select_statement(User, selects=['username'], filters={'id__in': [1,2,3,4]}, order_bys=['-id', 'username']))
         ---
         SELECT users.username
         FROM users
         WHERE users.id IN (__[POSTCOMPILE_id_1]) ORDER BY users.id DESC, users.username ASC
+
+        4. 'joined' eager load + 관계칼럼명(관계속성) => nested outerjoin
+           => 가장 깊은 곳만 'joined'를 명시해주고, 중간방법 tuple을 생략하면 joined로 인식하여 직접 outer join한다.
+
+        4-1) 1번만 outerjoin
+        print(BaseQuery.create_select_statement(Category, eager_options={'posts' : 'joined'}))
+        SELECT categories.*, posts_1.*
+        FROM categories
+        LEFT OUTER JOIN posts AS posts_1 ON categories.id = posts_1.category_id
+
+        4-2) 2번 nested outer join
+        print(BaseQuery.create_select_statement(Category, eager_options={'posts' : { 'tags':'joined'}}))
+        {'posts': 'joined', 'posts.tags': 'joined'}
+        SELECT categories.*, tags_1.*_1 AS , posts_1.*
+        FROM categories
+        LEFT OUTER JOIN posts AS posts_1 ON categories.id = posts_1.category_id
+        LEFT OUTER JOIN (posttags AS posttags_1 JOIN tags AS tags_1 ON tags_1.id = posttags_1.tag_id) ON posts_1.id = posttags_1.post_id
+
+        5. 'subquery' or 'selectin' -> inner join이지만, sql(db-level)에선 안찍히고, main entity의 관계속성에 로드된다.
+        # => lazy='dynamic'과 반대되는 개념으로 lazy='subquery', lazy='selectin'이 적용되서 load되는 것 과 같다.
+        # =>  to get relationships, NO additional query is needed
+
+        print(BaseQuery.create_select_statement(Category, eager_options={'posts' : 'subquery'}))
+        SELECT categories.*
+        FROM categories
+
+        print(BaseQuery.create_select_statement(Category, eager_options={'posts' : 'selectin'}))
+        SELECT categories.*
+        FROM categories
         """
+
 
         stmt = (
             select(*cls.create_columns(model, column_names=selects))
+            .options(*cls.create_eager_options(schema=eager_options))
             .where(*cls.create_filters(model, filters=filters))
             #### order_by는 Mixin에서 self메서드로 사용되므로, cls용 model은 키워드로 바꿈 => 사용시 인자 위치도 바뀜.
             .order_by(*cls.create_order_bys(order_bys, model=model))

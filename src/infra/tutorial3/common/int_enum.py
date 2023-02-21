@@ -1,3 +1,5 @@
+import enum
+
 from sqlalchemy import TypeDecorator, Integer
 
 # https://michaelcho.me/article/using-python-enums-in-sqlalchemy-models
@@ -43,7 +45,7 @@ class IntEnum(TypeDecorator):
 
         return value.value
 
-    # db int value to 객체인듯?
+    # db int value to 객체  인듯?
     # 4) 반대로 [db to field]로 가는 방향을 result method로 정의해준다.
     # -> model.custom이넘필드 = int로 들어오거나,    db에서 int로 올라오는 것 -> 객체에는 enum필드객체로 유지하도록 변환해준다.
     def process_result_value(self, value, dialect):
@@ -52,4 +54,15 @@ class IntEnum(TypeDecorator):
         # 2) 수정form을 생성하면, db int value to Post.has_type 칼럼에는 enum객체로 들어가는 듯
         # process_result_value(self, value, dialect) >> value: 3 <class 'int'>-> return self._enumtype(value):3, type<enum 'PostPublishType'>
         # class PostForm __init__ db에서 올라온 post의 self.post.has_type >>> 3
+
+
+        #### one <- Many eager load시 joinedload -> outer join할 때, 해당 db가 None이면 여기서 에러난다.
+        # => ValueError: None is not a valid SexType
+        # for eager load
+        # print('process_result_value =>>', value, dialect)
+        if value is None:
+            return 0
+            # => 이걸 해줘도 또다른 에러남.
+            # sqlalchemy.exc.InvalidRequestError: The unique() method must be invoked on this Result, as it contains results that include joined eager loads against collections
+
         return self._enumtype(value)

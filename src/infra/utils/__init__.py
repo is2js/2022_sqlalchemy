@@ -1,1 +1,0 @@
-from .classproperty import class_property
