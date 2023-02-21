@@ -3,7 +3,7 @@ import os
 
 from dateutil.relativedelta import relativedelta
 from pyecharts.charts.chart import Chart
-from sqlalchemy import select, inspect, func
+from sqlalchemy import select, inspect, func, text
 from sqlalchemy.orm import aliased
 
 from src.infra.config.connection import db
@@ -20,8 +20,11 @@ app = create_app(os.getenv('APP_CONFIG') or 'default')
 def make_shell_context():
 
     return dict(db=db,
-                select=select, inspect=inspect, aliased=aliased, func=func,
+                select=select, inspect=inspect, aliased=aliased, func=func, text=text,
                 User=User, Role=Role, Post=Post, Category=Category, Tag=Tag, posttags=posttags,
+                EmployeeDepartment=EmployeeDepartment,
+                Employee=Employee,
+                Department=Department,
                 BaseQuery=BaseQuery,
                 chart=Chart(),
                 today=datetime.date.today(),

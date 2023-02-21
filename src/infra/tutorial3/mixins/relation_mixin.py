@@ -160,20 +160,19 @@ class RelationMixin(Base, BaseQuery):
             # current_table = aliased(self._query.subquery())
             # 2) self._query => Subquery
             # => AttributeError: 'Subquery' object has no attribute 'label'
-            # current_table = self._query.alias(self.__class__.__name__)
+            current_table = self._query.alias(self.__class__.__name__)
             # current_table = self._query.alias()
-
             joined_table_label= 'adc'
 
-
-            if select:
+            if selects:
                 if not isinstance(selects, (list, tuple, set)):
                     selects = [selects]
-                select_columns += self.create_columns(joined_table_label, selects)
+                # select_columns += self.create_columns(self.__table__.name, selects)
+                select_columns += self.create_columns(self.__table__.name, selects)
             if target_selects:
                 if not isinstance(target_selects, (list, tuple, set)):
                     target_selects = [target_selects]
-                select_columns += self.create_columns(target, target_selects)
+                select_columns += self.create_columns(joined_table_label, target_selects)
 
             print('select_columns  >> ', select_columns)
 
@@ -187,7 +186,7 @@ class RelationMixin(Base, BaseQuery):
             self._query = (
                 select(select_columns)
                 .select_from(
-                    self._query.join(target,
+                    self._query.join(target.alias(name=joined_table_label),
                          onclause=onclause, isouter=isouter, full=full).subquery(joined_table_label)
                 )
             )
