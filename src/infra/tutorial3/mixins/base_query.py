@@ -268,6 +268,8 @@ class BaseQuery:
 
         return columns
 
+    # for agg_with_rel
+    # for join relation_mixin
     @classmethod
     def get_relation_model(cls, model, relation_name):
         """
