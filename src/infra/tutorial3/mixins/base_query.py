@@ -5,9 +5,10 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from pyecharts.charts import Bar
 from sqlalchemy import and_, or_, select, func, distinct, inspect, Table, cast, Integer, literal_column, text, column, \
-    Numeric, desc, asc
+    Numeric, desc, asc, join
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import InstrumentedAttribute, joinedload, subqueryload, selectinload
+from sqlalchemy.orm import InstrumentedAttribute, joinedload, subqueryload, selectinload, aliased
+from sqlalchemy.orm.util import AliasedClass
 from sqlalchemy.sql import ColumnElement, Subquery, Alias
 from sqlalchemy.sql.elements import UnaryExpression
 from sqlalchemy.util import classproperty
@@ -76,6 +77,7 @@ eager_load_map = {
     'selectin': lambda c_name: selectinload(c_name)
 }
 
+
 # for create_eager_options
 def _flat_schema(schema: dict):
     """
@@ -132,7 +134,6 @@ def _flat_schema(schema: dict):
             if inner_schema:
                 _flat_recursive(inner_schema, current_column_name, result)
 
-
     # 4) 초기값 투입
     result = {}
     _flat_recursive(schema, '', result)
@@ -178,13 +179,14 @@ class BaseQuery:
         #         return model.c
         #     else:
         #         return model
+        #### expr join시 model자체가 string(alias)가 들어오면 text로 작성하여 돌려보낸다.
+        if isinstance(model, str):
+            return text(model + '.' + column_name)
 
         #### query_obj .join()시 현재까지의stmt -> Subquery or Alias로 만드는데, 거기서 칼럼 얻어내기
         # if isinstance(model, (Table)):
         if isinstance(model, (Table, Subquery, Alias)):
             column = getattr(model.c, column_name, None)
-        elif isinstance(model, str):
-            return text(model+'.'+ column_name)
         else:
             column = getattr(model, column_name, None)
         # Table()객체는 boolean 자리에 입력시 에러
@@ -261,10 +263,12 @@ class BaseQuery:
         [<sqlalchemy.orm.attributes.InstrumentedAttribute object at 0x0000024B4967A5C8>, <sqlalchemy.sql.elements.Label object at 0x0000024B4989E710>]
 
         """
-        if not column_names:
+        if not isinstance(model, str) and not column_names:
             return [model]
-            # 처리1 - 들어오는 칼럼명이 없다면, '*'가 되도록?
-            # return ['*']
+
+        # expr for join으로 l_select만 None이라고 해서 text('*')를 건네면 안되므로 빈 값을 건네주자.
+        elif isinstance(model, str) and not column_names:
+            return []
 
         if not isinstance(column_names, (list, tuple, set)):
             column_names = [column_names]
@@ -296,8 +300,6 @@ class BaseQuery:
                           None)
         if rel_column is None:
             raise Exception(f'Invalid relation_name: {relation_name} in {model}')
-
-        print("model, relation_name, rel_column", model, relation_name, rel_column)
 
         return rel_column.target
 
@@ -601,12 +603,27 @@ class BaseQuery:
         flatten_schema = _flat_schema(schema)
         return _to_eager_options(flatten_schema)
 
+    #  for raw_join in relation
+    @classmethod
+    def set_join_stmt(cls, stmt, target, **kwargs):
+        # raw_join이라면 이미 칼럼은 text('alias.칼럼명')로 이미 작성된 상태이다.
+        #
+
+        return stmt.select_from(join(aliased(cls, name='left_table'), aliased(target, name='right_table'), **kwargs))
+
     @classmethod
     def create_select_statement(cls, model,
                                 eager_options=None,
                                 selects=None,
                                 filters=None,
                                 order_bys=None,
+                                is_expr=None,
+                                join_target=None,
+                                join_options=None,
+                                join_left_alias_name='left_table',
+                                l_selects=None,
+                                join_right_alias_name='right_table',
+                                r_selects=None
                                 ):
         """
         1. 필터만 걸 때 -> 모든 칼럼
@@ -658,25 +675,52 @@ class BaseQuery:
         SELECT categories.*
         FROM categories
         """
-        if not selects or '*' in selects:
-            # select_columns = [text('*')]
-            # => 이게 들어가는 순간..Query has only expression-based entities, which do not apply to relationship property "EmployeeDepartment.department"
-            # => 아무것도 안된다...
-            select_columns=[model]
+        #### raw_join 발동시 빈칼럼을 '*'로 만들고, query를 only exrpression으로 바뀌게 한다.
+        # => 이게 들어가는 순간..Query has only expression-based entities, which do not apply to relationship property "EmployeeDepartment.department"
+        # => 미리 칼럼이 string  + create_column으로  만들어져서 온다.
+        if is_expr:
+            if not (l_selects or r_selects):  # or (selects and isinstance(join_target, (AliasedClass, Alias, Subquery))):
+                # join에서 칼럼 선택상황이라면 일단 select_columns를 '*'로 채워두고 뒤에서 고를 것이다.
+                select_columns = [text('*')]
+            else:
+                select_columns = cls.create_columns(join_left_alias_name, column_names=l_selects)  + \
+                                 cls.create_columns(join_right_alias_name, column_names=r_selects)
         else:
-            select_columns = cls.create_columns(model, column_names=selects)
+            if not selects:
+                select_columns = [model]
+            else:
+                select_columns = cls.create_columns(model, column_names=selects)
+
         stmt = (
             select(*select_columns)
-            #### filter_by를 안하고, join이 들어갈 땐 SELECT *가 join의 left table이 되므로 select_from을 기본으로 추가
-            .select_from(cls)
             .options(*cls.create_eager_options(schema=eager_options))
+        )
+
+        # 첫 객체 생성이 raw_join이었을 경우, 중간에 삽입한다.
+        # => 근데, 칼럼이 선택 안된 경우(=right target table이 alias안붙은 상태)만.. 중간에 삽입한다.
+        #### 만약 칼럼들이 선택되서, target이 aliased로 들어온다면 => 같은명의 칼럼 모호함 없이기 위해 select_from으로 문장을 만들어줘야한다.
+        if join_target is not None:  # and not isinstance(join_target, (AliasedClass, Alias, Subquery)):
+            # => d
+            stmt = cls.set_join_stmt(stmt, join_target, **join_options)
+
+        stmt = (
+            stmt
             .where(*cls.create_filters(model, filters=filters))
             #### order_by는 Mixin에서 self메서드로 사용되므로, cls용 model은 키워드로 바꿈 => 사용시 인자 위치도 바뀜.
             .order_by(*cls.create_order_bys(order_bys, model=model))
         )
 
-        print('create_select_stmt  >> ', stmt)
 
+        # if join_target is not None and isinstance(join_target, (AliasedClass, Alias, Subquery)):
+        #     print('asasdfasdlaisd')
+        #     stmt = (
+        #         select(select_columns)
+        #         .select_from(
+        #             join(stmt.alias(name='left_table'), join_target, **join_options)
+        #         )
+        #     )
+
+        print('create_select_stmt  >> \n', stmt)
 
         return stmt
 

@@ -3,6 +3,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Session, InstrumentedAttribute, DeclarativeMeta, aliased, contains_eager, joinedload
 
 from src.infra.tutorial3.mixins.base_query import BaseQuery
+from src.infra.tutorial3.mixins.session_mixin import SessionMixin
 from src.infra.tutorial3.mixins.utils.classorinstancemethod import class_or_instancemethod
 
 Base = declarative_base()
@@ -16,7 +17,7 @@ naming_convention = {
 Base.metadata = MetaData(naming_convention=naming_convention)
 
 
-class RelationMixin(Base, BaseQuery):
+class RelationMixin(Base, BaseQuery, SessionMixin):
     __abstract__ = True
 
     """
@@ -75,11 +76,14 @@ class RelationMixin(Base, BaseQuery):
         return cls.create_query_obj(session, query)
 
     #### select 만들기
-    @join.instancemethod
-    def join(self, target, onclause=None, isouter=False, full=False,
-             selects=None, target_selects=None,
-             ):
+    @load.instancemethod
+    def load(self, schema):
         """
+        # 관계속성 or 관계속성명을 입력
+
+        Department.load(schema={Department.employee_departments:'joined'}).first()
+        Department.filter_by(id=1).load(schema={Department.employee_departments:'joined'}).first()
+
         1. selects + target selects를 안거는 경우 -> eagerload로 main entity에 정보 담기
         # 1-1) join을 통해 eager load안한 경우 -> 관계속성 접근시 detached Error
         ed = EmployeeDepartment.filter_by(id=1).first()
@@ -115,68 +119,72 @@ class RelationMixin(Base, BaseQuery):
 
         """
 
-        # self._query = (
-        #     self._query
-        #     .join(target, onclause=onclause, isouter=True, full=full)
-        # )
+        self._query = (
+            self._query
+            .options(*self.create_eager_options(schema=schema))
 
-        #### 객체상태에서 join할 경우, model obj의 관계속성에 load되는 것이 아니다.
-        # => select절에서 뽑아먹을 수 있게 해야한다.
-        if not (selects or target_selects):
-            # select_columns = '*'
-            # current_table = self._query
+        )
 
-            ####  eager가 포함된다면 => (관계속성명/관계명을 받아도)
-            # => 최종은 관계 Entity class가 인자로 들어가야한다.
-            if isinstance(target, InstrumentedAttribute):
-                # 1) 관계속성 -> 관계속성명 -> 관계테이블 by get_relation_model
-                # => join + earget에는 관계속성을 그대로 넣어도 괜찮다.
-                # target_model, rel_name = self.get_relation_model(self.__class__, target.key), target.key
-                target_model = rel_name = target
-            elif isinstance(target, str):
-                # 2) 관계속성명 -> 관계테이블 join/관계속성명eager에 대입  by get_relation_model
-                target_model = self.get_relation_model(self.__class__, target)
-                rel_name = target
-            else:
-                # 3) 관계테이블만 => 관계명을 못찾아 eager불가.
-                raise Exception(f'관계속성이나 관계속성명을 입력해주세요.')
+        print(self._query)
+        return self
 
-            print('target_model, rel_name  >> ', target_model, rel_name)
+    #### '*' 및 alias때문에 only expression query가 된다.
+    # -> create_query_obj 생성시점에서 flag를 받아
+    # -> 기본 칼럼을  [model] 대신 ['*']로 가져가고 execute를 해야한다.
+    @classmethod
+    def raw_join(cls, target, session: Session = None,
+                 l_selects=None, r_selects=None,
+                 left_alias_name='left_table', right_alias_name='right_table',
+                 **kwargs):
+
+        """
+        onclause = None, isouter = False, full = False
+        """
+
+        join_options = dict(onclause=None, isouter=False, full=False)
+        join_options.update(kwargs)
+        # raw_join하는 경우
+        # => 칼럼선택이 있든 없든 is_raw플래그를 띄워 selects가 없을 경우  [model] 대신 [text('*')]가 select된다.
+
+        left_rel_column, rel_model = cls.get_rel_prop_and_model(target)
+        #### cls(left_table)은 join일 경우만 alias를 달수 있도록 => create_select_statement에서 alias로 만든다.
+        # => 칼럼 선택X시 칼럼명 '*' / 선택시 여기서 text('left_table.칼럼명')까지 완성하고 보낸다.
+
+        # 1) 칼럼 선택이 없으면, query를 '*'로 구성할 수 있도록 is_raw를 True로 stmt를 만든다.
+        if not (l_selects or r_selects):
+            query = cls.create_select_statement(cls,
+                                                is_expr=True,
+                                                join_target=rel_model,
+                                                join_options=join_options,
+                                                join_left_alias_name=left_alias_name,
+                                                l_selects=None,
+                                                join_right_alias_name=right_alias_name,
+                                                r_selects=None
+                                                )
+
+            return cls.create_query_obj(session, query)
 
 
-
-            self._query = (
-                self._query
-                ##### eager만한다면 관계속성+관계속성명 가능하나,
-                ##### eager 이후 chainning join에서 join타겟을 못잡는다.
-                # .options(joinedload(target))
-                #### 여기서는 관계속성/만  ->  (join + earger까지) -> 뒤에 체이닝 된다.
-                #### 하지만 체이닝시 select의 문제가
-                .join(target_model, onclause=onclause, isouter=isouter, full=full)
-                .options(contains_eager(rel_name))
-            )
-
-            print(self._query)
-
+        # 2) 칼럼이 left or right 선택하는 경우
+        # => target(right)테이블에만 alias를 맥여서 join + r_select칼럼들을 만들어야한다.
+        #    + right 칼럼명은 alias + . + 칼럼 으로 가져간다.
+        #    (left는 alias먹일 경우 자동join안된다)
         else:
 
-            # target에 관게속성이 오는 경우 -> model class로 변경
-            # => join(기존select, join대상)에서는 관계속성은 안받고 table만 받는다.
-            if isinstance(target, InstrumentedAttribute):
-                target = self.get_relation_model(self.__class__, target.key)
-            # 관계속성명으로 오는 경우 -> model class로 변경
-            elif isinstance(target, str):
-                target = self.get_relation_model(self.__class__, target)
+            # 관계속성으로 left_fk 와 right_pk의 칼럼명을 구하고, expr으로 작성한다.
+            left_fk_name, right_pk_name = cls.get_fk_and_rel_pk_name(left_rel_column)
+            # on절은 left_table과 right_table로 alias를 미리 정해두고,
+            # => 관계속성으롭터 left_fk 칼럼과 right_pk칼럼을 만들어서 대입해준다.
+            join_options.update(dict(onclause=text(f'{left_alias_name}.{left_fk_name} = {right_alias_name}.{right_pk_name}')))
+            # print(self.__dict__)
 
-            # target에 model class로 오는 경우 -> 통과
-            elif isinstance(target, (DeclarativeMeta, Table)):
-                pass
+            # self.set_session(session)
+            # else:
+            #
 
-            print('target  >> ', target)
+            print('target, left_rel_column, right_model  >> ', target, left_rel_column, rel_model)
 
-
-
-            select_columns = []
+            # select_columns = []
             ## aliased( stmt .subquery ) 와 stmt.alias() 둘다 되는 것 같다:
             ## https://github.com/sqlalchemy/sqlalchemy/issues/6274
             # 1) self._query => Alias
@@ -184,22 +192,22 @@ class RelationMixin(Base, BaseQuery):
             # current_table = aliased(self._query.subquery())
             # 2) self._query => Subquery
             # => AttributeError: 'Subquery' object has no attribute 'label'
-            current_table = self._query.alias(self.__class__.__name__)
+            # current_table = self._query.alias(self.__class__.__name__)
             # current_table = self._query.alias()
 
-            target_label= 'adc'
+            if l_selects:
+                if not isinstance(l_selects, (list, tuple, set)):
+                    l_selects = [l_selects]
+                # columns = cls.create_columns(left_alias_name, l_selects)
+                # select_columns += cls.to_expr_columns(l_selects, left_alias_name)
 
-            if selects:
-                if not isinstance(selects, (list, tuple, set)):
-                    selects = [selects]
-                # select_columns += self.create_columns(self.__table__.name, selects)
-                select_columns += [text(col_name) for col_name in selects]
-            if target_selects:
-                if not isinstance(target_selects, (list, tuple, set)):
-                    target_selects = [target_selects]
-                select_columns += self.create_columns(target_label, target_selects)
+            if r_selects:
+                # select_columns += cls.to_expr_columns(r_selects, right_alias_name)
+                if not isinstance(r_selects, (list, tuple, set)):
+                    r_selects = [r_selects]
 
-            print('select_columns  >> ', select_columns)
+            print('l_selects  >> ', l_selects)
+            print('r_selects  >> ', r_selects)
 
             # self._query = (
             #     select(select_columns)
@@ -208,14 +216,55 @@ class RelationMixin(Base, BaseQuery):
             #              onclause=onclause, isouter=isouter, full=full)
             #     )
             # )
-            self._query = (
-                select(select_columns)
-                .select_from(
-                    self._query.join(target.alias(name=target_label),
-                         onclause=onclause, isouter=isouter, full=full).subquery(target_label)
-                )
-            )
+
+            #### 이 때, target에 .alias(name= )을 만들어서 건네줘야한다.
+            query = cls.create_select_statement(cls,
+                                                is_expr=True,
+                                                join_target=rel_model,
+                                                join_options=join_options,
+                                                join_left_alias_name=left_alias_name,
+                                                l_selects=l_selects,
+                                                join_right_alias_name=right_alias_name,
+                                                r_selects=r_selects
+                                                )
+
+            return cls.create_query_obj(session, query)
+
+            # self._query = (
+            #     select(select_columns)
+            #     .select_from(
+            #         self._query.join(target.alias(name=target_alias),
+            #                          onclause=onclause, isouter=isouter, full=full).subquery(target_alias)
+            #     )
+            # )
 
         print(self._query)
 
         return self
+
+
+    @classmethod
+    def get_fk_and_rel_pk_name(cls, left_rel_column):
+        left_fk = left_rel_column.property.local_remote_pairs[0][0].name
+        right_pk = left_rel_column.property.local_remote_pairs[0][1].name
+        return left_fk, right_pk
+
+
+    @classmethod
+    def get_rel_prop_and_model(cls, target):
+        # target에 관게속성이 오는 경우 -> model class로 변경
+        # => join(기존select, join대상)에서는 관계속성은 안받고 table만 받는다.
+        if isinstance(target, InstrumentedAttribute):
+            left_rel_column = target
+            right_model = cls.get_relation_model(cls, target.key)
+
+        # 관계속성명으로 오는 경우 -> model class로 변경
+        elif isinstance(target, str):
+            left_rel_column = cls.get_column(cls, target)
+            right_model = cls.get_relation_model(cls, target)
+
+        # target에 model class로 오는 경우 -> 통과
+        else:  # isinstance(target, (DeclarativeMeta, Table)):
+            raise Exception(f'Invalid RelationProperty or name : {target}')
+        return left_rel_column, right_model
+
