@@ -61,7 +61,7 @@ class RelationMixin(Base, BaseQuery, SessionMixin):
         """
         관계칼럼 정의시 lazy=옵션을 안준 상태로 정의해야한다.
         1. 관계속성을 eager 로 subquery로 가져온 경우 => 접근 가능
-        u = User.join({'role':'subquery'}).filter_by(id=1).first()
+        u = User.load({'role':'subquery'}).filter_by(id=1).first()
         => u.role
         <Role 'ADMINISTRATOR'>
 
@@ -138,7 +138,17 @@ class RelationMixin(Base, BaseQuery, SessionMixin):
                  **kwargs):
 
         """
-        onclause = None, isouter = False, full = False
+        EmployeeDepartment.raw_join('employee', isouter=True).execute()
+        => SELECT *
+           FROM employee_departments AS left_table
+           LEFT OUTER JOIN employees AS right_table
+            ON right_table.id = left_table.employee_id
+
+        EmployeeDepartment.raw_join('employee', isouter=True, l_selects=['id', 'position'], r_selects=['id', 'name']).execute()
+        =>  SELECT left_table.id, left_table.position, right_table.id, right_table.name
+            FROM employee_departments AS left_table
+            LEFT OUTER JOIN employees AS right_table
+                ON left_table.employee_id = right_table.id
         """
 
         join_options = dict(onclause=None, isouter=False, full=False)
@@ -156,10 +166,10 @@ class RelationMixin(Base, BaseQuery, SessionMixin):
                                                 is_expr=True,
                                                 join_target=rel_model,
                                                 join_options=join_options,
-                                                join_left_alias_name=left_alias_name,
                                                 l_selects=None,
-                                                join_right_alias_name=right_alias_name,
-                                                r_selects=None
+                                                r_selects=None,
+                                                join_left_alias_name=left_alias_name,
+                                                join_right_alias_name=right_alias_name
                                                 )
 
             return cls.create_query_obj(session, query)
@@ -222,27 +232,15 @@ class RelationMixin(Base, BaseQuery, SessionMixin):
                                                 is_expr=True,
                                                 join_target=rel_model,
                                                 join_options=join_options,
-                                                join_left_alias_name=left_alias_name,
                                                 l_selects=l_selects,
-                                                join_right_alias_name=right_alias_name,
-                                                r_selects=r_selects
+                                                r_selects=r_selects,
+                                                join_left_alias_name=left_alias_name,
+                                                join_right_alias_name=right_alias_name
                                                 )
 
             return cls.create_query_obj(session, query)
 
-            # self._query = (
-            #     select(select_columns)
-            #     .select_from(
-            #         self._query.join(target.alias(name=target_alias),
-            #                          onclause=onclause, isouter=isouter, full=full).subquery(target_alias)
-            #     )
-            # )
-
-        print(self._query)
-
-        return self
-
-
+    # for raw_join
     @classmethod
     def get_fk_and_rel_pk_name(cls, left_rel_column):
         left_fk = left_rel_column.property.local_remote_pairs[0][0].name
@@ -250,6 +248,7 @@ class RelationMixin(Base, BaseQuery, SessionMixin):
         return left_fk, right_pk
 
 
+    # for raw_join
     @classmethod
     def get_rel_prop_and_model(cls, target):
         # target에 관게속성이 오는 경우 -> model class로 변경

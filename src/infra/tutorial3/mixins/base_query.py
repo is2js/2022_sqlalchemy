@@ -199,7 +199,7 @@ class BaseQuery:
     @classmethod
     def split_and_check_name(cls, column_name):
         column_name = column_name.split(f'{OPERATOR_OR_FUNC_SPLITTER}')
-        if len(column_name) > 2:
+        if len(column_name) > 3:
             raise Exception(f'Invalid func column name: {column_name}')
 
         return column_name
@@ -447,7 +447,6 @@ class BaseQuery:
                     else or_(*cls.create_filters(model, value))
                 total_filters.append(child_filters)
                 continue
-
             # CASE 2: dict순회시 'and_'나'or_'가 아니라서 => key='column__연산' / value = 값
             # => column__연산을 split하고, where 내을 list에 append한다.
             # => 어차피 재귀로 타고온 2번째라서, 부모에게 list를 건네, 부모에서 and_()나 or_()로 묶일 예정이다.
