@@ -660,7 +660,6 @@ class BaseQuery:
             # 2) filter입력key에 ___가 입력된 model이 entity / 없으면 attr이다
             yield from cls.create_filter_exprs(model, **{attr_name: value})
 
-
     # for _create_order_exprs_with_alias_map
     @classmethod
     def create_order_expr(cls, model, attr):
@@ -676,7 +675,6 @@ class BaseQuery:
         # 4) 실제 칼럼을 가져올 땐, mapper에서 가져온다(검사만model)
         return order_func(getattr(mapper, attr))
 
-
     @classmethod
     def _create_order_exprs_with_alias_map(cls, model, orders, alias_map):
         if not orders:
@@ -689,13 +687,14 @@ class BaseQuery:
             # 1) attr에서는 일단 relation부터 확인한 뒤, alias에서 빼와서 각각의 expr를 만든다.
             if RELATION_SPLITTER in attr:
                 # 2) 빼내기 전에 desc 여부를 있으면 떼어내야한다.
-                desc_prefix= ''
+                desc_prefix = ''
                 if attr.startswith(DESC_PREFIX):
                     desc_prefix = DESC_PREFIX
                     attr = attr.lstrip(DESC_PREFIX)
                 # 3) 관계명을 떼온 뒤, alias에서 aliased_rel_model , rel_column을 가져온다.
                 rel_column_and_attr_name = attr.rsplit(RELATION_SPLITTER, 1)
-                current_model, attr = alias_map[rel_column_and_attr_name[0]][0], desc_prefix + rel_column_and_attr_name[1]
+                current_model, attr = alias_map[rel_column_and_attr_name[0]][0], desc_prefix + rel_column_and_attr_name[
+                    1]
             else:
                 # 4)관계명이 없는 경후, 현재 호출 model을 model로, +-을 통째로 attr을 넣어 메서드 내부에서 만들게 한다.
                 current_model = model
@@ -755,7 +754,10 @@ class BaseQuery:
 
         # 1. filter의 key들만 순서대로 평탄화한다. => _flat_schema처럼 dict {}에 depth로 저장할 게 아니라면
         #   yield를 통해 순차적으로 재귀 방출할 수 있게 한다.
-        attrs = cls._flat_filter_keys_generator(filters)  # ['id__gt', 'id__lt', 'tags___property__in']
+        attrs = list(cls._flat_filter_keys_generator(filters))  # ['id__gt', 'id__lt', 'tags___property__in']
+        # orders에만 포함된 칼럼도 -> alias_map에 포함되어서 -> outerjoin되어야한다.
+        # -> 여기는 연산자가 없이 -name, tags___name 형태로, 존재하니 앞에 -만 떼서 넣어주면 된다.
+        attrs += list(map(lambda s: s.lstrip(DESC_PREFIX), orders))
         print('attrs(flat filter keys)  >> ', attrs)
 
         # 2. 이제 각 filter name들에서 ___이 없으면 root cls인 model을 ''path 기준으로, 'rel_column_name. 다음' path에다가
@@ -766,7 +768,6 @@ class BaseQuery:
         cls._parse_attrs_and_make_alias_map(model, '', attrs, alias_map)
 
         print('alias_map  >> ', alias_map)
-
 
         # => OrderedDict([('tags', (<AliasedClass at 0x1de19e32908; Tag>, <sqlalchemy.orm.attributes.InstrumentedAttribute object at 0x000001DE19999150>))])
         # => 명시한 rel_column_name :  aliased관계모델, 해당 관계칼럼만  저장된다. ( 현재model의 칼럼은x)
@@ -792,14 +793,14 @@ class BaseQuery:
             #   => load()의 schema에서 SUBQUERY로 지정된 것이 아니라면, 전부 여기서 outerjoin(joined)로 연결되게 한다.
 
             # if not (rel_path in flatten_schema and flatten_schema[rel_path] in [SUBQUERY, SELECTIN]):
-                # 3-4. #### 대박
-                # outerjoin시 aliased와 함께, 관걔칼럼을 onclause로서 주는구나..
-                # => contains_eager에는  [.으로 연결된 관계속성명] + 그때의 alias=에 aliased model을 지정해줄 수 있구나.
-                # query = (
-                #     query
-                #     .outerjoin(aliased_rel_model, rel_column)
-                #     .options(contains_eager(rel_path, alias=aliased_rel_model))
-                # )
+            # 3-4. #### 대박
+            # outerjoin시 aliased와 함께, 관걔칼럼을 onclause로서 주는구나..
+            # => contains_eager에는  [.으로 연결된 관계속성명] + 그때의 alias=에 aliased model을 지정해줄 수 있구나.
+            # query = (
+            #     query
+            #     .outerjoin(aliased_rel_model, rel_column)
+            #     .options(contains_eager(rel_path, alias=aliased_rel_model))
+            # )
 
             #### custom 다대일에서 fk가 있을 경우, many<-one시 다박히는 경우 inner join으로
             # Post.tags.property.direction.name => 'MANYTOONE' 'ONETOMANY' 'MANYTOMANY'
@@ -879,13 +880,10 @@ class BaseQuery:
         )
 
         print('query  >> ', query)
-        print('*cls._create_order_exprs_with_alias_map(model, orders, alias_map  >> ', *cls._create_order_exprs_with_alias_map(model, orders, alias_map))
+        print('*cls._create_order_exprs_with_alias_map(model, orders, alias_map  >> ',
+              *cls._create_order_exprs_with_alias_map(model, orders, alias_map))
         # => ORDER BY users_1.id DESC, employees.name ASC
         # => users_1.id DESC employees.name ASC
-
-
-
-
 
         #### 6. schema=None(___) -> flatten_schema={}(. : alias관계모델, 관계칼럼) + loaded_rel_paths(.)로
         #       filter에 등장한 관계 => outerjoin(joined)를 제외한
@@ -906,12 +904,8 @@ class BaseQuery:
             #     .options(subqueryload(Product.orders),\
             #              subqueryload(Product.tags)).all()
             # =>
-            query = query\
+            query = query \
                 .options(*_create_eager_option_exprs_with_flatten_schema(not_loaded_flatten_schema))
-
-
-        print('query  >> ', query)
-
 
         return query
 
@@ -1465,8 +1459,6 @@ class BaseQuery:
             return func.strftime(date_format, date_column).label('date')
         else:
             raise NotImplementedError(f'Invalid dialect : {cls.DIALECT_NAME}')
-
-
 
 
 class StaticsQuery(BaseQuery):
