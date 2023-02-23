@@ -8,6 +8,7 @@ from sqlalchemy.orm import declared_attr
 
 from src.infra.config.base import Base
 from src.infra.tutorial3.mixins import StaticsMixin, RelationMixin
+from src.infra.tutorial3.mixins.smart_mixin import SmartMixin
 from src.main.templates.filters import format_date, format_datetime
 
 default_table_args = {
@@ -18,7 +19,7 @@ default_table_args = {
 # mixin 1. BaseModel은 config (Base, Mixin)으로 상속해야, 라이브러리 역할을 할 수 있다.
 # => Mixin은 Base를 새로 만들어서 기능을 땡겨쓰기만 하고, 여기 Base와는 별개다.
 # class BaseModel(CRUDMixin):
-class BaseModel(Base, StaticsMixin, RelationMixin):
+class BaseModel(Base, StaticsMixin, RelationMixin, SmartMixin):
     # 추상화 안해주면, does not have a __table__ or __tablename__ specified and does not inherit from an existing table-mapped class.
     __abstract__ = True
     # @declared_attr

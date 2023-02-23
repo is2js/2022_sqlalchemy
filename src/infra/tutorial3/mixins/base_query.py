@@ -1,5 +1,5 @@
 import enum
-from collections import defaultdict, namedtuple, OrderedDict
+from collections import defaultdict, namedtuple, OrderedDict, abc
 from datetime import datetime
 
 from dateutil.relativedelta import relativedelta
@@ -36,9 +36,7 @@ Mixin 완성본 참고:  https://github.com/absent1706/sqlalchemy-mixins/tree/ce
 - inpsect mixins: https://github.com/absent1706/sqlalchemy-mixins/blob/ce4badbc51f8049783fa3909615ccfc7c1198d98/sqlalchemy_mixins/inspection.py
 """
 
-DESC_PREFIX = '-'
-OPERATOR_OR_FUNC_SPLITTER = '__'
-RELATION_SPLITTER = '___'
+
 
 # https://github.com/absent1706/sqlalchemy-mixins/blob/ce4badbc51f8049783fa3909615ccfc7c1198d98/sqlalchemy_mixins/smartquery.py#L396
 op_dict = {
@@ -136,68 +134,6 @@ eager_load_map = {
 }
 
 
-# for create_eager_options
-def _flat_schema(schema: dict):
-    """
-    schema = {
-        'user': JOINED, # joinedload user
-        'comments': (SUBQUERY, {  # load comments in separate query
-            'user': JOINED  # but, in this separate query, join user
-        })
-    }
-    => {'user': JOINED, 'comments': SUBQUERY, 'comments.users': JOINED}
-
-
-    # the same schema using class properties:
-    schema = {
-        Post.user: JOINED,
-        Post.comments: (SUBQUERY, {
-            Comment.user: JOINED
-        })
-    }
-
-    """
-
-    # 3) 꼬리재귀를 위해, 인자에 level마다 바뀌는 schema->innser_schmea  + 자식이 자신이될(parent_xx) 칼럼명 이은 것, 누적변수 result를 추가한 뒤
-    #  => 내부메서드로 만든 다음, 기초값을 자신과 누적변수에 초기값을 넣어서 호출한다.
-    def _flat_recursive(schema, parent_column_name, result):
-        for rel_column_name_or_prop, value in schema.items():
-            # 1) Post.user 등 관계속성을 사용하는 경우 => 관계 칼럼명을 가져온다.
-            if isinstance(rel_column_name_or_prop, InstrumentedAttribute):
-                rel_column_name_or_prop = rel_column_name_or_prop.key
-
-            # 2-1) value가 tuple로 입력된 경우는, { Post.user : ( SUBQUERY, { 'user': JOINED } ) } 의 재귀형태다.
-            # => 내부 eager type + 내부 schema로 분리한다.
-            if isinstance(value, tuple):
-                eager_type, inner_schema = value[0], value[1]
-
-            # 2-2) value가 tuple[0]의 eager type이 생략된  dict로 입력된 경우는, { User.posts: {  Post.comments : { Comment.user: JOINED }}}
-            # => eager type이 JOINED로 고정이며 + value가 내부shcema를 의미한다.
-            elif isinstance(value, dict):
-                eager_type, inner_schema = JOINED, value
-
-            # 2-3) 그외의 경우는 내부schema는 없는 것이며, value가 eager_type인 경우다.
-            else:
-                eager_type, inner_schema = value, None
-
-            # 5) 시작부터 부모의 것이 있다고 생각하고 부모의 정보를 받아 사용하여 나를 처리한다.
-            # => 부모의 관계속성명.나의관계속성명 을 연결한다. 부모가 있으면 부모를 앞에 두고 연결한다.
-            current_column_name = parent_column_name + '.' + rel_column_name_or_prop if parent_column_name \
-                else rel_column_name_or_prop
-            # 6) result라는 dict 누적변수에 earger type을 [현재 이은 경로]를 key로 value로 넣어준다.
-            result[current_column_name] = eager_type
-
-            # 7) 만약 연결될 내부 schema( value에 dict or tuple[1]의 dict가 존재할 경우 다시 재귀를 호출한다.
-            # => 꼬리재귀 + 누적변수를 가지고 다녀서, 호출만 해주면 알아서 누적된다.
-            if inner_schema:
-                _flat_recursive(inner_schema, current_column_name, result)
-
-    # 4) 초기값 투입
-    result = {}
-    _flat_recursive(schema, '', result)
-
-    return result
-
 
 # for create_eager_options
 # depth가 .으로 연결된 칼럼명 조합으로 들어온다.
@@ -226,6 +162,10 @@ def _create_eager_option_exprs_with_flatten_schema(flatten_schema):
 
 class BaseQuery:
     DIALECT_NAME = db_config.get_dialect_name()
+
+    DESC_PREFIX = '-'
+    OPERATOR_OR_FUNC_SPLITTER = '__'
+    RELATION_SPLITTER = '___'
 
     @classmethod
     def get_column(cls, model, column_name):
@@ -256,7 +196,7 @@ class BaseQuery:
 
     @classmethod
     def check_and_split_attr_names(cls, column_name):
-        column_name = column_name.split(f'{OPERATOR_OR_FUNC_SPLITTER}')
+        column_name = column_name.split(f'{cls.OPERATOR_OR_FUNC_SPLITTER}')
         if len(column_name) > 3:
             raise Exception(f'Invalid func column name: {column_name}')
 
@@ -473,7 +413,7 @@ class BaseQuery:
             else:
                 yield key
 
-    # for _parse_attrs_and_make_alias_map
+    # for _parse_path_and_set_alias_map
     @classmethod
     def get_relation_column_names(cls, model):
         """list(User.__mapper__.iterate_properties)
@@ -482,7 +422,7 @@ class BaseQuery:
         return [c.key for c in model.__mapper__.iterate_properties
                 if isinstance(c, RelationshipProperty)]
 
-    # for _parse_attrs_and_make_alias_map
+    # for _parse_path_and_set_alias_map
     @classmethod
     def check_rel_column_name(cls, parent_model, rel_column_name):
         # 부모model의 .relation칼럼 목록에 rel_column_name이 없으면 잘못된 것이다.
@@ -491,7 +431,7 @@ class BaseQuery:
 
     # for create_filters0
     @classmethod
-    def _parse_attrs_and_make_alias_map(cls, parent_model, parent_path, attrs, aliases):
+    def _parse_path_and_set_alias_map(cls, parent_model, parent_path, attrs, alias_map):
         """
         input attrs: ['id__gt', 'id__lt', 'tags___property__in']
         output: => OrderedDict([('tags', (<AliasedClass at 0x1de19e32908; Tag>, <sqlalchemy.orm.attributes.InstrumentedAttribute object at 0x000001DE19999150>))])
@@ -501,10 +441,10 @@ class BaseQuery:
 
         for attr in attrs:
             # 1) 제일 먼저 관계속성이 찍혀잇는지 확인한다
-            if RELATION_SPLITTER in attr:
+            if cls.RELATION_SPLITTER in attr:
                 # 2) 여러개일 수 있는 '___'에서 첫번째 껏으로만 자르고, 뒤에는 안자른다는 split(, 1)
                 # 'related___property__in'.split('___', 1) => ['related', 'property__in']
-                rel_column_name, rel_attr = attr.split(RELATION_SPLITTER, 1)
+                rel_column_name, rel_attr = attr.split(cls.RELATION_SPLITTER, 1)
                 # 3) rel_column_name을 key로 rel_attr들을  list에 모은다.
                 relations[rel_column_name].append(rel_attr)
 
@@ -515,7 +455,7 @@ class BaseQuery:
             # 2-1) rel_colum_name이 유효한지 실제 model에서 검사한다.
             cls.check_rel_column_name(parent_model, rel_column_name)
             # 2-2) split한 ___를 부모model과 붙여서, attr가 빠진 순수 relation칼럼을 ___로 이은 path를 만든다.
-            path = (parent_path + RELATION_SPLITTER + rel_column_name) if parent_path \
+            path = (parent_path + cls.RELATION_SPLITTER + rel_column_name) if parent_path \
                 else rel_column_name
 
             # 2-2) rel_columns_name => 관계칼럼을 가져온다( create_column을 쓰면 __를 연산자 or 집계함수 처리해버리니 하면 안됨)
@@ -523,10 +463,10 @@ class BaseQuery:
             # 2-3) 관계칼럼 -> 관계모델 -> alias까지 씌운다
             aliased_rel_model = aliased(rel_column.property.mapper.class_)
             # 2-4) 저장소 aliases 에  (aliased 관계모델,과 관계칼럼))을 tuple로 현재path에 저장한다.
-            aliases[path] = aliased_rel_model, rel_column
+            alias_map[path] = aliased_rel_model, rel_column
 
             # 3. 이제 rel_model/path가 부모가 되어 재귀호출한다. 종착역은 없다. 잇을때까지한다. 저장소에 setter만 하기 때문에
-            cls._parse_attrs_and_make_alias_map(aliased_rel_model, path, rel_attr, aliases)
+            cls._parse_path_and_set_alias_map(aliased_rel_model, path, rel_attr, alias_map)
 
     # for  create_filter_exprs
     @classmethod
@@ -600,8 +540,8 @@ class BaseQuery:
             # 2-2) 입력한 필터 옵션이 연산자처리인 경우
             else:
                 # 2-2-1) 연산자 포함된 경우, id__gt=1
-                if OPERATOR_OR_FUNC_SPLITTER in attr:
-                    attr_name, op_name = attr.rsplit(OPERATOR_OR_FUNC_SPLITTER, 1)
+                if cls.OPERATOR_OR_FUNC_SPLITTER in attr:
+                    attr_name, op_name = attr.rsplit(cls.OPERATOR_OR_FUNC_SPLITTER, 1)
                     if op_name not in _operators:
                         raise KeyError(f'Invalid Operator name `{op_name}` in `{attr}`')
                     op = _operators[op_name]
@@ -650,9 +590,9 @@ class BaseQuery:
             # 1) filter입력key에 ___가 끼여있으면, 관계model이 주인공 / 아니라면 현재model이 주인공
             #   가장오른족에서 1번째를 split한 뒤  => a___b -> alias_map에서 꺼내 사용한다
             #    'related___user___property__in'.rsplit('___', 1) =>  ['related___user', 'property__in']
-            if RELATION_SPLITTER in key:
+            if cls.RELATION_SPLITTER in key:
                 # 2)
-                rel_column_and_attr_name = key.rsplit(RELATION_SPLITTER, 1)
+                rel_column_and_attr_name = key.rsplit(cls.RELATION_SPLITTER, 1)
                 model, attr_name = alias_map[rel_column_and_attr_name[0]][0], rel_column_and_attr_name[1]
             else:
                 attr_name = key
@@ -668,7 +608,7 @@ class BaseQuery:
         # -> mapper로는 getattr( , attr_name)으로 칼럼을 가져온다.
         mapper, model = cls.split_mapper_and_model_for_alias(model)
         # 2) - 달리면 desc를 아니면 asc func을 따로 빼준다.
-        order_func, attr = (desc, attr[1:]) if attr.startswith(DESC_PREFIX) \
+        order_func, attr = (desc, attr[1:]) if attr.startswith(cls.DESC_PREFIX) \
             else (asc, attr)
         # 3) sortable한 칼럼인지 확인한다.
         cls.check_sortable_column_name(model, attr)
@@ -685,14 +625,14 @@ class BaseQuery:
         # 변수 추가
         for attr in orders:
             # 1) attr에서는 일단 relation부터 확인한 뒤, alias에서 빼와서 각각의 expr를 만든다.
-            if RELATION_SPLITTER in attr:
+            if cls.RELATION_SPLITTER in attr:
                 # 2) 빼내기 전에 desc 여부를 있으면 떼어내야한다.
                 desc_prefix = ''
-                if attr.startswith(DESC_PREFIX):
-                    desc_prefix = DESC_PREFIX
-                    attr = attr.lstrip(DESC_PREFIX)
+                if attr.startswith(cls.DESC_PREFIX):
+                    desc_prefix = cls.DESC_PREFIX
+                    attr = attr.lstrip(cls.DESC_PREFIX)
                 # 3) 관계명을 떼온 뒤, alias에서 aliased_rel_model , rel_column을 가져온다.
-                rel_column_and_attr_name = attr.rsplit(RELATION_SPLITTER, 1)
+                rel_column_and_attr_name = attr.rsplit(cls.RELATION_SPLITTER, 1)
                 current_model, attr = alias_map[rel_column_and_attr_name[0]][0], desc_prefix + rel_column_and_attr_name[
                     1]
             else:
@@ -747,25 +687,27 @@ class BaseQuery:
 
 
         """
-        if schema:
-            flatten_schema = _flat_schema(schema)
-        else:
-            flatten_schema = {}
+        flatten_schema = cls._flat_schema(schema)
+        if not orders:
+            orders = []
+        if orders and not isinstance(orders, abc.Sequence):
+            orders = [orders]
+
 
         # 1. filter의 key들만 순서대로 평탄화한다. => _flat_schema처럼 dict {}에 depth로 저장할 게 아니라면
         #   yield를 통해 순차적으로 재귀 방출할 수 있게 한다.
-        attrs = list(cls._flat_filter_keys_generator(filters))  # ['id__gt', 'id__lt', 'tags___property__in']
+        filter_and_order_attrs = list(cls._flat_filter_keys_generator(filters))  # ['id__gt', 'id__lt', 'tags___property__in']
         # orders에만 포함된 칼럼도 -> alias_map에 포함되어서 -> outerjoin되어야한다.
         # -> 여기는 연산자가 없이 -name, tags___name 형태로, 존재하니 앞에 -만 떼서 넣어주면 된다.
-        attrs += list(map(lambda s: s.lstrip(DESC_PREFIX), orders))
-        print('attrs(flat filter keys)  >> ', attrs)
+        filter_and_order_attrs += list(map(lambda s: s.lstrip(cls.DESC_PREFIX), orders))
+        print('attrs(flat filter keys)  >> ', filter_and_order_attrs)
 
         # 2. 이제 각 filter name들에서 ___이 없으면 root cls인 model을 ''path 기준으로, 'rel_column_name. 다음' path에다가
         #    관계칼럼___이 붙어있으면 관계칼럼명 -> aliased 관계모델, 관계칼럼를 찾아서  관계모델부터 .으로 연결된 path을 key로 저장한다.
         #   순서대로 OrderedDict에 모은다. => 관계모델별.path에다가  기록할 저장소로서 재귀메서드를 만들어 호출한다.
         alias_map = OrderedDict({})
         # 시작을 들어온 model(cls)로 하고, depth마다 달라지는 model/path + 주어진 재료attrs/저장소alias를 인자로 준다.
-        cls._parse_attrs_and_make_alias_map(model, '', attrs, alias_map)
+        cls._parse_path_and_set_alias_map(model, '', filter_and_order_attrs, alias_map)
 
         print('alias_map  >> ', alias_map)
 
@@ -787,7 +729,7 @@ class BaseQuery:
         #      .으로 연결한 형태로 변형시킨다. schema의 key들은 관계속성명으로 연결됬었으니, 여기랑 같다?
         loaded_rel_paths = []
         for path, (aliased_rel_model, rel_column) in alias_map.items():
-            rel_path = path.replace(RELATION_SPLITTER, '.')
+            rel_path = path.replace(cls.RELATION_SPLITTER, '.')
             # 3-2. schema를 인자로 받고 없으면 앞에서  flatten_schema에 빈 {} dict로 초기화해놓는다.
             # 3-3. schema=> flatten_schema를 통해 eagerload될 예정인 놈들을 제외하고, 여기서 expr를 만들어놓는다.
             #   => load()의 schema에서 SUBQUERY로 지정된 것이 아니라면, 전부 여기서 outerjoin(joined)로 연결되게 한다.
@@ -840,7 +782,7 @@ class BaseQuery:
                 # 3-5. eager load가 완료된 rel_path들을 따로 모아둔다.
                 loaded_rel_paths.append(rel_path)
 
-        # print(query, loaded_rel_paths)
+        print(query, loaded_rel_paths)
         # query =>
         # SELECT posts.* tags_1.*
         # FROM posts
@@ -1090,12 +1032,12 @@ class BaseQuery:
             # if column_name not in model.sortable_attributes:
             #     raise KeyError(f'Invalid order column: {column_name}')
             #### 2개를 한번에 처리(order_func + '-'달고 있으면 떼기)
-            order_func, attr = (desc, attr[1:]) if attr.startswith(DESC_PREFIX) \
+            order_func, attr = (desc, attr[1:]) if attr.startswith(cls.DESC_PREFIX) \
                 else (asc, attr)
 
             #### 추가 column_name에 id__count 등 집계함수가 있을 수 있다. => 검사는 순수 칼럼네임만 받아야한다.
-            if OPERATOR_OR_FUNC_SPLITTER in attr:
-                column_name_for_check, func_name = attr.split(OPERATOR_OR_FUNC_SPLITTER)
+            if cls.OPERATOR_OR_FUNC_SPLITTER in attr:
+                column_name_for_check, func_name = attr.split(cls.OPERATOR_OR_FUNC_SPLITTER)
                 cls.check_sortable_column_name(model, column_name_for_check)
             else:
                 cls.check_sortable_column_name(model, attr)
@@ -1120,7 +1062,7 @@ class BaseQuery:
         if not schema:
             return []
 
-        flatten_schema = _flat_schema(schema)
+        flatten_schema = cls._flat_schema(schema)
         return _create_eager_option_exprs_with_flatten_schema(flatten_schema)
 
     #  for raw_join in relation
@@ -1459,6 +1401,72 @@ class BaseQuery:
             return func.strftime(date_format, date_column).label('date')
         else:
             raise NotImplementedError(f'Invalid dialect : {cls.DIALECT_NAME}')
+
+    # for create_eager_options
+    # for SmartMixin
+    @classmethod
+    def _flat_schema(cls, schema: dict):
+        """
+        schema = {
+            'user': JOINED, # joinedload user
+            'comments': (SUBQUERY, {  # load comments in separate query
+                'user': JOINED  # but, in this separate query, join user
+            })
+        }
+        => {'user': JOINED, 'comments': SUBQUERY, 'comments.users': JOINED}
+
+
+        # the same schema using class properties:
+        schema = {
+            Post.user: JOINED,
+            Post.comments: (SUBQUERY, {
+                Comment.user: JOINED
+            })
+        }
+
+        """
+        if not schema:
+            return {}
+
+        # 3) 꼬리재귀를 위해, 인자에 level마다 바뀌는 schema->innser_schmea  + 자식이 자신이될(parent_xx) 칼럼명 이은 것, 누적변수 result를 추가한 뒤
+        #  => 내부메서드로 만든 다음, 기초값을 자신과 누적변수에 초기값을 넣어서 호출한다.
+        def _flat_recursive(schema, parent_column_name, result):
+            for rel_column_name_or_prop, value in schema.items():
+                # 1) Post.user 등 관계속성을 사용하는 경우 => 관계 칼럼명을 가져온다.
+                if isinstance(rel_column_name_or_prop, InstrumentedAttribute):
+                    rel_column_name_or_prop = rel_column_name_or_prop.key
+
+                # 2-1) value가 tuple로 입력된 경우는, { Post.user : ( SUBQUERY, { 'user': JOINED } ) } 의 재귀형태다.
+                # => 내부 eager type + 내부 schema로 분리한다.
+                if isinstance(value, tuple):
+                    eager_type, inner_schema = value[0], value[1]
+
+                # 2-2) value가 tuple[0]의 eager type이 생략된  dict로 입력된 경우는, { User.posts: {  Post.comments : { Comment.user: JOINED }}}
+                # => eager type이 JOINED로 고정이며 + value가 내부shcema를 의미한다.
+                elif isinstance(value, dict):
+                    eager_type, inner_schema = JOINED, value
+
+                # 2-3) 그외의 경우는 내부schema는 없는 것이며, value가 eager_type인 경우다.
+                else:
+                    eager_type, inner_schema = value, None
+
+                # 5) 시작부터 부모의 것이 있다고 생각하고 부모의 정보를 받아 사용하여 나를 처리한다.
+                # => 부모의 관계속성명.나의관계속성명 을 연결한다. 부모가 있으면 부모를 앞에 두고 연결한다.
+                current_column_name = parent_column_name + '.' + rel_column_name_or_prop if parent_column_name \
+                    else rel_column_name_or_prop
+                # 6) result라는 dict 누적변수에 earger type을 [현재 이은 경로]를 key로 value로 넣어준다.
+                result[current_column_name] = eager_type
+
+                # 7) 만약 연결될 내부 schema( value에 dict or tuple[1]의 dict가 존재할 경우 다시 재귀를 호출한다.
+                # => 꼬리재귀 + 누적변수를 가지고 다녀서, 호출만 해주면 알아서 누적된다.
+                if inner_schema:
+                    _flat_recursive(inner_schema, current_column_name, result)
+
+        # 4) 초기값 투입
+        result = {}
+        _flat_recursive(schema, '', result)
+
+        return result
 
 
 class StaticsQuery(BaseQuery):
