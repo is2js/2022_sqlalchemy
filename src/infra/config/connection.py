@@ -1,3 +1,5 @@
+import os
+
 from sqlalchemy import event
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -15,6 +17,7 @@ class DBConnectionHandler:
 
     def __create_database_engine(self, echo):
         # engine = create_engine(self.__connection_string)
+        echo = True if os.getenv('APP_CONFIG') != 'production' else False
         engine = create_engine(self.__connection_string, echo=echo)
 
         #### sqlite 인 경우, qeuery 날릴 때마다, 아래 문장을 execute해야, cascade가 정상작동한다

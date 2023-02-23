@@ -475,7 +475,7 @@ class CRUDMixin(Base, BaseQuery, SessionMixin):
         return result
 
     # for update
-    #### relations 칼럼은 .__table__이 아니라 high-level ORM의 mapper를 이용해야한다.
+    #### get_relation_column_names 칼럼은 .__table__이 아니라 high-level ORM의 mapper를 이용해야한다.
     @class_property
     def relation_names(cls):
         """

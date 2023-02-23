@@ -1,24 +1,25 @@
 import enum
-from collections import defaultdict, namedtuple
+from collections import defaultdict, namedtuple, OrderedDict
 from datetime import datetime
 
 from dateutil.relativedelta import relativedelta
-from pyecharts.charts import Bar
 from sqlalchemy import and_, or_, select, func, distinct, inspect, Table, cast, Integer, literal_column, text, column, \
-    Numeric, desc, asc, join
-from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import InstrumentedAttribute, joinedload, subqueryload, selectinload, aliased
+    Numeric, desc, asc, join, extract
+from sqlalchemy.ext.hybrid import hybrid_property, hybrid_method
+from sqlalchemy.orm import InstrumentedAttribute, joinedload, subqueryload, selectinload, aliased, RelationshipProperty, \
+    contains_eager
 from sqlalchemy.orm.util import AliasedClass
-from sqlalchemy.sql import ColumnElement, Subquery, Alias
+from sqlalchemy.sql import ColumnElement, Subquery, Alias, operators
 from sqlalchemy.sql.elements import UnaryExpression
 from sqlalchemy.util import classproperty
 
 from src.config import db_config
 from src.infra.config.connection import DBConnectionHandler
 
-
 #### import Error유발해서 직접 정의해서 사용
 # from src.main.utils.to_string import to_string_date
+from src.infra.tutorial3.mixins.utils.classproperty import class_property
+
 
 def to_string_date(last_month):
     return datetime.strftime(last_month, '%Y-%m-%d')
@@ -37,6 +38,7 @@ Mixin 완성본 참고:  https://github.com/absent1706/sqlalchemy-mixins/tree/ce
 
 DESC_PREFIX = '-'
 OPERATOR_OR_FUNC_SPLITTER = '__'
+RELATION_SPLITTER = '___'
 
 # https://github.com/absent1706/sqlalchemy-mixins/blob/ce4badbc51f8049783fa3909615ccfc7c1198d98/sqlalchemy_mixins/smartquery.py#L396
 op_dict = {
@@ -61,6 +63,70 @@ op_dict = {
     "between": "between"
 }
 
+
+def get_additional_operator(operator_name, column, value):
+    attr = next((op for op in (operator_name, f'{operator_name}_', f'__{operator_name}__')
+                 if hasattr(column, op)), None)
+    if not attr:
+        raise Exception(f'Invalid filter operator name: {operator_name}')
+
+    return getattr(column, attr)(value)
+
+
+# operator 함수객체는 from sqlalchemy.sql import operators에서 가져올 수 있다.
+# op = _operators[op_name]
+# expressions.append(op(column, value))
+_operators = {
+    # lambda c,v로 정의하면 => 외부에서는  dict_value( c, v)로 입력해서 호출한다.
+    'isnull': lambda c, v: (c == None) if v else (c != None),
+    # 추가
+    # 'is': lambda c, v: get_additional_operator('is', c, v),
+    'is': operators.is_,
+    'is_': operators.is_,
+    'isnot': operators.isnot,
+    # 'exact': operators.eq,
+    'eq': operators.eq,
+    'ne': operators.ne,  # not equal or is not (for None)
+
+    'gt': operators.gt,  # greater than , >
+    'ge': operators.ge,  # greater than or equal, >=
+    'lt': operators.lt,  # lower than, <
+    'le': operators.le,  # lower than or equal, <=
+
+    'in': operators.in_op,
+    'notin': operators.notin_op,
+    'between': lambda c, v: c.between(v[0], v[1]),
+
+    'like': operators.like_op,
+    'ilike': operators.ilike_op,
+    'startswith': operators.startswith_op,
+    'istartswith': lambda c, v: c.ilike(v + '%'),
+    'endswith': operators.endswith_op,
+    'iendswith': lambda c, v: c.ilike('%' + v),
+    'contains': lambda c, v: c.ilike('%{v}%'.format(v=v)),
+
+    'year': lambda c, v: extract('year', c) == v,
+    'year_ne': lambda c, v: extract('year', c) != v,
+    'year_gt': lambda c, v: extract('year', c) > v,
+    'year_ge': lambda c, v: extract('year', c) >= v,
+    'year_lt': lambda c, v: extract('year', c) < v,
+    'year_le': lambda c, v: extract('year', c) <= v,
+
+    'month': lambda c, v: extract('month', c) == v,
+    'month_ne': lambda c, v: extract('month', c) != v,
+    'month_gt': lambda c, v: extract('month', c) > v,
+    'month_ge': lambda c, v: extract('month', c) >= v,
+    'month_lt': lambda c, v: extract('month', c) < v,
+    'month_le': lambda c, v: extract('month', c) <= v,
+
+    'day': lambda c, v: extract('day', c) == v,
+    'day_ne': lambda c, v: extract('day', c) != v,
+    'day_gt': lambda c, v: extract('day', c) > v,
+    'day_ge': lambda c, v: extract('day', c) >= v,
+    'day_lt': lambda c, v: extract('day', c) < v,
+    'day_le': lambda c, v: extract('day', c) <= v,
+}
+
 # for create_eager_options
 # 상수로 만든 뒤, 사용시 import해서 쓰도록
 ## eager types
@@ -71,8 +137,8 @@ SELECTIN = 'selectin'
 
 ## eager load map
 eager_load_map = {
-    'joined': lambda c_name: joinedload(c_name, innerjoin=True),
-    'inner_joined': lambda c_name: joinedload(c_name),
+    'joined': lambda c_name: joinedload(c_name),
+    'inner_joined': lambda c_name: joinedload(c_name, innerjoin=True),
     'subquery': lambda c_name: subqueryload(c_name),
     'selectin': lambda c_name: selectinload(c_name)
 }
@@ -143,7 +209,7 @@ def _flat_schema(schema: dict):
 
 # for create_eager_options
 # depth가 .으로 연결된 칼럼명 조합으로 들어온다.
-def _to_eager_options(flatten_schema):
+def _create_eager_option_exprs_with_flatten_schema(flatten_schema):
     """
     input: {'user': JOINED, 'comments': SUBQUERY, 'comments.users': JOINED'}
     => 이미 lazy='dynamic'으로 준 칼럼은 subqueryload를 할 수 없다.
@@ -197,7 +263,7 @@ class BaseQuery:
         return column
 
     @classmethod
-    def split_and_check_name(cls, column_name):
+    def check_and_split_attr_names(cls, column_name):
         column_name = column_name.split(f'{OPERATOR_OR_FUNC_SPLITTER}')
         if len(column_name) > 3:
             raise Exception(f'Invalid func column name: {column_name}')
@@ -221,7 +287,7 @@ class BaseQuery:
 
         # 칼럼이 집계함수와 같이 들어온다면 집계함수를 적용할 수 있게 한다.
         if '__' in column_name:
-            column_name, func_name = cls.split_and_check_name(column_name)  # split결과 3개이상나오면 에러 1개, 2개는 넘어감
+            column_name, func_name = cls.check_and_split_attr_names(column_name)  # split결과 3개이상나오면 에러 1개, 2개는 넘어감
 
             column = cls.get_column(model, column_name)
 
@@ -404,6 +470,381 @@ class BaseQuery:
 
         return filt
 
+    # for create_filters0
+    @classmethod
+    def _flat_filter_keys_generator(cls, filters):
+        for key, value in filters.items():
+            if key.lower().startswith(('and_', 'or_')):
+                # yield의 depth없는 재귀 호출은 yiedl from 메서드(자식)으로 한다.
+                yield from cls._flat_filter_keys_generator(value)
+            # 나 자신의 처리(방출)
+            else:
+                yield key
+
+    # for _parse_attrs_and_make_alias_map
+    @classmethod
+    def get_relation_column_names(cls, model):
+        """list(User.__mapper__.iterate_properties)
+        => [<RelationshipProperty at 0x165ab5d9048; role>, <...]
+        """
+        return [c.key for c in model.__mapper__.iterate_properties
+                if isinstance(c, RelationshipProperty)]
+
+    # for _parse_attrs_and_make_alias_map
+    @classmethod
+    def check_rel_column_name(cls, parent_model, rel_column_name):
+        # 부모model의 .relation칼럼 목록에 rel_column_name이 없으면 잘못된 것이다.
+        if rel_column_name not in cls.get_relation_column_names(parent_model):
+            raise KeyError(f'Invalid relationship name: {rel_column_name}')
+
+    # for create_filters0
+    @classmethod
+    def _parse_attrs_and_make_alias_map(cls, parent_model, parent_path, attrs, aliases):
+        """
+        input attrs: ['id__gt', 'id__lt', 'tags___property__in']
+        output: => OrderedDict([('tags', (<AliasedClass at 0x1de19e32908; Tag>, <sqlalchemy.orm.attributes.InstrumentedAttribute object at 0x000001DE19999150>))])
+        """
+        # 1. relations에는 일단 ___으로 split하여 rel_column_name(key)에 해당 attr들을 list로 모은다.
+        relations = defaultdict(list)
+
+        for attr in attrs:
+            # 1) 제일 먼저 관계속성이 찍혀잇는지 확인한다
+            if RELATION_SPLITTER in attr:
+                # 2) 여러개일 수 있는 '___'에서 첫번째 껏으로만 자르고, 뒤에는 안자른다는 split(, 1)
+                # 'related___property__in'.split('___', 1) => ['related', 'property__in']
+                rel_column_name, rel_attr = attr.split(RELATION_SPLITTER, 1)
+                # 3) rel_column_name을 key로 rel_attr들을  list에 모은다.
+                relations[rel_column_name].append(rel_attr)
+
+        # 2. 모아진 dict를 순회하면서 현재 진입 model + 부모의 model_path를 이용하여, 자신의 path를 만든다.
+        # => path는 ___으로 이어서 부모rel_column_name___현재rel_column_name 형식으로 이어서 만든다.
+        # => 이것은 추후 flat한 schema와의 확인을 위해서다.
+        for rel_column_name, rel_attr in relations.items():
+            # 2-1) rel_colum_name이 유효한지 실제 model에서 검사한다.
+            cls.check_rel_column_name(parent_model, rel_column_name)
+            # 2-2) split한 ___를 부모model과 붙여서, attr가 빠진 순수 relation칼럼을 ___로 이은 path를 만든다.
+            path = (parent_path + RELATION_SPLITTER + rel_column_name) if parent_path \
+                else rel_column_name
+
+            # 2-2) rel_columns_name => 관계칼럼을 가져온다( create_column을 쓰면 __를 연산자 or 집계함수 처리해버리니 하면 안됨)
+            rel_column = cls.get_column(parent_model, rel_column_name)
+            # 2-3) 관계칼럼 -> 관계모델 -> alias까지 씌운다
+            aliased_rel_model = aliased(rel_column.property.mapper.class_)
+            # 2-4) 저장소 aliases 에  (aliased 관계모델,과 관계칼럼))을 tuple로 현재path에 저장한다.
+            aliases[path] = aliased_rel_model, rel_column
+
+            # 3. 이제 rel_model/path가 부모가 되어 재귀호출한다. 종착역은 없다. 잇을때까지한다. 저장소에 setter만 하기 때문에
+            cls._parse_attrs_and_make_alias_map(aliased_rel_model, path, rel_attr, aliases)
+
+    # for  create_filter_exprs
+    @classmethod
+    def get_filterable_attr_names(cls, model):
+        return cls.get_column_names(model) + cls.get_relation_column_names(model) + \
+               cls.get_hybrid_property_names(model) + cls.get_hybrid_method_names(model)
+
+    # for _create_filters_expr_with_alias_map
+    @classmethod
+    def create_filter_exprs(cls, model, **filters):
+        """
+        forms expressions like [Product.age_from = 5,
+                                Product.subject_ids.in_([1,2])]
+        from filters like {'age_from': 5, 'subject_ids__in': [1,2]}
+        Example 1:
+            db.query(Product).filter(
+                *Product.create_filter_exprs(age_from = 5, subject_ids__in=[1, 2]))
+        Example 2:
+            filters = {'age_from': 5, 'subject_ids__in': [1,2]}
+            db.query(Product).filter(*Product.create_filter_exprs(**filters))
+        ### About alias ###:
+        If we will use alias:
+            alias = aliased(Product) # table name will be product_1
+        we can't just write query like
+            db.query(alias).filter(*Product.create_filter_exprs(age_from=5))
+        because it will be compiled to
+            SELECT * FROM product_1 WHERE product.age_from=5
+        which is wrong: we select from 'product_1' but filter on 'product'
+        such filter will not work
+        We need to obtain
+            SELECT * FROM product_1 WHERE product_1.age_from=5
+        For such case, we can call create_filter_exprs ON ALIAS:
+            alias = aliased(Product)
+            db.query(alias).filter(*alias.create_filter_exprs(age_from=5))
+        Alias realization details:
+          * we allow to call this method
+            either ON ALIAS (say, alias.create_filter_exprs())
+            or on class (Product.create_filter_exprs())
+          * when method is called on alias, we need to generate SQL using
+            aliased table (say, product_1), but we also need to have a real
+            class to call methods on (say, Product.get_relation_column_names)
+          * so, we have 'mapper' that holds table name
+            and 'cls' that holds real class
+            when we call this method ON ALIAS, we will have:
+                mapper = <product_1 table>
+                cls = <Product>
+            when we call this method ON CLASS, we will simply have:
+                mapper = <Product> (or we could write <Product>.__mapper__.
+                                    It doesn't matter because when we call
+                                    <Product>.getattr, SA will magically
+                                    call <Product>.__mapper__.getattr())
+                cls = <Product>
+        """
+        # 1. main model외 relation의 alias가 들어온다면, inspect().mapper.class_로 관계model을 가져온다.
+        #    => main model 및 관계 alias  =>  mapper로 표현  +  model은 쌩 class만 취급.
+        if isinstance(model, AliasedClass):
+            mapper, model = model, inspect(model).mapper.class_
+        else:
+            mapper = model
+
+        # 2. filter를 돌면서, 표현식을 만든다.
+        expressions = []
+
+        # 연산자 split후 남은 필터옵션(name__eq -> name)이 해당model의 필터링에 쓸 수 있는지 확인한다.
+        valid_attrs = cls.get_filterable_attr_names(model)
+
+        for attr, value in filters.items():
+            # 2-1) 입력한 필터 옵션이 hybrid method로서 호출될 경우
+            #      hybrid메서드는  연산자 연산이 아니라, method(value)를 expr로서 넣어준다.
+            #   => 이대, hybrid메서드 호출 주체를 alias로 주기 위해 mapper=옵션을 준다.
+            if attr in cls.get_hybrid_method_names(model):
+                method = getattr(cls, attr)
+                expressions.append(method(value, mapper=mapper))
+            # 2-2) 입력한 필터 옵션이 연산자처리인 경우
+            else:
+                # 2-2-1) 연산자 포함된 경우, id__gt=1
+                if OPERATOR_OR_FUNC_SPLITTER in attr:
+                    attr_name, op_name = attr.rsplit(OPERATOR_OR_FUNC_SPLITTER, 1)
+                    if op_name not in _operators:
+                        raise KeyError(f'Invalid Operator name `{op_name}` in `{attr}`')
+                    op = _operators[op_name]
+                # 2-2-1) 연산자가 생략되어 eq인 경우, name=1
+                else:
+                    attr_name, op = attr, operators.eq
+
+                # 3. 연산자 split후 남아있는 attr 이름이 해당model의 필터링 컬럼으로 유효한지 확인.
+                if attr_name not in valid_attrs:
+                    raise KeyError(f'Invalid fiiltering attr name `{attr_name}` in `{attr}`')
+
+                column = getattr(mapper, attr_name)
+
+                expressions.append(op(column, value))
+
+        return expressions
+
+    # for create_filters0
+    @classmethod
+    def _create_filters_expr_with_alias_map(cls, model, filters, alias_map):
+        """
+
+        """
+        for key, value in filters.items():
+            # 재귀
+            if key.lower().startswith(('and_', 'or_')):
+                # 자신의 처리 결과물은 yield from [generator]라서, 재귀호출시 (*재귀)로 처리할 수 있따.
+                if key.lower().startswith(('and_')):
+                    yield and_(*cls._create_filters_expr_with_alias_map(model, value, alias_map))
+                else:
+                    yield or_(*cls._create_filters_expr_with_alias_map(model, value, alias_map))
+                continue
+            # 자신의 처리 filter expr 생성 by cls.create_filters()
+            # -> 관계꺼면, 관계model을 map에서 꺼내서 호출하고,
+            # -> 아니라면 자신이 처리한다.
+            #### 대박
+            # 1) filter입력key에 ___가 끼여있으면, 관계model이 주인공 / 아니라면 현재model이 주인공
+            #   가장오른족에서 1번째를 split한 뒤  => a___b -> alias_map에서 꺼내 사용한다
+            #    'related___user___property__in'.rsplit('___', 1) =>  ['related___user', 'property__in']
+            if RELATION_SPLITTER in key:
+                # 2)
+                rel_column_name_and_attr = key.rsplit(RELATION_SPLITTER, 1)
+                model, attr = alias_map[rel_column_name_and_attr[0]][0], rel_column_name_and_attr[1]
+            else:
+                attr = key
+
+            # 2) filter입력key에 ___가 입력된 model이 entity / 없으면 attr이다
+            yield from cls.create_filter_exprs(model, **{attr: value})
+
+    @classmethod
+    def create_filters0(cls, model, filters, schema=None):
+        """
+        { or_: {
+            'id__gt': 1000,
+            and_ : {
+                'id__lt': 500,
+                'tags___property__in': (1,2,3)
+                }
+            }
+        }
+        list(BaseQuery.create_filters0(Post, { 'or_': { 'id__gt': 1000, 'and_' : { 'id__lt': 500, 'tags___property__in': (1,2,3)}}}))
+        => attrs : ['id__gt', 'id__lt', 'tags___property__in']
+        => alias_map : OrderedDict(([('tags', (<AliasedClass at 0x1de19e32908; Tag>, <sqlalchemy.orm.attributes.InstrumentedAttribute object at 0x000001DE19999150>))])
+        => query :
+            SELECT tags_1.* posts.*
+            FROM posts
+            LEFT OUTER JOIN (posttags AS posttags_1 JOIN tags AS tags_1 ON tags_1.id = posttags_1.tag_id)
+              ON posts.id = posttags_1.post_id
+        => loaded_rel_paths :  ['tags']
+        => cls._create_filters_expr_with_alias_map(model, filters, alias_map):
+           posts.id > :id_1 OR (posts.id < :id_2 AND tags_1.name IN (__[POSTCOMPILE_name_1]))
+        => query :
+        SELECT tags_1.add_date, tags_1.pub_date, tags_1.id, tags_1.name, posts.add_date AS add_date_1, posts.pub_date AS pub_date_1, posts.id AS id_1, posts.title, posts."desc", posts.content, posts.has_type, posts.category_id
+        FROM posts
+        LEFT OUTER JOIN (posttags AS posttags_1 JOIN tags AS tags_1 ON tags_1.id = posttags_1.tag_id)
+            ON posts.id = posttags_1.post_id
+        WHERE posts.id > :id_2 OR
+                posts.id < :id_3 AND tags_1.name IN (__[POSTCOMPILE_name_1])
+
+        => not_loaded_flatten_schema  >>  {'posts': 'subquery'}
+
+
+        """
+        if schema:
+            flatten_schema = _flat_schema(schema)
+        else:
+            flatten_schema = {}
+
+        # 1. filter의 key들만 순서대로 평탄화한다. => _flat_schema처럼 dict {}에 depth로 저장할 게 아니라면
+        #   yield를 통해 순차적으로 재귀 방출할 수 있게 한다.
+        attrs = cls._flat_filter_keys_generator(filters)  # ['id__gt', 'id__lt', 'tags___property__in']
+        print('attrs(flat filter keys)  >> ', attrs)
+
+        # 2. 이제 각 filter name들에서 ___이 없으면 root cls인 model을 ''path 기준으로, 'rel_column_name. 다음' path에다가
+        #    관계칼럼___이 붙어있으면 관계칼럼명 -> aliased 관계모델, 관계칼럼를 찾아서  관계모델부터 .으로 연결된 path을 key로 저장한다.
+        #   순서대로 OrderedDict에 모은다. => 관계모델별.path에다가  기록할 저장소로서 재귀메서드를 만들어 호출한다.
+        alias_map = OrderedDict({})
+        # 시작을 들어온 model(cls)로 하고, depth마다 달라지는 model/path + 주어진 재료attrs/저장소alias를 인자로 준다.
+        cls._parse_attrs_and_make_alias_map(model, '', attrs, alias_map)
+
+        print('alias_map  >> ', alias_map)
+
+
+        # => OrderedDict([('tags', (<AliasedClass at 0x1de19e32908; Tag>, <sqlalchemy.orm.attributes.InstrumentedAttribute object at 0x000001DE19999150>))])
+        # => 명시한 rel_column_name :  aliased관계모델, 해당 관계칼럼만  저장된다. ( 현재model의 칼럼은x)
+
+        # print(alias_map) # posts___tags___id__in
+        # OrderedDict([
+        #   ('posts', (<AliasedClass at 0x1f209df5240; Post>, <sqlalchemy.orm.attributes.InstrumentedAttribute object at 0x000001F209958B48>)),
+        #   ('posts___tags', (<AliasedClass at 0x1f209e71550; Tag>, <sqlalchemy.orm.attributes.InstrumentedAttrib
+        # ute object at 0x000001F209E35AF0>))])
+
+        #### selcet query 미리 만들어놓기 ####
+        query = select(model)
+
+        # 3. ___연결 path, rel model, rel column을 순회하면서
+        # #### eager load query #### 달아주기  +  loaded_path 모아놓기
+        #   => path는 flattend_schema와 동일한 형태인, {'user': JOINED, 'comments': SUBQUERY, 'comments.users': JOINED'}
+        #      .으로 연결한 형태로 변형시킨다. schema의 key들은 관계속성명으로 연결됬었으니, 여기랑 같다?
+        loaded_rel_paths = []
+        for path, (aliased_rel_model, rel_column) in alias_map.items():
+            rel_path = path.replace(RELATION_SPLITTER, '.')
+            # 3-2. schema를 인자로 받고 없으면 앞에서  flatten_schema에 빈 {} dict로 초기화해놓는다.
+            # 3-3. schema=> flatten_schema를 통해 eagerload될 예정인 놈들을 제외하고, 여기서 expr를 만들어놓는다.
+            #   => load()의 schema에서 SUBQUERY로 지정된 것이 아니라면, 전부 여기서 outerjoin(joined)로 연결되게 한다.
+
+            # if not (rel_path in flatten_schema and flatten_schema[rel_path] in [SUBQUERY, SELECTIN]):
+                # 3-4. #### 대박
+                # outerjoin시 aliased와 함께, 관걔칼럼을 onclause로서 주는구나..
+                # => contains_eager에는  [.으로 연결된 관계속성명] + 그때의 alias=에 aliased model을 지정해줄 수 있구나.
+                # query = (
+                #     query
+                #     .outerjoin(aliased_rel_model, rel_column)
+                #     .options(contains_eager(rel_path, alias=aliased_rel_model))
+                # )
+
+            #### custom 다대일에서 fk가 있을 경우, many<-one시 다박히는 경우 inner join으로
+            # Post.tags.property.direction.name => 'MANYTOONE' 'ONETOMANY' 'MANYTOMANY'
+            # => 메서드로 정의
+            if not (rel_path in flatten_schema and flatten_schema[rel_path] in [SUBQUERY, SELECTIN]):
+                # print('rel_column.property.direction.name>>' , rel_column.property.direction.name)
+                # rel_column.property.direction.name >> MANYTOMANY
+                #### 필터를 만들기 위한, join 생성 중에 관계 방향이 ManyToOne일때만 innerjoin해보자.
+                relation_direction = rel_column.property.direction.name
+                # print('relation_direction  >> ', relation_direction)
+                
+                if relation_direction == 'MANYTOONE':
+                    query = (
+                        query
+                        .join(aliased_rel_model, rel_column)
+                        .options(contains_eager(rel_path, alias=aliased_rel_model))#, innerjoin=True)) # innerjoin옵션없음.
+                    )
+                    # print('query  >> ', query)
+                    # FROM employees
+                    # JOIN users AS users_1
+                    #     ON users_1.id = employees.user_id
+
+                else:
+                    query = (
+                        query
+                        .outerjoin(aliased_rel_model, rel_column)
+                        .options(contains_eager(rel_path, alias=aliased_rel_model))
+                    )
+
+                # 3-5. eager load가 완료된 rel_path들을 따로 모아둔다.
+                loaded_rel_paths.append(rel_path)
+
+        # print(query, loaded_rel_paths)
+        # query =>
+        # SELECT posts.* tags_1.*
+        # FROM posts
+        # LEFT OUTER JOIN (posttags AS posttags_1 JOIN tags AS tags_1 ON tags_1.id = posttags_1.tag_id)
+        #   ON posts.id = posttags_1.post_id
+        # loaded_rel_paths => ['tags']
+
+        # query 2 =>  2중 연결 Category posts___tags___id__in
+        # SELECT categories.* posts_1.* tags_1.*
+        # FROM categories
+        # LEFT OUTER JOIN posts AS posts_1
+        #   ON categories.id = posts_1.category_id
+        # LEFT OUTER JOIN (posttags AS posttags_1
+        #   JOIN tags AS tags_1 ON tags_1.id = posttags_1.tag_id)
+        #       ON posts_1.id = posttags_1.post_id
+
+        #### 4. alias_map(OrderedDict) 기반으로 재귀 filter query 만들기
+        # -> 메서드를 재귀 yield로 제네레이터를 만들어도 *로 반출 가능하다.
+        query = (
+            query
+            .where(*cls._create_filters_expr_with_alias_map(model, filters, alias_map))
+        )
+        # => query :
+        # WHERE posts.id > :id_2 OR
+        #           posts.id < :id_3 AND tags_1.name IN (__[POSTCOMPILE_name_1])
+        # => *cls._create_filters_expr_with_alias_map(model, filters, alias_map):
+        # posts.id > :id_1 OR (posts.id < :id_2 AND tags_1.name IN (__[POSTCOMPILE_name_1]))
+
+        # => query2 : 'posts___tags___id__in': (1,2,3)
+        # WHERE categories.id > :id_3 OR
+        #   categories.id < :id_4 AND tags_1.id IN (__[POSTCOMPILE_id_5])
+
+
+        #### 5. order by query 생략 ####
+
+        #### 6. schema=None(___) -> flatten_schema={}(. : alias관계모델, 관계칼럼) + loaded_rel_paths(.)로
+        #       filter에 등장한 관계 => outerjoin(joined)를 제외한
+        #       필터에없는 joined + 나머지 subquery옵션들 체워주기
+        #### => 필터를 만들면서 쓸거는 outerjoin으로, alias도 만어서 filter들도 만든다.
+        #### => 하지만, subqueryload, selectinload는 객체를 추출한 뒤 .으로 사용할 예정이므로
+        ####    제일 나중에 처리해줘도 상관없다.
+        if flatten_schema:
+            not_loaded_flatten_schema = {rel_path: value for rel_path, value in flatten_schema.items()
+                                         if rel_path not in loaded_rel_paths
+                                         }
+
+            # print('not_loaded_flatten_schema  >> ', not_loaded_flatten_schema)
+            # not_loaded_flatten_schema  >>  {'tags': 'subquery'}
+            # For a one-to-many or many-to-many relationship, it's (usually) better to use subqueryload
+            # instead, for performance reasons:
+            # session.query(Product).join(User.addresses)\
+            #     .options(subqueryload(Product.orders),\
+            #              subqueryload(Product.tags)).all()
+            # =>
+            query = query\
+                .options(*_create_eager_option_exprs_with_flatten_schema(not_loaded_flatten_schema))
+
+            print('query  >> ', query)
+            print('(*_create_eager_option_exprs_with_flatten_schema(not_loaded_flatten_schema)  >> ', *_create_eager_option_exprs_with_flatten_schema(not_loaded_flatten_schema))
+
+
+
+        return
+
     @classmethod
     def create_filters(cls, model, filters):
         """
@@ -442,23 +883,26 @@ class BaseQuery:
             # CASE 1: dict순회시 => key='and_' or 'or_' / value = 자식dict
             # => 자식dict를 다시 create_filers의 인자로서 재귀로 넣고 filter list를 받은 뒤
             #    연산자에 따라서 묵어준다.
-            if 'and' in key or 'or' in key:
-                child_filters = and_(*cls.create_filters(model, value)) if 'and' in key \
+            if key.lower().startswith(('and_', 'or_')):
+                child_filters = and_(*cls.create_filters(model, value)) if key.lower().startswith('and_') \
                     else or_(*cls.create_filters(model, value))
                 total_filters.append(child_filters)
                 continue
+
             # CASE 2: dict순회시 'and_'나'or_'가 아니라서 => key='column__연산' / value = 값
             # => column__연산을 split하고, where 내을 list에 append한다.
             # => 어차피 재귀로 타고온 2번째라서, 부모에게 list를 건네, 부모에서 and_()나 or_()로 묶일 예정이다.
             #      이 때, 비교연산자를 안적는 경우, __eq로 간주하게 한다.
-            key = cls.split_and_check_name(key)  # # split결과 3개이상나오면 에러 1개, 2개는 넘어감
-            if len(key) == 1:
+            split_attrs = cls.check_and_split_attr_names(key)  # # split결과 3개이상나오면 에러 1개, 2개는 넘어감
+
+            if len(split_attrs) == 1:
                 # split했기 때문에, [ 'username'] 으로 들어가있음. -> key[0]
-                column = cls.create_column(model, key[0])
+                column = cls.create_column(model, split_attrs[0])
                 # # 어차피 and or or로 시작하며, 아닌 턴에서는 list로만 append하면 부모가 and_()나 or_()로 싼다
                 total_filters.append(column == value)
-            else:  # len(key) == 2:
-                column_name, op_name = key
+
+            elif len(split_attrs) == 2:
+                column_name, op_name = split_attrs
                 column = cls.create_column(model, column_name)
 
                 # 3) op string -> op attribute로 변환
@@ -501,11 +945,24 @@ class BaseQuery:
         return inspect(model).columns.keys()
 
     # for create_order_bys
+    # for create_filter0
     # @classproperty
     @classmethod
     def get_hybrid_property_names(cls, model):
         items = inspect(model).all_orm_descriptors
         return [item.__name__ for item in items if isinstance(item, hybrid_property)]
+
+    # for create_filter0
+    @classmethod
+    def get_hybrid_method_dict(cls, model):
+        items = inspect(model).all_orm_descriptors
+        return {item.func.__name__: item
+                for item in items if type(item) == hybrid_method}
+
+    # for create_filter0 - create_filter_exprs
+    @classmethod
+    def get_hybrid_method_names(cls, model):
+        return list(cls.get_hybrid_method_dict(model).keys())
 
     # for create_order_bys
     # @classproperty
@@ -600,7 +1057,7 @@ class BaseQuery:
             return []
 
         flatten_schema = _flat_schema(schema)
-        return _to_eager_options(flatten_schema)
+        return _create_eager_option_exprs_with_flatten_schema(flatten_schema)
 
     #  for raw_join in relation
     @classmethod
@@ -678,11 +1135,12 @@ class BaseQuery:
         # => 이게 들어가는 순간..Query has only expression-based entities, which do not apply to relationship property "EmployeeDepartment.department"
         # => 미리 칼럼이 string  + create_column으로  만들어져서 온다.
         if is_expr:
-            if not (l_selects or r_selects):  # or (selects and isinstance(join_target, (AliasedClass, Alias, Subquery))):
+            if not (
+                    l_selects or r_selects):  # or (selects and isinstance(join_target, (AliasedClass, Alias, Subquery))):
                 # join에서 칼럼 선택상황이라면 일단 select_columns를 '*'로 채워두고 뒤에서 고를 것이다.
                 select_columns = [text('*')]
             else:
-                select_columns = cls.create_columns(join_left_alias_name, column_names=l_selects)  + \
+                select_columns = cls.create_columns(join_left_alias_name, column_names=l_selects) + \
                                  cls.create_columns(join_right_alias_name, column_names=r_selects)
         else:
             if not selects:
@@ -708,7 +1166,6 @@ class BaseQuery:
             #### order_by는 Mixin에서 self메서드로 사용되므로, cls용 model은 키워드로 바꿈 => 사용시 인자 위치도 바뀜.
             .order_by(*cls.create_order_bys(order_bys, model=model))
         )
-
 
         # if join_target is not None and isinstance(join_target, (AliasedClass, Alias, Subquery)):
         #     print('asasdfasdlaisd')

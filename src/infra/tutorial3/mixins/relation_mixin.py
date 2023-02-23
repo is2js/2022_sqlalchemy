@@ -122,7 +122,6 @@ class RelationMixin(Base, BaseQuery, SessionMixin):
         self._query = (
             self._query
             .options(*self.create_eager_options(schema=schema))
-
         )
 
         print(self._query)
