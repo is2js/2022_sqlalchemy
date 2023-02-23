@@ -582,10 +582,7 @@ class BaseQuery:
         """
         # 1. main model외 relation의 alias가 들어온다면, inspect().mapper.class_로 관계model을 가져온다.
         #    => main model 및 관계 alias  =>  mapper로 표현  +  model은 쌩 class만 취급.
-        if isinstance(model, AliasedClass):
-            mapper, model = model, inspect(model).mapper.class_
-        else:
-            mapper = model
+        mapper, model = cls.split_mapper_and_model_for_alias(model)
 
         # 2. filter를 돌면서, 표현식을 만든다.
         expressions = []
@@ -622,6 +619,15 @@ class BaseQuery:
 
         return expressions
 
+    # for filter_expr and order_expr
+    @classmethod
+    def split_mapper_and_model_for_alias(cls, model):
+        if isinstance(model, AliasedClass):
+            mapper, model = model, inspect(model).mapper.class_
+        else:
+            mapper = model
+        return mapper, model
+
     # for create_filters0
     @classmethod
     def _create_filters_expr_with_alias_map(cls, model, filters, alias_map):
@@ -646,16 +652,64 @@ class BaseQuery:
             #    'related___user___property__in'.rsplit('___', 1) =>  ['related___user', 'property__in']
             if RELATION_SPLITTER in key:
                 # 2)
-                rel_column_name_and_attr = key.rsplit(RELATION_SPLITTER, 1)
-                model, attr = alias_map[rel_column_name_and_attr[0]][0], rel_column_name_and_attr[1]
+                rel_column_and_attr_name = key.rsplit(RELATION_SPLITTER, 1)
+                model, attr_name = alias_map[rel_column_and_attr_name[0]][0], rel_column_and_attr_name[1]
             else:
-                attr = key
+                attr_name = key
 
             # 2) filter입력key에 ___가 입력된 model이 entity / 없으면 attr이다
-            yield from cls.create_filter_exprs(model, **{attr: value})
+            yield from cls.create_filter_exprs(model, **{attr_name: value})
+
+
+    # for _create_order_exprs_with_alias_map
+    @classmethod
+    def create_order_expr(cls, model, attr):
+        # 1) main model 외 aliased rel model이 올 경우, mapper(Alias), model(원본 rel model class)를 구분한다.
+        # -> model로는 sortable한 칼럼인지 검사한다.
+        # -> mapper로는 getattr( , attr_name)으로 칼럼을 가져온다.
+        mapper, model = cls.split_mapper_and_model_for_alias(model)
+        # 2) - 달리면 desc를 아니면 asc func을 따로 빼준다.
+        order_func, attr = (desc, attr[1:]) if attr.startswith(DESC_PREFIX) \
+            else (asc, attr)
+        # 3) sortable한 칼럼인지 확인한다.
+        cls.check_sortable_column_name(model, attr)
+        # 4) 실제 칼럼을 가져올 땐, mapper에서 가져온다(검사만model)
+        return order_func(getattr(mapper, attr))
+
 
     @classmethod
-    def create_filters0(cls, model, filters, schema=None):
+    def _create_order_exprs_with_alias_map(cls, model, orders, alias_map):
+        if not orders:
+            return []
+
+        expressions = []
+
+        # 변수 추가
+        for attr in orders:
+            # 1) attr에서는 일단 relation부터 확인한 뒤, alias에서 빼와서 각각의 expr를 만든다.
+            if RELATION_SPLITTER in attr:
+                # 2) 빼내기 전에 desc 여부를 있으면 떼어내야한다.
+                desc_prefix= ''
+                if attr.startswith(DESC_PREFIX):
+                    desc_prefix = DESC_PREFIX
+                    attr = attr.lstrip(DESC_PREFIX)
+                # 3) 관계명을 떼온 뒤, alias에서 aliased_rel_model , rel_column을 가져온다.
+                rel_column_and_attr_name = attr.rsplit(RELATION_SPLITTER, 1)
+                current_model, attr = alias_map[rel_column_and_attr_name[0]][0], desc_prefix + rel_column_and_attr_name[1]
+            else:
+                # 4)관계명이 없는 경후, 현재 호출 model을 model로, +-을 통째로 attr을 넣어 메서드 내부에서 만들게 한다.
+                current_model = model
+
+            # 5) 해당 모델 + attr_name을 가지고 표현식을 만든다.
+            # -> main model 전용이라 그냥 들어간다면,
+            # print('model, attr  >> ', current_model, attr)
+
+            expressions.append(cls.create_order_expr(current_model, attr))
+
+        return expressions
+
+    @classmethod
+    def create_filters0(cls, model, filters, schema=None, orders=None):
         """
         { or_: {
             'id__gt': 1000,
@@ -668,6 +722,7 @@ class BaseQuery:
         list(BaseQuery.create_filters0(Post, { 'or_': { 'id__gt': 1000, 'and_' : { 'id__lt': 500, 'tags___property__in': (1,2,3)}}}))
         => attrs : ['id__gt', 'id__lt', 'tags___property__in']
         => alias_map : OrderedDict(([('tags', (<AliasedClass at 0x1de19e32908; Tag>, <sqlalchemy.orm.attributes.InstrumentedAttribute object at 0x000001DE19999150>))])
+
         => query :
             SELECT tags_1.* posts.*
             FROM posts
@@ -676,6 +731,7 @@ class BaseQuery:
         => loaded_rel_paths :  ['tags']
         => cls._create_filters_expr_with_alias_map(model, filters, alias_map):
            posts.id > :id_1 OR (posts.id < :id_2 AND tags_1.name IN (__[POSTCOMPILE_name_1]))
+
         => query :
         SELECT tags_1.add_date, tags_1.pub_date, tags_1.id, tags_1.name, posts.add_date AS add_date_1, posts.pub_date AS pub_date_1, posts.id AS id_1, posts.title, posts."desc", posts.content, posts.has_type, posts.category_id
         FROM posts
@@ -683,6 +739,10 @@ class BaseQuery:
             ON posts.id = posttags_1.post_id
         WHERE posts.id > :id_2 OR
                 posts.id < :id_3 AND tags_1.name IN (__[POSTCOMPILE_name_1])
+
+        =>  query : ORDER BY users_1.id DESC, employees.name ASC
+        => *cls._create_order_exprs_with_alias_map(model, orders, alias_map)) :
+            users_1.id DESC employees.name ASC
 
         => not_loaded_flatten_schema  >>  {'posts': 'subquery'}
 
@@ -812,8 +872,20 @@ class BaseQuery:
         # WHERE categories.id > :id_3 OR
         #   categories.id < :id_4 AND tags_1.id IN (__[POSTCOMPILE_id_5])
 
-
         #### 5. order by query 생략 ####
+        query = (
+            query
+            .order_by(*cls._create_order_exprs_with_alias_map(model, orders, alias_map))
+        )
+
+        print('query  >> ', query)
+        print('*cls._create_order_exprs_with_alias_map(model, orders, alias_map  >> ', *cls._create_order_exprs_with_alias_map(model, orders, alias_map))
+        # => ORDER BY users_1.id DESC, employees.name ASC
+        # => users_1.id DESC employees.name ASC
+
+
+
+
 
         #### 6. schema=None(___) -> flatten_schema={}(. : alias관계모델, 관계칼럼) + loaded_rel_paths(.)로
         #       filter에 등장한 관계 => outerjoin(joined)를 제외한
@@ -837,8 +909,6 @@ class BaseQuery:
             query = query\
                 .options(*_create_eager_option_exprs_with_flatten_schema(not_loaded_flatten_schema))
 
-            print('query  >> ', query)
-            print('(*_create_eager_option_exprs_with_flatten_schema(not_loaded_flatten_schema)  >> ', *_create_eager_option_exprs_with_flatten_schema(not_loaded_flatten_schema))
 
         print('query  >> ', query)
 
@@ -972,12 +1042,12 @@ class BaseQuery:
 
     # for create_order_bys
     @classmethod
-    def check_sortable_column(cls, column_name_for_check, model):
-        if column_name_for_check not in cls.get_sortable_columns(model):
-            raise KeyError(f'Invalid order by column: {column_name_for_check}')
+    def check_sortable_column_name(cls, model, attr):
+        if attr not in cls.get_sortable_columns(model):
+            raise KeyError(f'Invalid order by column: {attr}')
 
     @classmethod
-    def create_order_bys(cls, column_names, model=None):
+    def create_order_bys(cls, attrs, model=None):
         """
         StaticsQuery.create_order_bys(User, '-id')
         ->[<sqlalchemy.sql.elements.UnaryExpression object at 0x0000011E9E339B70>]
@@ -991,15 +1061,15 @@ class BaseQuery:
         if not model:
             model = cls
 
-        if not column_names:
+        if not attrs:
             return []
 
-        if not isinstance(column_names, (list, tuple, set)):
-            column_names = [column_names]
+        if not isinstance(attrs, (list, tuple, set)):
+            attrs = [attrs]
 
         order_by_columns = []
 
-        for column_name in column_names:
+        for attr in attrs:
             #### column_name이 아니라, 칼럼(InstrumentedAttribute) or 증감칼럼(UnaryExpression)으로 들어올 경우
             # => 바로 append시킨다.
             # >>> type(User.id)
@@ -1007,14 +1077,14 @@ class BaseQuery:
             # >>> type(User.id.desc())
             # <class 'sqlalchemy.sql.elements.UnaryExpression'> <- ColumnElement
             # => 변경해줘야한다.
-            if not isinstance(column_name, str):
-                if isinstance(column_name, InstrumentedAttribute):
-                    column_name = column_name.asc()
-                    order_by_columns.append(column_name)
-                elif isinstance(column_name, UnaryExpression):
-                    order_by_columns.append(column_name)
+            if not isinstance(attr, str):
+                if isinstance(attr, InstrumentedAttribute):
+                    attr = attr.asc()
+                    order_by_columns.append(attr)
+                elif isinstance(attr, UnaryExpression):
+                    order_by_columns.append(attr)
                 else:
-                    raise ValueError(f'잘못된 입력입니다 : {column_names}')
+                    raise ValueError(f'잘못된 입력입니다 : {attrs}')
                 continue
 
             # 지연으로 맥일 함수를 ()호출없이 가지고만 있는다.
@@ -1026,18 +1096,18 @@ class BaseQuery:
             # if column_name not in model.sortable_attributes:
             #     raise KeyError(f'Invalid order column: {column_name}')
             #### 2개를 한번에 처리(order_func + '-'달고 있으면 떼기)
-            order_func, column_name = (desc, column_name[1:]) if column_name.startswith(DESC_PREFIX) \
-                else (asc, column_name)
+            order_func, attr = (desc, attr[1:]) if attr.startswith(DESC_PREFIX) \
+                else (asc, attr)
 
             #### 추가 column_name에 id__count 등 집계함수가 있을 수 있다. => 검사는 순수 칼럼네임만 받아야한다.
-            if OPERATOR_OR_FUNC_SPLITTER in column_name:
-                column_name_for_check, func_name = column_name.split(OPERATOR_OR_FUNC_SPLITTER)
-                cls.check_sortable_column(column_name_for_check, model)
+            if OPERATOR_OR_FUNC_SPLITTER in attr:
+                column_name_for_check, func_name = attr.split(OPERATOR_OR_FUNC_SPLITTER)
+                cls.check_sortable_column_name(model, column_name_for_check)
             else:
-                cls.check_sortable_column(column_name, model)
+                cls.check_sortable_column_name(model, attr)
 
             # column을 만들고, desc()나 asc()를 지연으로 맥인다.
-            order_by_column = order_func(cls.create_column(model, column_name))
+            order_by_column = order_func(cls.create_column(model, attr))
 
             order_by_columns.append(order_by_column)
 
@@ -1395,6 +1465,8 @@ class BaseQuery:
             return func.strftime(date_format, date_column).label('date')
         else:
             raise NotImplementedError(f'Invalid dialect : {cls.DIALECT_NAME}')
+
+
 
 
 class StaticsQuery(BaseQuery):
