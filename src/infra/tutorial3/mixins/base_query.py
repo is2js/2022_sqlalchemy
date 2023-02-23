@@ -63,27 +63,19 @@ op_dict = {
     "between": "between"
 }
 
-
-def get_additional_operator(operator_name, column, value):
-    attr = next((op for op in (operator_name, f'{operator_name}_', f'__{operator_name}__')
-                 if hasattr(column, op)), None)
-    if not attr:
-        raise Exception(f'Invalid filter operator name: {operator_name}')
-
-    return getattr(column, attr)(value)
-
-
+#### 관계객체들은 aliased == mapper를 가지고 식을 만들기 때문에 getattr(mapper로 만든column, attr)(value)가 안된다.
+# operatios에서 지원하지 않은 is, isnot은  isnull이나 eq로 대체한다.
 # operator 함수객체는 from sqlalchemy.sql import operators에서 가져올 수 있다.
 # op = _operators[op_name]
 # expressions.append(op(column, value))
 _operators = {
     # lambda c,v로 정의하면 => 외부에서는  dict_value( c, v)로 입력해서 호출한다.
     'isnull': lambda c, v: (c == None) if v else (c != None),
-    # 추가
-    # 'is': lambda c, v: get_additional_operator('is', c, v),
-    'is': operators.is_,
-    'is_': operators.is_,
-    'isnot': operators.isnot,
+    # 추가 => 실패, alias 관계객체 -> alias관계컬럼으로 식을 만들어야하므로 일반적인 create_column 후 getattr is_를 불러오는게 안됨.
+    # => is, isnot_은  eq로 처리하면 된다. is_: eq=None /  isnot: ne=None
+    # 'is': lambda c, v:  c is v ,
+    # 'is_': operators.is_,
+    # 'isnot': lambda c, v:  c is not v ,
     # 'exact': operators.eq,
     'eq': operators.eq,
     'ne': operators.ne,  # not equal or is not (for None)
@@ -755,27 +747,34 @@ class BaseQuery:
             if not (rel_path in flatten_schema and flatten_schema[rel_path] in [SUBQUERY, SELECTIN]):
                 # print('rel_column.property.direction.name>>' , rel_column.property.direction.name)
                 # rel_column.property.direction.name >> MANYTOMANY
+                query = (
+                    query
+                    .outerjoin(aliased_rel_model, rel_column)
+                    .options(contains_eager(rel_path, alias=aliased_rel_model))
+                )
                 #### 필터를 만들기 위한, join 생성 중에 관계 방향이 ManyToOne일때만 innerjoin해보자.
-                relation_direction = rel_column.property.direction.name
-                # print('relation_direction  >> ', relation_direction)
-                
-                if relation_direction == 'MANYTOONE':
-                    query = (
-                        query
-                        .join(aliased_rel_model, rel_column)
-                        .options(contains_eager(rel_path, alias=aliased_rel_model))#, innerjoin=True)) # innerjoin옵션없음.
-                    )
-                    # print('query  >> ', query)
-                    # FROM employees
-                    # JOIN users AS users_1
-                    #     ON users_1.id = employees.user_id
+                #### => inner join할 경우, main entity가 사라질 수 있으니, 필터링에 있는 경우를 제외하자.
 
-                else:
-                    query = (
-                        query
-                        .outerjoin(aliased_rel_model, rel_column)
-                        .options(contains_eager(rel_path, alias=aliased_rel_model))
-                    )
+                # relation_direction = rel_column.property.direction.name
+                # # print('relation_direction  >> ', relation_direction)
+                #
+                # if relation_direction == 'MANYTOONE':
+                #     query = (
+                #         query
+                #         .join(aliased_rel_model, rel_column)
+                #         .options(contains_eager(rel_path, alias=aliased_rel_model))#, innerjoin=True)) # innerjoin옵션없음.
+                #     )
+                #     # print('query  >> ', query)
+                #     # FROM employees
+                #     # JOIN users AS users_1
+                #     #     ON users_1.id = employees.user_id
+                #
+                # else:
+                #     query = (
+                #         query
+                #         .outerjoin(aliased_rel_model, rel_column)
+                #         .options(contains_eager(rel_path, alias=aliased_rel_model))
+                #     )
 
                 # 3-5. eager load가 완료된 rel_path들을 따로 모아둔다.
                 loaded_rel_paths.append(rel_path)
@@ -841,9 +840,10 @@ class BaseQuery:
             print('query  >> ', query)
             print('(*_create_eager_option_exprs_with_flatten_schema(not_loaded_flatten_schema)  >> ', *_create_eager_option_exprs_with_flatten_schema(not_loaded_flatten_schema))
 
+        print('query  >> ', query)
 
 
-        return
+        return query
 
     @classmethod
     def create_filters(cls, model, filters):
