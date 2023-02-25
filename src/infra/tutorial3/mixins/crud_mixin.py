@@ -16,7 +16,7 @@ from src.infra.config.connection import db
 from src.infra.tutorial3.mixins.base_query import BaseQuery
 
 # for def const_column_names()
-from src.infra.tutorial3.mixins.session_mixin import SessionMixin
+from src.infra.tutorial3.mixins.object_mixin import ObjectMixin
 from src.infra.tutorial3.mixins.utils.classorinstancemethod import class_or_instancemethod
 from src.infra.tutorial3.mixins.utils.classproperty import class_property
 
@@ -42,7 +42,7 @@ Base.metadata = MetaData(naming_convention=naming_convention)
 
 # class CRUDMixin(Base, BaseQuery):
 # mixin 2. Mixin의 Base는 BaseModel Base가 아닌 새로운 Base를 기능이용을 위해 땡겨쓰는 것이다.
-class CRUDMixin(Base, BaseQuery, SessionMixin):
+class CRUDMixin(Base, BaseQuery):
     __abstract__ = True  # Base상속 model인데, tablename안정해줄거면 있어야한다.
 
     # : https://stackoverflow.com/questions/20460339/flask-sqlalchemy-constructor
@@ -93,7 +93,7 @@ class CRUDMixin(Base, BaseQuery, SessionMixin):
 
     # 3. obj의 내부 _query쿼리를 2.0스타일로 실행
     #   first()/all()/count() 등의 실행메서드는 생성된 객체.method()로 작동하므로 일반 self메서드로 작성한다.
-    def first(self, auto_close: bool = True):
+    def first(self):
         result = self._session.scalars(self._query).first()
         self.close()
         return result

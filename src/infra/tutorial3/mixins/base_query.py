@@ -119,11 +119,6 @@ _operators = {
 
 # for create_eager_options
 # 상수로 만든 뒤, 사용시 import해서 쓰도록
-## eager types
-JOINED = 'joined'
-INNER_JOINED = 'inner_joined'
-SUBQUERY = 'subquery'
-SELECTIN = 'selectin'
 
 ## eager load map
 eager_load_map = {
@@ -135,29 +130,7 @@ eager_load_map = {
 
 
 
-# for create_eager_options
-# depth가 .으로 연결된 칼럼명 조합으로 들어온다.
-def _create_eager_option_exprs_with_flatten_schema(flatten_schema):
-    """
-    input: {'user': JOINED, 'comments': SUBQUERY, 'comments.users': JOINED'}
-    => 이미 lazy='dynamic'으로 준 칼럼은 subqueryload를 할 수 없다.
-    => 할때마다 가져오는 lazy='dynamic' => sqlalchemy.orm.dynamic.AppenderQuery
-    => 옵션없다가 한번에 eagerload명시 가져오는 =>  sqlalchemy.orm.strategy_options.Load
 
-    => [<sqlalchemy.orm.strategy_options._UnboundLoad object at 0x0000025E9DBF7D68>,   # Load(strategy=None)
-    <sqlalchemy.orm.strategy_options._UnboundLoad object at 0x0000025E9DBF7E10>,   # Load(strategy=None)
-    <sqlalchemy.orm.strategy_options._UnboundLoad object at 0x0000025E9DBF7EF0>]   # Load(strategy=None)
-
-    """
-    # 1) 입력한 flattend_schema(dict)를 순회(순서 상관없음. depth는 .이 해결)하면서 종류에 따라 load모듈을 list에 append한다.
-    result = []
-    for column_name, eager_type in flatten_schema.items():
-        if eager_type not in eager_load_map.keys():
-            raise NotImplementedError(f'Invalid eager load type: {eager_type} by column name: {column_name}')
-
-        result.append(eager_load_map[eager_type](column_name))
-
-    return result
 
 
 class BaseQuery:
@@ -166,6 +139,12 @@ class BaseQuery:
     DESC_PREFIX = '-'
     OPERATOR_OR_FUNC_SPLITTER = '__'
     RELATION_SPLITTER = '___'
+
+    ## eager types
+    JOINED = 'joined'
+    INNER_JOINED = 'inner_joined'
+    SUBQUERY = 'subquery'
+    SELECTIN = 'selectin'
 
     @classmethod
     def get_column(cls, model, column_name):
@@ -619,6 +598,9 @@ class BaseQuery:
     def _create_order_exprs_with_alias_map(cls, model, orders, alias_map):
         if not orders:
             return []
+        if orders and not isinstance(orders, (list, tuple, set)):
+            orders = [orders]
+        print('*orders  >> ', *orders)
 
         expressions = []
 
@@ -632,7 +614,11 @@ class BaseQuery:
                     desc_prefix = cls.DESC_PREFIX
                     attr = attr.lstrip(cls.DESC_PREFIX)
                 # 3) 관계명을 떼온 뒤, alias에서 aliased_rel_model , rel_column을 가져온다.
+                # print('attr  >> ', attr)
+
                 rel_column_and_attr_name = attr.rsplit(cls.RELATION_SPLITTER, 1)
+                # print('rel_column_and_attr_name  >> ', rel_column_and_attr_name)
+
                 current_model, attr = alias_map[rel_column_and_attr_name[0]][0], desc_prefix + rel_column_and_attr_name[
                     1]
             else:
@@ -642,6 +628,8 @@ class BaseQuery:
             # 5) 해당 모델 + attr_name을 가지고 표현식을 만든다.
             # -> main model 전용이라 그냥 들어간다면,
             # print('model, attr  >> ', current_model, attr)
+
+            print('current_model, attr  >> ', current_model, attr)
 
             expressions.append(cls.create_order_expr(current_model, attr))
 
@@ -690,7 +678,7 @@ class BaseQuery:
         flatten_schema = cls._flat_schema(schema)
         if not orders:
             orders = []
-        if orders and not isinstance(orders, abc.Sequence):
+        if orders and not isinstance(orders, (list, tuple, set)):
             orders = [orders]
 
 
@@ -747,7 +735,7 @@ class BaseQuery:
             #### custom 다대일에서 fk가 있을 경우, many<-one시 다박히는 경우 inner join으로
             # Post.tags.property.direction.name => 'MANYTOONE' 'ONETOMANY' 'MANYTOMANY'
             # => 메서드로 정의
-            if not (rel_path in flatten_schema and flatten_schema[rel_path] in [SUBQUERY, SELECTIN]):
+            if not (rel_path in flatten_schema and flatten_schema[rel_path] in [cls.SUBQUERY, cls.SELECTIN]):
                 # print('rel_column.property.direction.name>>' , rel_column.property.direction.name)
                 # rel_column.property.direction.name >> MANYTOMANY
                 query = (
@@ -847,7 +835,7 @@ class BaseQuery:
             #              subqueryload(Product.tags)).all()
             # =>
             query = query \
-                .options(*_create_eager_option_exprs_with_flatten_schema(not_loaded_flatten_schema))
+                .options(*cls._create_eager_option_exprs_with_flatten_schema(not_loaded_flatten_schema))
 
         return query
 
@@ -1063,7 +1051,7 @@ class BaseQuery:
             return []
 
         flatten_schema = cls._flat_schema(schema)
-        return _create_eager_option_exprs_with_flatten_schema(flatten_schema)
+        return cls._create_eager_option_exprs_with_flatten_schema(flatten_schema)
 
     #  for raw_join in relation
     @classmethod
@@ -1444,7 +1432,7 @@ class BaseQuery:
                 # 2-2) value가 tuple[0]의 eager type이 생략된  dict로 입력된 경우는, { User.posts: {  Post.comments : { Comment.user: JOINED }}}
                 # => eager type이 JOINED로 고정이며 + value가 내부shcema를 의미한다.
                 elif isinstance(value, dict):
-                    eager_type, inner_schema = JOINED, value
+                    eager_type, inner_schema = cls.JOINED, value
 
                 # 2-3) 그외의 경우는 내부schema는 없는 것이며, value가 eager_type인 경우다.
                 else:
@@ -1468,6 +1456,30 @@ class BaseQuery:
 
         return result
 
+    # for create_eager_options
+    # depth가 .으로 연결된 칼럼명 조합으로 들어온다.
+    @classmethod
+    def _create_eager_option_exprs_with_flatten_schema(cls, flatten_schema):
+        """
+        input: {'user': JOINED, 'comments': SUBQUERY, 'comments.users': JOINED'}
+        => 이미 lazy='dynamic'으로 준 칼럼은 subqueryload를 할 수 없다.
+        => 할때마다 가져오는 lazy='dynamic' => sqlalchemy.orm.dynamic.AppenderQuery
+        => 옵션없다가 한번에 eagerload명시 가져오는 =>  sqlalchemy.orm.strategy_options.Load
+
+        => [<sqlalchemy.orm.strategy_options._UnboundLoad object at 0x0000025E9DBF7D68>,   # Load(strategy=None)
+        <sqlalchemy.orm.strategy_options._UnboundLoad object at 0x0000025E9DBF7E10>,   # Load(strategy=None)
+        <sqlalchemy.orm.strategy_options._UnboundLoad object at 0x0000025E9DBF7EF0>]   # Load(strategy=None)
+
+        """
+        # 1) 입력한 flattend_schema(dict)를 순회(순서 상관없음. depth는 .이 해결)하면서 종류에 따라 load모듈을 list에 append한다.
+        result = []
+        for column_name, eager_type in flatten_schema.items():
+            if eager_type not in eager_load_map.keys():
+                raise NotImplementedError(f'Invalid eager load type: {eager_type} by column name: {column_name}')
+
+            result.append(eager_load_map[eager_type](column_name))
+
+        return result
 
 class StaticsQuery(BaseQuery):
 
