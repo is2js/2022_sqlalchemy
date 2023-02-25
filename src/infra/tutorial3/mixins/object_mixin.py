@@ -2,7 +2,7 @@ from collections import OrderedDict, defaultdict, abc
 
 from sqlalchemy import MetaData, select, func, text
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import InstrumentedAttribute, aliased, contains_eager
+from sqlalchemy.orm import InstrumentedAttribute, aliased, contains_eager, Session
 
 from src.infra.config.connection import db
 from src.infra.tutorial3.mixins.base_query import BaseQuery
@@ -145,34 +145,28 @@ class ObjectMixin(BaseQuery):
                 self.set_session_and_query(session)
 
     @classmethod
-    def create_obj(cls, session, query=None, schema=None,
+    def create_obj(cls, session: Session = None, query=None, schema=None,
                    filters=None, orders=None,
                    **kwargs):
 
-        obj = cls(**kwargs).init_obj(session, query=query, schema=schema,
-                                     filters=filters, orders=orders)
+        obj = cls(**kwargs).init_obj(session=session, query=query, schema=schema)
         return obj
 
-    def init_obj(self, session, query=None, schema=None,
-                 filters=None, orders=None):
+    def init_obj(self, session: Session = None, query=None, schema=None):
 
         self.served = None  # set_sess에서 T/F 초기화
-        self._session = self.set_sess(session)  # 내부에서 어떻게든 초기화
+        self._session = self._set_session_and_check_served(session)  # 내부에서 어떻게든 초기화
         # self._query = self.set_query(query) or None
-        self._query = self.set_query(query) or select(self.__class__)  # None으로 초기화하지말고, select(main mdoel)로 초기화
-        self._flatten_schema = self.set_schema(schema) or {}
-        self._loaded_rel_paths = []  # set_alias_map에서 update  +   실행직전 flatten_schema+ 이것으로 eagerload할때 쓰임.
-        self._alias_map = self.set_alias_map_by_attrs(filters, orders) or OrderedDict({})
+        self._query = self._set_query(query) or select(self.__class__)  # None으로 초기화하지말고, select(main mdoel)로 초기화
+        self._flatten_schema = self._set_schema(schema) or {}
 
-        # self.set_sess(session)\
-        #     .set_query(query)\
-        #     .set_schema(schema) \
-        #     .set_alias_map_by_attrs(filters, orders)
+        self._loaded_rel_paths = []  # set_alias_map에서 update  +   실행직전 flatten_schema+ 이것으로 eagerload할때 쓰임.
+        self._alias_map = OrderedDict({})
 
         return self
 
     # 외부인자 없어도 내부 생성해서 반환한다.
-    def set_sess(self, session):
+    def _set_session_and_check_served(self, session):
 
         # 1) 외부session주어지면, 기존session가진 것 여부 상관없이 그것으로 교체 or 초기화
         if session:
@@ -195,7 +189,7 @@ class ObjectMixin(BaseQuery):
             else:
                 return False
 
-    def set_query(self, query=None, join=None, filter_by=None, order_by=None, options=None):
+    def _set_query(self, query=None, join=None, filter_by=None, order_by=None, options=None):
         def _is_chaining():
             return not (join is None and filter_by is None and order_by is None and options is None)
 
@@ -247,7 +241,7 @@ class ObjectMixin(BaseQuery):
 
         return self._query
 
-    def set_schema(self, schema=None):
+    def _set_schema(self, schema=None):
         if not schema:
             return False  # -> 초기화
 
@@ -263,7 +257,7 @@ class ObjectMixin(BaseQuery):
         return self._flatten_schema
 
     # filters, orders -> filter_or_order_attrs 통해  alias_map이 채워진다.
-    def set_alias_map_by_attrs(self, filters: dict = None, orders=None):
+    def process_filter_or_orders(self, filters: dict = None, orders=None):
         # 의존성 필드 포함시 내부에서 같이 초기화 -> 내부/외부여부에 따라 외부x시-> 내부 존재여부 확인후 초기화 -> 외부o시 할당 초기화
         # 1. 외부x시 내부 확인후 없으면 return False 초기화
         if not (filters or orders):
@@ -281,16 +275,19 @@ class ObjectMixin(BaseQuery):
             filter_or_order_attrs += list(map(lambda s: s.lstrip(DESC_PREFIX), orders))
 
         # 2-1. alias_map 채우기 => 내부에서  update VS 빈값에 할당? (자료구조의 경우 update위주로)
-        self._parse_attrs_and_set_alias_map(parent_model=self.__class__, parent_path='', attrs=filter_or_order_attrs)
+        self._set_alias_map_and_loaded_rel_paths_and_eager_exprs(parent_model=self.__class__, parent_path='',
+                                                                 attrs=filter_or_order_attrs)
         # 2-2. set된 alias_map -> eager expression 체이닝 후 loaded_rel_paths 채워 업데이트
         # self._set_eager_exprs_and_load_rel_paths_from_alias_map()
         # => set_alias_map 시 자동으로 처리되어야하므로 내부의 마지막으로 이동
         # 2-3.
         self._set_filter_or_order_exprs(filters=filters, orders=orders)
-        # 2-4. flatten_schema + loaded_rel_paths -> unloaded schema처리하기
-        self._set_unloaded_eager_exprs()
 
-    def _parse_attrs_and_set_alias_map(self, parent_model, parent_path, attrs):
+        # 2-4. flatten_schema + loaded_rel_paths -> unloaded schema처리하기
+        # self._set_unloaded_eager_exprs()
+        # => unloaded는 .first() 등의 실행메서드로 옮겨감. filter, order 다 처리하고나서 로드
+
+    def _set_alias_map_and_loaded_rel_paths_and_eager_exprs(self, parent_model, parent_path, attrs):
         """
         input attrs: ['id__gt', 'id__lt', 'tags___property__in']
         output: => OrderedDict([('tags', (<AliasedClass at 0x1de19e32908; Tag>, <sqlalchemy.orm.attributes.InstrumentedAttribute object at 0x000001DE19999150>))])
@@ -320,7 +317,7 @@ class ObjectMixin(BaseQuery):
             if path not in self._alias_map.keys():
                 self._alias_map[path] = aliased_rel_model, rel_column
 
-            self._parse_attrs_and_set_alias_map(aliased_rel_model, path, rel_attr)
+            self._set_alias_map_and_loaded_rel_paths_and_eager_exprs(aliased_rel_model, path, rel_attr)
 
         # 2-2. set된 alias_map -> eager expression 체이닝 후 loaded_rel_paths 채워 업데이트
         self._set_eager_exprs_and_load_rel_paths()
@@ -337,17 +334,31 @@ class ObjectMixin(BaseQuery):
             if rel_path in self._loaded_rel_paths:
                 continue
 
-            # (새로운 rel_path에 대해)
             # 2. flatten schema가 있고 그 속에 subquery, selection으로 기록된 rel path들은 대상이 아니다.
-            if rel_path in self._flatten_schema and self._flatten_schema[rel_path] in [self.SUBQUERY, self.SELECTIN]:
-                continue
+            #### 주석처리 ####
+            # if rel_path in self._flatten_schema and self._flatten_schema[rel_path] in [self.SUBQUERY, self.SELECTIN]:
+            #     continue
+            #### 주석처리 ####
+            #### 추가 수정. eager_exprs(outerjoin)을 flatten_schema보다 더 우선적으로 하게 해서
+            #    loaded_rel_paths에 올리고, -> 실행메서드에서 나머지 subquery/selectin을 outerjoin(filter/orders)제외하고 한번에 처리에정이다.
+            #  -> 그러므로, [schema 우선검사]하고 올리지 말고, filter,/order부터 다 올리고 -> 나중에 처리
+
+            # ===> 관계칼럼이 중복되더라도, flatten_schema보다 filter/order에 나온 것이 우선으로 처리됨.
+            # filters = { 'id__lt': 500, 'employee___name__ne': None, 'department___id__ne': None}
+            # schema =  schema={'department': 'selectin'}
+            # 주석처리 전: self._loaded_rel_paths  >>  ['employee']
+            #            unloaded_flatten_schema  >>  {'department': 'selectin'}
+            # 주석처리 후: self._loaded_rel_paths  >>  ['employee', 'department']
+            #           unloaded_flatten_schema  >>  {}
+            # ====> 필터링은 되나, .all() / exeucte(selects=)시 중복문제가 생긴다   중복/casadian product
+
 
             # 체이닝을 직접하지 않기 위해, eager outerjoin에 필요한 3가지 인자를 튜플로 건네준다.
             # [0]: outerjoin(첫번재rel_model) 이자 contains_eager의 alias=인자,  ex> AliasedClass Post
             # [1]: outerjoin의 2번재 인자 (main class의 관계칼럼) ex> User.posts
             # [2]: conatains_eager의 1번째 인자 rel_path ex> posts
 
-            self.set_query(join=(aliased_rel_model, rel_attr, rel_path))
+            self._set_query(join=(aliased_rel_model, rel_attr, rel_path))
 
             self._loaded_rel_paths.append(rel_path)
 
@@ -357,9 +368,9 @@ class ObjectMixin(BaseQuery):
         #    BaseQuery가 -> smartmixin, objectmixin에서 양방향으로 쓰이므로, smartmixin은 objectmixin을 슬 수 없다?
         #               -> smartmixin은 BaseQuery를 일단 못쓰게 막고, objectmixin을 가지고 테스트 한다.
         if filters:
-            self.set_query(filter_by=self._create_filters_expr_with_alias_map(self.__class__, filters, self._alias_map))
+            self._set_query(filter_by=self._create_filters_expr_with_alias_map(self.__class__, filters, self._alias_map))
         if orders:
-            self.set_query(order_by=self._create_order_exprs_with_alias_map(self.__class__, orders, self._alias_map))
+            self._set_query(order_by=self._create_order_exprs_with_alias_map(self.__class__, orders, self._alias_map))
 
     def _set_unloaded_eager_exprs(self):
         # 1. unloaded = flatten_schema가 있을 때만  => flatten - loaded의 나머지 'subquery', 'selectin'을 eagerload한다.
@@ -371,13 +382,17 @@ class ObjectMixin(BaseQuery):
             rel_path: value for rel_path, value in self._flatten_schema.items()
             if rel_path not in self._loaded_rel_paths
         }
+        print('self._loaded_rel_paths  >> ', self._loaded_rel_paths)
+
+        print('unloaded_flatten_schema  >> ', unloaded_flatten_schema)
+        
         # 이것도 없으면 끝낸다.
         if not unloaded_flatten_schema:
             return
 
         # 3. obj없이 class로 사용하기 위해 BaseQuery의 classmehtod를 self로 호출해서 expression을 만든 뒤
         #    query에 set한다. -> outerjoin(eager=)과 달리, join없는 eagerload는 options로 들어간다.
-        self.set_query(options=self._create_eager_option_exprs_with_flatten_schema(unloaded_flatten_schema))
+        self._set_query(options=self._create_eager_option_exprs_with_flatten_schema(unloaded_flatten_schema))
 
         # 4. #### 추가, eagerload한 것도 loaded_rel_path에 추가해서, 다음번 unloaded에 안걸리게 한다.
         # -> schema에 subquery/selectin으로 적은 것들이, 뒤에 또 join안되게 조심해야할 듯.
