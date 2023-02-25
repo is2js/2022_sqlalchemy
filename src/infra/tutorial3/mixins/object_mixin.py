@@ -149,24 +149,24 @@ class ObjectMixin(BaseQuery):
                    filters=None, orders=None,
                    **kwargs):
 
-        obj = cls(**kwargs).init_obj(session=session, query=query, schema=schema)
+        obj = cls(**kwargs).init_obj(session=session, query=query, schema=schema, filters=filters, orders=orders)
         return obj
 
-    def init_obj(self, session: Session = None, query=None, schema=None):
+    def init_obj(self, session: Session = None, query=None, schema=None, filters=None, orders=None):
 
-        self.served = None  # set_sess에서 T/F 초기화
-        self._session = self._set_session_and_check_served(session)  # 내부에서 어떻게든 초기화
-        # self._query = self.set_query(query) or None
-        self._query = self._set_query(query) or select(self.__class__)  # None으로 초기화하지말고, select(main mdoel)로 초기화
+        self.served = None  # set_session_and_check_served에서 T/F 초기화
+        self._session = self.set_session_and_check_served(session)  # 내부에서 어떻게든 초기화
+        self._query = self.set_query(query) or select(self.__class__) # None으로 초기화하지말고, select(main mdoel)로 초기화
         self._flatten_schema = self._set_schema(schema) or {}
 
-        self._loaded_rel_paths = []  # set_alias_map에서 update  +   실행직전 flatten_schema+ 이것으로 eagerload할때 쓰임.
-        self._alias_map = OrderedDict({})
+        self._loaded_rel_paths = []  # filter or orders가 존재시, process_filter_or_orders에서 채워짐.
+        self._alias_map = OrderedDict({}) if not (filters or orders) \
+            else self.process_filter_or_orders(filters=filters, orders=orders)
 
         return self
 
     # 외부인자 없어도 내부 생성해서 반환한다.
-    def _set_session_and_check_served(self, session):
+    def set_session_and_check_served(self, session):
 
         # 1) 외부session주어지면, 기존session가진 것 여부 상관없이 그것으로 교체 or 초기화
         if session:
@@ -189,7 +189,7 @@ class ObjectMixin(BaseQuery):
             else:
                 return False
 
-    def _set_query(self, query=None, join=None, filter_by=None, order_by=None, options=None):
+    def set_query(self, query=None, join=None, filter_by=None, order_by=None, options=None):
         def _is_chaining():
             return not (join is None and filter_by is None and order_by is None and options is None)
 
@@ -203,8 +203,7 @@ class ObjectMixin(BaseQuery):
         # => 체이닝 여부를 확인하고 아니라면 해당 쿼리를 그냥 삽입하자.
         if _is_chaining():
             if not hasattr(self, '_query'):
-                # self._query = select(self.__class__)
-                self._query = select(text('*'))
+                self._query = select(self.__class__)
 
             # 이미 select( main )으로 작성된 상황이라면 체이닝을 해야하는데,
             # -> 하려면 인자로 expression만 받아서, 틀에 끼워넣어줘야한다.
@@ -228,15 +227,13 @@ class ObjectMixin(BaseQuery):
                 )
 
             if options:
-                print('*options  >> ', *options)
-
                 self._query = (
                     self._query
                     .options(*options)
                 )
 
+        # 체이닝이 아닌 query가 들어올 경우, 최초 init시 들어온 query=로서 할당 초기화
         else:
-            #
             self._query = query
 
         return self._query
@@ -352,13 +349,12 @@ class ObjectMixin(BaseQuery):
             #           unloaded_flatten_schema  >>  {}
             # ====> 필터링은 되나, .all() / exeucte(selects=)시 중복문제가 생긴다   중복/casadian product
 
-
             # 체이닝을 직접하지 않기 위해, eager outerjoin에 필요한 3가지 인자를 튜플로 건네준다.
             # [0]: outerjoin(첫번재rel_model) 이자 contains_eager의 alias=인자,  ex> AliasedClass Post
             # [1]: outerjoin의 2번재 인자 (main class의 관계칼럼) ex> User.posts
             # [2]: conatains_eager의 1번째 인자 rel_path ex> posts
 
-            self._set_query(join=(aliased_rel_model, rel_attr, rel_path))
+            self.set_query(join=(aliased_rel_model, rel_attr, rel_path))
 
             self._loaded_rel_paths.append(rel_path)
 
@@ -368,9 +364,9 @@ class ObjectMixin(BaseQuery):
         #    BaseQuery가 -> smartmixin, objectmixin에서 양방향으로 쓰이므로, smartmixin은 objectmixin을 슬 수 없다?
         #               -> smartmixin은 BaseQuery를 일단 못쓰게 막고, objectmixin을 가지고 테스트 한다.
         if filters:
-            self._set_query(filter_by=self._create_filters_expr_with_alias_map(self.__class__, filters, self._alias_map))
+            self.set_query(filter_by=self._create_filters_expr_with_alias_map(self.__class__, filters, self._alias_map))
         if orders:
-            self._set_query(order_by=self._create_order_exprs_with_alias_map(self.__class__, orders, self._alias_map))
+            self.set_query(order_by=self._create_order_exprs_with_alias_map(self.__class__, orders, self._alias_map))
 
     def _set_unloaded_eager_exprs(self):
         # 1. unloaded = flatten_schema가 있을 때만  => flatten - loaded의 나머지 'subquery', 'selectin'을 eagerload한다.
@@ -385,14 +381,14 @@ class ObjectMixin(BaseQuery):
         print('self._loaded_rel_paths  >> ', self._loaded_rel_paths)
 
         print('unloaded_flatten_schema  >> ', unloaded_flatten_schema)
-        
+
         # 이것도 없으면 끝낸다.
         if not unloaded_flatten_schema:
             return
 
         # 3. obj없이 class로 사용하기 위해 BaseQuery의 classmehtod를 self로 호출해서 expression을 만든 뒤
         #    query에 set한다. -> outerjoin(eager=)과 달리, join없는 eagerload는 options로 들어간다.
-        self._set_query(options=self._create_eager_option_exprs_with_flatten_schema(unloaded_flatten_schema))
+        self.set_query(options=self._create_eager_option_exprs_with_flatten_schema(unloaded_flatten_schema))
 
         # 4. #### 추가, eagerload한 것도 loaded_rel_path에 추가해서, 다음번 unloaded에 안걸리게 한다.
         # -> schema에 subquery/selectin으로 적은 것들이, 뒤에 또 join안되게 조심해야할 듯.
