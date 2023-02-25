@@ -416,7 +416,13 @@ class ObjectMixin(BaseQuery):
         # 외부session이면 close할 필요없이 반영만  [외부 쓰던 session은 close 대신] -> [flush()로 db 반영시켜주기]
         else:
             self._session.flush()
+    @class_or_instancemethod
+    def first(cls, session: Session = None):
+        obj = cls.create_obj(session=session)
 
+        return obj.first()
+
+    @first.instancemethod
     def first(self):
         # 실행메서드 직전에schema상의 subquery, selectin eagerload 처리
         self._set_unloaded_eager_exprs()
