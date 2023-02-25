@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from src.infra.config.base import Base
 from src.infra.tutorial3.mixins.objectmixin import ObjectMixin
+from src.infra.tutorial3.mixins.utils.classorinstancemethod import class_or_instancemethod
 from src.infra.tutorial3.mixins.utils.classproperty import class_property
 
 constraints_map = {
@@ -120,3 +121,59 @@ class CRUDMixin(Base, ObjectMixin):
     ############
     # Read     #
     ############
+    @class_or_instancemethod
+    def load(cls, schema: dict, session: Session = None):
+        """
+        EmployeeDepartment.load({'employee':'selectin'})
+        => obj._flatten_schema  >>  {'employee': 'selectin'}
+
+
+        """
+        obj = cls.create_obj(session=session, schema=schema)
+        print('obj._flatten_schema  >> ', obj._flatten_schema)
+
+        return obj
+
+    @load.instancemethod
+    def load(self, schema):
+        """
+        EmployeeDepartment.filter_by().load({'employee':'selectin'})
+        => self._flatten_schema  >>  {'employee': 'selectin'}
+
+        """
+        # eagerload는 filter/order이후 실행메서드에서 처리되므로, schema만 올려주면 된다.
+        self.set_schema(schema)
+        print('self._flatten_schema  >> ', self._flatten_schema)
+
+        return self
+
+    @class_or_instancemethod
+    def filter_by(cls, session: Session = None, **kwargs):
+        """
+        EmployeeDepartment.filter_by(id=1, employee___id__ne=None).all()
+        => EmployeeDepartment[id=None]
+        SELECT employees_1.*, employee_departments.*
+        FROM employee_departments
+        LEFT OUTER JOIN employees AS employees_1
+            ON employees_1.id = employee_departments.employee_id
+        WHERE employee_departments.id = :id_2 AND employees_1.id IS NOT NULL
+        """
+
+        obj = cls.create_obj(session=session, filters=kwargs)
+        print('obj._query  >> ', obj._query)
+
+        return obj
+
+    @filter_by.instancemethod
+    def filter_by(self, **kwargs):
+        """
+        EmployeeDepartment.filter_by().filter_by(id=1).first()
+        => EmployeeDepartment[id=None]
+        SELECT employee_departments.*
+        FROM employee_departments
+        WHERE employee_departments.id = :id_1
+        """
+        self.process_filter_or_orders(filters=kwargs)
+        print('self._query  >> ', self._query)
+
+        return self

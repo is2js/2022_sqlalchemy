@@ -1040,7 +1040,7 @@ class BaseQuery:
     # for create_eager_options
     #### 추가) join과 유사한 eagerload를  위한 statement
     @classmethod
-    def create_eager_options(cls, schema=None):
+    def create_eager_exprs(cls, schema=None):
         """
         BaseQuery.create_eager_options({'user' : 'joined', 'comments': ('subquery', {'users': 'joined'})})
         => flatten_schema:  => {'user': JOINED, 'comments': SUBQUERY, 'comments.users': JOINED'}
@@ -1144,7 +1144,7 @@ class BaseQuery:
 
         stmt = (
             select(*select_columns)
-            .options(*cls.create_eager_options(schema=eager_options))
+            .options(*cls.create_eager_exprs(schema=eager_options))
         )
 
         # 첫 객체 생성이 raw_join이었을 경우, 중간에 삽입한다.
