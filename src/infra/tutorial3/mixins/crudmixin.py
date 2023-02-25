@@ -24,7 +24,9 @@ class CRUDMixin(Base, ObjectMixin):
     @classmethod
     def create(cls, session: Session = None, auto_commit: bool = True, **kwargs):
 
-        obj = cls.create_obj(session=session, **kwargs)
+        # obj = cls.create_obj(session=session, **kwargs)
+        obj = cls.create_obj(session=session)
+        obj.fill(**kwargs) # 검증을 위해 fill을 사용한다.
 
         # 1. 만들어진 [미등록 obj]내 unique=True인 칼럼의 값을 가져와, 존재하는지 검사한다.
         if obj.exists_self():
@@ -237,7 +239,7 @@ class CRUDMixin(Base, ObjectMixin):
         return self_primary_key
 
     ###################
-    # Update -        # -> only self method => create_obj없이 mode_obj에서 [최초호출].init_obj()로 초기화 [중간호출] set_query?
+    # Update -        # -> only self method => create_obj없이 model_obj에서 [최초호출].init_obj()로 초기화
     ###################
     def update(self, session: Session = None, auto_commit: bool = True, **kwargs):
         """
@@ -260,6 +262,9 @@ class CRUDMixin(Base, ObjectMixin):
         except:
             return False, '업데이트 실패'
 
+    ###################
+    # Fill for Update # -> .save()하기 전에, 채울 때 settable_column_name인지 확인용 / 같은 값은 아닌지 확인용으로 사용할 수 있다.
+    ###################
     # for update
     def fill(self, **kwargs):
 
@@ -278,11 +283,7 @@ class CRUDMixin(Base, ObjectMixin):
             if not is_updated:
                 is_updated = True
 
-        if not is_updated:
-            # 다 같은 값이라서 업데이트 안되면 return false
-            return False
-
-        return self
+        return is_updated # 한번 이라도 업뎃되면 True/ 아니면 False 반환
 
     # for update - fill
     @class_property
@@ -322,3 +323,4 @@ class CRUDMixin(Base, ObjectMixin):
         # [ hybrid_property  +  InstrumentedAttribute (ColumnProperty + RelationshipProperty) ]
         return [prop.__name__ for prop in props
                 if isinstance(prop, hybrid_property)]
+
