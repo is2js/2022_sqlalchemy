@@ -1,6 +1,7 @@
 # ObjectMixin(BaseQuery) 이후로는 세팅된 Base를 사용하여, BaseModel이 Base대신 이것을 상속한다.
 from sqlalchemy import PrimaryKeyConstraint, ForeignKeyConstraint, UniqueConstraint, exists
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.orm import Session, RelationshipProperty
 
 from src.infra.config.base import Base
 from src.infra.tutorial3.mixins.objectmixin import ObjectMixin
@@ -90,7 +91,7 @@ class CRUDMixin(Base, ObjectMixin):
 
         return self_unique_key
 
-    # for exists_self
+    # for exists_self + for update - fill - settable column snames
     @class_property
     def column_names(cls):
         return cls.__table__.columns.keys()
@@ -99,7 +100,7 @@ class CRUDMixin(Base, ObjectMixin):
     def foreign_key_names(cls):
         return cls.get_constraint_attr_names(target='fk')
 
-    # for create + ## 실행메서드 ##
+    # for create + for update  ## 실행메서드 ##
     def save(self, auto_commit: bool = True):
         #### try/catch는 외부세션을 넣어주는데서 할 것이다?
         self._session.add(self)
@@ -125,7 +126,7 @@ class CRUDMixin(Base, ObjectMixin):
 
         """
         obj = cls.create_obj(session=session, schema=schema)
-        print('obj._flatten_schema  >> ', obj._flatten_schema)
+        print('obj._flatten_schema in load  >> ', obj._flatten_schema)
 
         return obj
 
@@ -138,7 +139,7 @@ class CRUDMixin(Base, ObjectMixin):
         """
         # eagerload는 filter/order이후 실행메서드에서 처리되므로, schema만 올려주면 된다.
         self.set_schema(schema)
-        print('self._flatten_schema  >> ', self._flatten_schema)
+        print('self._flatten_schema in load >> ', self._flatten_schema)
 
         return self
 
@@ -172,7 +173,7 @@ class CRUDMixin(Base, ObjectMixin):
         WHERE employee_departments.id = :id_1
         """
         self.process_filter_or_orders(filters=kwargs)
-        print('self._query  >> ', self._query)
+        print('self._query in filter_by  >> ', self._query)
 
         return self
 
@@ -203,12 +204,12 @@ class CRUDMixin(Base, ObjectMixin):
                 raise KeyError(f'id(pk)를 정수로 입력해주세요.')
 
             if len(args) == 1:
-                obj = cls.create_obj(session=session, filters={cls.primary_key_name : args[0]})
+                obj = cls.create_obj(session=session, filters={cls.primary_key_name: args[0]})
                 # print('obj._query in one >> ', obj._query)
                 return obj.first()
 
             else:
-                obj = cls.create_obj(session=session, filters={f'{cls.primary_key_name}__in' : args})
+                obj = cls.create_obj(session=session, filters={f'{cls.primary_key_name}__in': args})
                 # print('obj._query in many >> ', obj._query)
                 return obj.all()
 
@@ -226,7 +227,7 @@ class CRUDMixin(Base, ObjectMixin):
     @class_property
     def primary_key_name(cls):
         """
-        User.unique_key
+        User.primary_key_name
         """
         self_primary_key = next(
             (column_name for column_name in cls.column_names if column_name in cls.primary_key_names), None)
@@ -234,3 +235,90 @@ class CRUDMixin(Base, ObjectMixin):
             raise Exception(f'primary key가 존재하지 않습니다.')
 
         return self_primary_key
+
+    ###################
+    # Update -        # -> only self method => create_obj없이 mode_obj에서 [최초호출].init_obj()로 초기화 [중간호출] set_query?
+    ###################
+    def update(self, session: Session = None, auto_commit: bool = True, **kwargs):
+        """
+        c = Category.get(1) # c.name '카테고리1'
+        c.update(name='카테고리1') # (False, '값의 변화가 없어서 업데이트 실패)
+        c.update(name='카테고리111') # (<Category>, '업데이트 성공')
+
+        """
+        # create: cls(**kwargs).init_obj()
+        try:
+            is_updated = self.fill(**kwargs)
+
+            if is_updated:
+                self.init_obj(session=session)\
+                    .save(auto_commit=auto_commit)
+                return self, '업데이트 성공'
+            else:
+                return False, '값의 변화가 없어서 업데이트 실패'
+
+        except:
+            return False, '업데이트 실패'
+
+    # for update
+    def fill(self, **kwargs):
+
+        is_updated = False
+
+        for column_name, new_value in kwargs.items():
+            if column_name not in self.settable_column_names:
+                raise KeyError(f"Invalid column name: {column_name}")
+
+            # 같은 값은 업데이트 안하고 넘김
+            if getattr(self, column_name) == new_value:
+                continue
+
+            setattr(self, column_name, new_value)
+            # 1개라도 업뎃 되면 flag 1번만 표시
+            if not is_updated:
+                is_updated = True
+
+        if not is_updated:
+            # 다 같은 값이라서 업데이트 안되면 return false
+            return False
+
+        return self
+
+    # for update - fill
+    @class_property
+    def settable_column_names(cls):
+        return cls.column_names + cls.settable_relation_names + cls.hybrid_property_names
+
+    @class_property
+    def settable_relation_names(cls):
+        """
+        User.settable_relation_names
+        ['role', 'inviters', 'invitees', 'employee']
+        """
+        return [prop for prop in cls.relation_names if getattr(cls, prop).property.viewonly is False]
+
+    @class_property
+    def relation_names(cls):
+        """
+        User.relation_names
+        ['role', 'inviters', 'invitees', 'employee']
+        """
+        mapper = cls.__mapper__
+        # mapper.relationships.items()
+        # ('role', <RelationshipProperty at 0x2c0c8947ec8; role>), ('inviters', <RelationshipProperty at 0x2c0c8947f48; inviters>),
+
+        return [prop.key for prop in mapper.iterate_properties
+                if isinstance(prop, RelationshipProperty)]
+
+    # for update - fill
+    @class_property
+    def hybrid_property_names(cls):
+        """
+        User.hybrid_property_names
+        ['is_staff', 'is_chiefstaff', 'is_executive', 'is_administrator', 'is_employee_active', 'has_employee_history']
+        """
+        mapper = cls.__mapper__
+        props = mapper.all_orm_descriptors
+        # [ hybrid_property  +  InstrumentedAttribute (ColumnProperty + RelationshipProperty) ]
+        return [prop.__name__ for prop in props
+                if isinstance(prop, hybrid_property)]

@@ -482,6 +482,7 @@ class ObjectMixin(BaseQuery):
         return result
 
     def exists(self):
+        self._set_unloaded_eager_exprs()
 
         result = self._session.scalar(exists(self._query).select())
         self.close()
