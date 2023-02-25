@@ -6,6 +6,7 @@ from sqlalchemy.orm import InstrumentedAttribute, aliased, contains_eager, Sessi
 
 from src.infra.config.connection import db
 from src.infra.tutorial3.mixins.base_query import BaseQuery
+from src.infra.tutorial3.mixins.utils.classorinstancemethod import class_or_instancemethod
 
 Base = declarative_base()
 naming_convention = {
@@ -156,7 +157,7 @@ class ObjectMixin(BaseQuery):
 
         self.served = None  # set_session_and_check_served에서 T/F 초기화
         self._session = self.set_session_and_check_served(session)  # 내부에서 어떻게든 초기화
-        self._query = self.set_query(query) or select(self.__class__) # None으로 초기화하지말고, select(main mdoel)로 초기화
+        self._query = self.set_query(query) or select(self.__class__)  # None으로 초기화하지말고, select(main mdoel)로 초기화
         self._flatten_schema = self.set_schema(schema) or {}
 
         self._loaded_rel_paths = []  # filter or orders가 존재시, process_filter_or_orders에서 채워짐.
@@ -431,6 +432,13 @@ class ObjectMixin(BaseQuery):
         self.close()
         return result
 
+    @class_or_instancemethod
+    def all(cls, session: Session = None):
+        obj = cls.create_obj(session=session)
+
+        return obj.all()
+
+    @all.instancemethod
     def all(self):
         self._set_unloaded_eager_exprs()
 
