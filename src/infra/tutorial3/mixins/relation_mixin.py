@@ -3,7 +3,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Session, InstrumentedAttribute, DeclarativeMeta, aliased, contains_eager, joinedload
 
 from src.infra.tutorial3.mixins.base_query import BaseQuery
-from src.infra.tutorial3.mixins.object_mixin import ObjectMixin
+from src.infra.tutorial3.mixins.objectmixin import ObjectMixin
 from src.infra.tutorial3.mixins.utils.classorinstancemethod import class_or_instancemethod
 
 Base = declarative_base()

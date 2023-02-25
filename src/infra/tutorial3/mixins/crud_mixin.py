@@ -16,7 +16,7 @@ from src.infra.config.connection import db
 from src.infra.tutorial3.mixins.base_query import BaseQuery
 
 # for def const_column_names()
-from src.infra.tutorial3.mixins.object_mixin import ObjectMixin
+from src.infra.tutorial3.mixins.objectmixin import ObjectMixin
 from src.infra.tutorial3.mixins.utils.classorinstancemethod import class_or_instancemethod
 from src.infra.tutorial3.mixins.utils.classproperty import class_property
 

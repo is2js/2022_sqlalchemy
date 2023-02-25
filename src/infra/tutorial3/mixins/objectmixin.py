@@ -1,6 +1,6 @@
 from collections import OrderedDict, defaultdict, abc
 
-from sqlalchemy import MetaData, select, func, text
+from sqlalchemy import MetaData, select, func, text, exists
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import InstrumentedAttribute, aliased, contains_eager, Session
 
@@ -190,9 +190,9 @@ class ObjectMixin(BaseQuery):
             else:
                 return False
 
-    def set_query(self, query=None, join=None, filter_by=None, order_by=None, options=None):
+    def set_query(self, query=None, outerjoin=None, filter_by=None, order_by=None, options=None):
         def _is_chaining():
-            return not (join is None and filter_by is None and order_by is None and options is None)
+            return not (outerjoin is None and filter_by is None and order_by is None and options is None)
 
         # 1. 외부X -> return False로 초기화 (set실패) -> 초기화시 select(self.__class__)로 초기화
         if not _is_chaining() and query is None:
@@ -208,11 +208,11 @@ class ObjectMixin(BaseQuery):
 
             # 이미 select( main )으로 작성된 상황이라면 체이닝을 해야하는데,
             # -> 하려면 인자로 expression만 받아서, 틀에 끼워넣어줘야한다.
-            if join:
+            if outerjoin:
                 self._query = (
                     self._query
-                    .outerjoin(join[0], join[1])
-                    .options(contains_eager(join[2], alias=join[0]))
+                    .outerjoin(outerjoin[0], outerjoin[1])
+                    .options(contains_eager(outerjoin[2], alias=outerjoin[0]))
                 )
 
             if filter_by:
@@ -357,7 +357,7 @@ class ObjectMixin(BaseQuery):
             # [1]: outerjoin의 2번재 인자 (main class의 관계칼럼) ex> User.posts
             # [2]: conatains_eager의 1번째 인자 rel_path ex> posts
 
-            self.set_query(join=(aliased_rel_model, rel_attr, rel_path))
+            self.set_query(outerjoin=(aliased_rel_model, rel_attr, rel_path))
 
             self._loaded_rel_paths.append(rel_path)
 
@@ -479,6 +479,12 @@ class ObjectMixin(BaseQuery):
         result = self._session.scalar(count_stmt)
         self.close()
 
+        return result
+
+    def exists(self):
+
+        result = self._session.scalar(exists(self._query).select())
+        self.close()
         return result
 
     # for 객체 update, 등. ->

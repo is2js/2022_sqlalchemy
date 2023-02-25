@@ -4,7 +4,7 @@ from sqlalchemy import MetaData, select
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Session, contains_eager
 
-from src.infra.tutorial3.mixins.object_mixin import ObjectMixin
+from src.infra.tutorial3.mixins.objectmixin import ObjectMixin
 
 
 class SmartMixin(ObjectMixin):
