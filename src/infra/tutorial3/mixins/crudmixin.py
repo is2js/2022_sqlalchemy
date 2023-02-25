@@ -96,10 +96,6 @@ class CRUDMixin(Base, ObjectMixin):
         return cls.__table__.columns.keys()
 
     @class_property
-    def primary_key_names(cls):
-        return cls.get_constraint_attr_names(target='pk')
-
-    @class_property
     def foreign_key_names(cls):
         return cls.get_constraint_attr_names(target='fk')
 
@@ -117,10 +113,9 @@ class CRUDMixin(Base, ObjectMixin):
 
         return self
 
-
-    ############
-    # Read     #
-    ############
+    #################
+    # Read -load    #
+    #################
     @class_or_instancemethod
     def load(cls, schema: dict, session: Session = None):
         """
@@ -147,6 +142,9 @@ class CRUDMixin(Base, ObjectMixin):
 
         return self
 
+    ###################
+    # Read - filter_by#
+    ###################
     @class_or_instancemethod
     def filter_by(cls, session: Session = None, **kwargs):
         """
@@ -177,3 +175,62 @@ class CRUDMixin(Base, ObjectMixin):
         print('self._query  >> ', self._query)
 
         return self
+
+    ###################
+    # Read - get      #
+    ###################
+    @classmethod
+    def get(cls, *args, session: Session = None, **kwargs):
+        """
+        1. id(pk)로  1개입력시 -> where pk =   .first()
+            User.get(1) => WHERE users.id = ? => <User object at 0x000002BE16DCF080>
+
+        2. id(pk)   2개이상입력시 where in      .all()
+            User.get(1, 2) => WHERE users.id IN (__[POSTCOMPILE_id_1]) => [<User>, <.User object at 0x000002BE16C02FD0>]
+
+        3. kwargs(unique key or pk)로 검색하는 경우 -> .first()
+            User.get(username='admin')
+        """
+        if not (args or kwargs) or (args and kwargs):
+            raise KeyError(f'id를 입력하거나 키워드 형식으로 unique칼럼을 지정하되 방법은 1가지만 선택해주세요.')
+
+        if not all(attr in cls.primary_key_names + cls.unique_key_names for attr in kwargs.keys()):
+            raise KeyError(f'키워드로 검색시, id(pk) 혹은 unique Column으로 검색해주세요.')
+
+        # 1) args(pk)로 검색하는 경우
+        if args and not kwargs:
+            if not any(type(id_) == int for id_ in args):
+                raise KeyError(f'id(pk)를 정수로 입력해주세요.')
+
+            if len(args) == 1:
+                obj = cls.create_obj(session=session, filters={cls.primary_key_name : args[0]})
+                # print('obj._query in one >> ', obj._query)
+                return obj.first()
+
+            else:
+                obj = cls.create_obj(session=session, filters={f'{cls.primary_key_name}__in' : args})
+                # print('obj._query in many >> ', obj._query)
+                return obj.all()
+
+        # 2) kwargs(unique 칼럼)으로 검색하는 경우
+        if kwargs and not args:
+            obj = cls.create_obj(session=session, filters=kwargs)
+
+            return obj.first()
+
+    # for get
+    @class_property
+    def primary_key_names(cls):
+        return cls.get_constraint_attr_names(target='pk')
+
+    @class_property
+    def primary_key_name(cls):
+        """
+        User.unique_key
+        """
+        self_primary_key = next(
+            (column_name for column_name in cls.column_names if column_name in cls.primary_key_names), None)
+        if not self_primary_key:
+            raise Exception(f'primary key가 존재하지 않습니다.')
+
+        return self_primary_key

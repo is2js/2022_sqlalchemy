@@ -157,7 +157,7 @@ class ObjectMixin(BaseQuery):
         self.served = None  # set_session_and_check_served에서 T/F 초기화
         self._session = self.set_session_and_check_served(session)  # 내부에서 어떻게든 초기화
         self._query = self.set_query(query) or select(self.__class__) # None으로 초기화하지말고, select(main mdoel)로 초기화
-        self._flatten_schema = self._set_schema(schema) or {}
+        self._flatten_schema = self.set_schema(schema) or {}
 
         self._loaded_rel_paths = []  # filter or orders가 존재시, process_filter_or_orders에서 채워짐.
         # self._alias_map = self.process_filter_or_orders(filters=filters, orders=orders) or OrderedDict({})
@@ -239,7 +239,7 @@ class ObjectMixin(BaseQuery):
 
         return self._query
 
-    def _set_schema(self, schema=None):
+    def set_schema(self, schema=None):
         if not schema:
             return False  # -> 초기화
 

@@ -121,7 +121,7 @@ class RelationMixin(Base, ObjectMixin):
 
         self._query = (
             self._query
-            .options(*self.create_eager_options(schema=schema))
+            .options(*self.create_eager_exprs(schema=schema))
         )
 
         print(self._query)
