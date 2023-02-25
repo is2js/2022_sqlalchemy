@@ -26,7 +26,7 @@ class CRUDMixin(Base, ObjectMixin):
 
         # obj = cls.create_obj(session=session, **kwargs)
         obj = cls.create_obj(session=session)
-        obj.fill(**kwargs) # 검증을 위해 fill을 사용한다.
+        obj.fill(**kwargs)  # 검증을 위해 fill을 사용한다.
 
         # 1. 만들어진 [미등록 obj]내 unique=True인 칼럼의 값을 가져와, 존재하는지 검사한다.
         if obj.exists_self():
@@ -185,14 +185,17 @@ class CRUDMixin(Base, ObjectMixin):
     @classmethod
     def get(cls, *args, session: Session = None, **kwargs):
         """
-        1. id(pk)로  1개입력시 -> where pk =   .first()
-            User.get(1) => WHERE users.id = ? => <User object at 0x000002BE16DCF080>
+        1. id(pk)로  삭제 -> get을 이용 검색안되면 get에서 에러난다.
+            Category.delete_by(1, 1000) => KeyError: 'Invalid Primary Key(s): [1000]'
+            Category.delete_by(3, 4) => fk걸린 것이면 에러날 수도 있다.
+
 
         2. id(pk)   2개이상입력시 where in      .all()
             User.get(1, 2) => WHERE users.id IN (__[POSTCOMPILE_id_1]) => [<User>, <.User object at 0x000002BE16C02FD0>]
 
-        3. kwargs(unique key or pk)로 검색하는 경우 -> .first()
+        3. kwargs(unique key or pk)로 검색하는 경우 -> .first() / .all()
             User.get(username='admin')
+            Category.get(name=['123', '12345'])
         """
         if not (args or kwargs) or (args and kwargs):
             raise KeyError(f'id를 입력하거나 키워드 형식으로 unique칼럼을 지정하되 방법은 1가지만 선택해주세요.')
@@ -205,21 +208,49 @@ class CRUDMixin(Base, ObjectMixin):
             if not any(type(id_) == int for id_ in args):
                 raise KeyError(f'id(pk)를 정수로 입력해주세요.')
 
+            pk_for_search = cls.primary_key_name
+
             if len(args) == 1:
-                obj = cls.create_obj(session=session, filters={cls.primary_key_name: args[0]})
+                obj = cls.create_obj(session=session, filters={pk_for_search: args[0]})
                 # print('obj._query in one >> ', obj._query)
                 return obj.first()
 
             else:
-                obj = cls.create_obj(session=session, filters={f'{cls.primary_key_name}__in': args})
+                obj = cls.create_obj(session=session, filters={f'{pk_for_search}__in': args})
+                results = obj.all()
+                # 조회된 갯수가 다르면 못찾은 것을 찾아 에러를 방출한다.
+                if len(results) != len(args):
+                    not_searched_pks = sorted(set(args) - set([getattr(obj,pk_for_search)  for obj in results]))
+                    raise KeyError(f'Invalid Primary Key(s): {not_searched_pks}')
+
                 # print('obj._query in many >> ', obj._query)
-                return obj.all()
+                return results
 
         # 2) kwargs(unique 칼럼)으로 검색하는 경우
         if kwargs and not args:
-            obj = cls.create_obj(session=session, filters=kwargs)
+            # kwargs검색은 오직 keyword9(uk) 1개만 허용
+            if len(kwargs.keys()) != 1:
+                raise KeyError(f'Only one keyword(pk or unique key) value allowed.')
 
-            return obj.first()
+            col_name, values = [*kwargs.items()][0] # (key, '123') or (key, ['123', '456'])
+            if not isinstance(values, (list, tuple, set)):
+                values = [values]
+
+            if len(values) == 1:
+                obj = cls.create_obj(session=session, filters={col_name: values[0]})
+                return obj.first()
+
+            else:
+                obj = cls.create_obj(session=session, filters={f'{col_name}__in': values})
+                results = obj.all()
+                # 조회된 갯수가 다르면 못찾은 것을 찾아 에러를 방출한다.
+                if len(results) != len(values):
+                    not_searched_values = sorted(set(values) - set([getattr(obj,col_name)  for obj in results]))
+                    raise KeyError(f'Invalid Values: {not_searched_values}')
+
+                # print('obj._query in many >> ', obj._query)
+                return results
+
 
     # for get
     @class_property
@@ -253,7 +284,7 @@ class CRUDMixin(Base, ObjectMixin):
             is_updated = self.fill(**kwargs)
 
             if is_updated:
-                self.init_obj(session=session)\
+                self.init_obj(session=session) \
                     .save(auto_commit=auto_commit)
                 return self, '업데이트 성공'
             else:
@@ -265,7 +296,7 @@ class CRUDMixin(Base, ObjectMixin):
     ###################
     # Fill for Update # -> .save()하기 전에, 채울 때 settable_column_name인지 확인용 / 같은 값은 아닌지 확인용으로 사용할 수 있다.
     ###################
-    # for update
+    # for update + for create
     def fill(self, **kwargs):
 
         is_updated = False
@@ -283,7 +314,7 @@ class CRUDMixin(Base, ObjectMixin):
             if not is_updated:
                 is_updated = True
 
-        return is_updated # 한번 이라도 업뎃되면 True/ 아니면 False 반환
+        return is_updated  # 한번 이라도 업뎃되면 True/ 아니면 False 반환
 
     # for update - fill
     @class_property
@@ -323,4 +354,83 @@ class CRUDMixin(Base, ObjectMixin):
         # [ hybrid_property  +  InstrumentedAttribute (ColumnProperty + RelationshipProperty) ]
         return [prop.__name__ for prop in props
                 if isinstance(prop, hybrid_property)]
+
+    ###################
+    # Delete          # -> only self method => create_obj없이 model_obj에서 [최초호출].init_obj()로 초기화
+    ################### 
+    def delete(self, session: Session = None, auto_commit: bool = True):
+        """
+        c1 = Category.first()
+        c1.delete()
+        """
+        self.init_obj(session=session)
+
+        try:
+            self._session.delete(self)
+            self._session.flush()
+
+            if auto_commit:
+                self._session.commit()
+
+            return self, '삭제 성공'
+
+        except:
+
+            return False, '삭제 실패'
+
+    ###################
+    # Delete By        # -> cls method => .get()으로 1개 or 여러개 검색 => 1개든 여러개든 순회하며 삭제
+    ###################                   .get() 검색시 실패하면 에러검증 + 순회 delete시 1개라도 실패하면 에러 발생
+    @classmethod
+    def delete_by(cls, *args, session: Session = None, auto_commit=True, **kwargs):
+        """
+        1. Category.delete_by(1, 2, 3)
+        
+        2. Category.delete_by(name=['aaa','bbb'])
+        """
+        if not (args or kwargs) or (args and kwargs):
+            raise KeyError(f'id를 입력하거나 키워드 형식으로 unique칼럼을 지정하되 방법은 1가지만 선택해주세요.')
+
+        if not all(attr in cls.primary_key_names + cls.unique_key_names for attr in kwargs.keys()):
+            raise KeyError(f'삭제 시 검색시, id(pk) 혹은 키워드로 unique Column을 입력해주세요.')
+
+
+
+        # 한개든 여러개든 순회하며 1개의 session으로 처리한다. -> 외부session으로 취급하고 auto_commit=False로 delete
+        # => 1개의 세션을 유지하려면, obj를 만들어야아한다. 바로 get으로 부르면 결과물만 나옴
+        obj_for_delete = cls.create_obj(session=session)
+
+        # 1) args(pk)로 삭제하는 경우 -> get()으로 검색시 args로 검색해서 가져온다.
+        if args and not kwargs:
+            objs = cls.get(*args, session=obj_for_delete._session) # args(pk)검색시 발견안되면 내부에서 에러난다.
+        # 2) kwargs(pk or unique key)로 삭제하는 경우 -> get()으로 검색시 kwrags로 검색해서 가져온다.
+        else:
+            objs = cls.get(session=obj_for_delete._session, **kwargs) # kwarg는 1개만 검색하며, 발견안되면 내부 에러
+
+        # get으로 1개 또는 list 가 나올 수 있어서 list로 변환
+        if not isinstance(objs, (list, tuple, set)):
+            objs = [objs]
+
+        delete_fails = []
+        # args(id, pk)로 검색시와   kwargs(pk or unique key)로 검색시 column_name이 각각 다르다.
+        col_name = cls.primary_key_name if args else [*kwargs.keys()][0]
+
+        for obj in objs:
+            result, _msg = obj.delete(session=obj_for_delete._session, auto_commit=False)
+            if not result:
+                delete_fails.append(getattr(obj, col_name))
+
+        if delete_fails:
+            # 1개라도 삭제 실패시, 내부session이면 rollback하자. 외부session이면 False return으로 알아서 처리할 듯.
+            if not obj_for_delete.served:
+                obj_for_delete._session.rollback()
+            return False, f'Delete Fails : {sorted(delete_fails)}'
+
+        # 모두 삭제 성공시, 내부든 외부든 auto_commit True라면, 해당 session을 커밋하면 된다.
+        # => 외부라도 obj_for_delete 에 session으로 들어가있다.
+        if auto_commit:
+            obj_for_delete._session.commit()
+
+        return True, 'All deleted.'
+
 
