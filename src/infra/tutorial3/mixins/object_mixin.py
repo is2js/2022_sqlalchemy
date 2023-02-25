@@ -160,8 +160,9 @@ class ObjectMixin(BaseQuery):
         self._flatten_schema = self._set_schema(schema) or {}
 
         self._loaded_rel_paths = []  # filter or orders가 존재시, process_filter_or_orders에서 채워짐.
-        self._alias_map = OrderedDict({}) if not (filters or orders) \
-            else self.process_filter_or_orders(filters=filters, orders=orders)
+        # self._alias_map = self.process_filter_or_orders(filters=filters, orders=orders) or OrderedDict({})
+        # 최초에 외부 filters O -> return false가 안되고 진행하는데, 처리할때 초기화가 안된상태여서 문제
+        self._alias_map = self.process_filter_or_orders(filters=filters, orders=orders) or OrderedDict({})
 
         return self
 
@@ -260,7 +261,9 @@ class ObjectMixin(BaseQuery):
         if not (filters or orders):
             return False  # -> alias_map 초기화
 
-        # 2. 외부o시 존재확인후
+        # 2. 외부o시 내부 존재확인 후 (내부 초기화도 안된 상태일 수 있어서 없으면 초기화까지 추가)
+        if not hasattr(self, '_alias_map'):
+            self._alias_map = OrderedDict({})
         #    -> 인자들 변환 후
         #    udpate VS 빈값에 할당 => set_alias_map 내부에서
         filter_or_order_attrs = []

@@ -57,7 +57,7 @@ class SmartMixin(ObjectMixin):
         # if orders and not isinstance(orders, (list, tuple, set)):
         #     orders = [orders]
 
-        obj = cls.create_obj(session=session, schema=schema, query=None)
+        obj = cls.create_obj(session=session, schema=schema, query=None, filters=filters, orders=orders)
         print('obj._flatten_schema  >> ', obj._flatten_schema)
 
         # ['id__gt', 'id__lt', 'posts___tags___name__isnull']
@@ -76,7 +76,7 @@ class SmartMixin(ObjectMixin):
         ######## select query ######
         # query = select(cls)
 
-        obj.process_filter_or_orders(filters=filters, orders=orders)
+        # obj.process_filter_or_orders(filters=filters, orders=orders)
         print('obj._alias_map  >> ', obj._alias_map)
 
         ######## outer join + contains_eager query ######  <- joined in filters , orders relationship
