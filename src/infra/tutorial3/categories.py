@@ -10,6 +10,8 @@ from src.infra.config.base import Base
 
 class Category(BaseModel):
     __tablename__ = 'categories'
+    __repr_attrs__ = ['name']
+
     ko_NAME = '카테고리'
 
     # id = Column(Integer, primary_key=True)

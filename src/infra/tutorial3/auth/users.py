@@ -34,6 +34,7 @@ class SexType(enum.IntEnum):
 
 class User(BaseModel):
     __tablename__ = 'users'
+    __repr_attrs__ = ['username']
     #### baseModel에 동적으로 cls.ko_NAME이  comment을  __table_args__에 추가된다.
     # -> 사용은 User.__table__.comment로 한다.
     # User.__table__.comment
