@@ -979,14 +979,14 @@ class EmployeeDepartment(BaseModel):
     #### => 팀장, 팀원 모두가 부임정보에 나와있게 된다.
     is_leader = Column(Boolean, nullable=False, default=False)
 
-    def __repr__(self):
-        info: str = f"{self.__class__.__name__}" \
-                    f"[id={self.id!r}]" \
-            # f" title={self.employee.name!r}," \
-        # f" parent_id={self.department.name!r}]" \ # 관계필드는 적지말자.
-
-        # f" level={self.level!r}]" # path를 채우기 전에 출력했더니 level써서 에러가 남.
-        return info
+    # def __repr__(self):
+    #     info: str = f"{self.__class__.__name__}" \
+    #                 f"[id={self.id!r}]" \
+    #         # f" title={self.employee.name!r}," \
+    #     # f" parent_id={self.department.name!r}]" \ # 관계필드는 적지말자.
+    #
+    #     # f" level={self.level!r}]" # path를 채우기 전에 출력했더니 level써서 에러가 남.
+    #     return info
 
     #### (1) 같은부서에 대해서만 존재 여부 확인 -> 다른 부서에는 또 부임할 수 있다.
     def exists_same_department(self):

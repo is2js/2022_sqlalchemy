@@ -186,6 +186,23 @@ class CRUDMixin(Base, ObjectMixin):
 
         return self
 
+    @class_or_instancemethod
+    def order_by(cls, *args, session: Session = None):
+        """
+        Category.order_by("-id").all()
+        """
+        obj = cls.create_obj(session=session, orders=args)
+
+        return obj
+
+    @order_by.instancemethod
+    def order_by(self, *args):
+        """
+        Category.filter_by().order_by("-id").all()
+        """
+        self.process_filter_or_orders(orders=args)
+
+        return self
     ###################
     # Read - get      #
     ###################
@@ -289,12 +306,12 @@ class CRUDMixin(Base, ObjectMixin):
         if selects:
             if not isinstance(selects, (list, tuple, set)):
                 selects = [selects]
-            #### relationship을 사용하려면, 무조건 main model이 select에 들어가야
+            #### relationship -> contains_eager로 사용하려면, 무조건 main model(cls) select에 들어가야
             # => Query has only expression-based entities - can't find property named "employee".가 안뜬다.
             select_columns = cls.create_columns(cls, column_names=selects, in_select=True) # 집계가 in_select시 coalesce
             # select_columns = [cls] + select_columns
-            #### => cls를 무조건 포함시키되, select()에 넣지말고, select_from(cls)로 걸어주자.
-            #### => select에 cls외 다른 것을 올리고 싶다면, select_from(cls)를 주자
+            #### => select에 cls외 다른 것을 올리고 싶다면, execute용으로 전환되며, select_from(cls)를 주고
+            ####    outerjoin을 자동으로 하되, contains_eager이 빠져야한다.
             query = (
                 select(*select_columns)
                 .select_from(cls) # execute시 cls를 제외하고 싶다면, 구세주.
@@ -302,21 +319,9 @@ class CRUDMixin(Base, ObjectMixin):
         else:
             query = select(cls)
 
-        print('query  >> ', query)
-
-
         query = query.group_by(*group_by_columns)
 
         obj = cls.create_obj(session=session, query=query)
-
-        # if having:
-        #     obj.process_having_eager_exprs(having)
-        #     obj.set_query(group_by=group_by_columns)
-        #
-        #     obj.set_query(having=cls._create_filters_expr_with_alias_map(cls, having, obj._alias_map))
-        #     print('obj._query  >> ', obj._query)
-        # else:
-        #     obj.set_query(group_by=group_by_columns)
 
         return obj
 

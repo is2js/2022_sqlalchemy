@@ -206,7 +206,7 @@ class ObjectMixin(BaseQuery):
         # 2. 외부O -> 내부확인후 존재하면 update  VS  초기화빈값이면 assign
         # => 내부는 항상 select(main)으로 존재하게 만들어놨음.
         # if self._query is not None:
-        # => 체이닝 여부를 확인하고 아니라면 해당 쿼리를 그냥 삽입하자.
+        # => 체이닝 여부를 확인하고 아니라면 해당 쿼리를 그냥 삽입하자. for execute용 select(칼럼들).select_from(cls)
         if _is_chaining():
             if not hasattr(self, '_query'):
                 self._query = select(self.__class__)
@@ -510,6 +510,7 @@ class ObjectMixin(BaseQuery):
     @all.instancemethod
     def all(self):
         self._set_unloaded_eager_exprs()
+        print('self._query  >> ', self._query)
 
         result = self._session.scalars(self._query).all()
 
