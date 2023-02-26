@@ -26,6 +26,8 @@ default_table_args = {
 class BaseModel(Base, ReprMixin, CRUDMixin):
     # 추상화 안해주면, does not have a __table__ or __tablename__ specified and does not inherit from an existing table-mapped class.
     __abstract__ = True
+
+
     # @declared_attr
     # def __tablename__(cls) -> str:
     #     return cls.__name__.lower()

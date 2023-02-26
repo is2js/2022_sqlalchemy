@@ -213,7 +213,7 @@ class CRUDMixin(Base, ObjectMixin):
             if not any(type(id_) == int for id_ in args):
                 raise KeyError(f'id(pk)를 정수로 입력해주세요.')
 
-            pk_for_search = cls.primary_key_name
+            pk_for_search = cls.first_primary_key_name
 
             if len(args) == 1:
                 obj = cls.create_obj(session=session, filters={pk_for_search: args[0]})
@@ -264,7 +264,7 @@ class CRUDMixin(Base, ObjectMixin):
         return cls.get_constraint_attr_names(target='pk')
 
     @class_property
-    def primary_key_name(cls):
+    def first_primary_key_name(cls):
         """
         User.primary_key_name
         """
@@ -275,11 +275,11 @@ class CRUDMixin(Base, ObjectMixin):
 
         return self_primary_key
 
-    ###################
-    # Group By -      #
-    ###################
+    #####################
+    # Group By + Having #
+    #####################
     @classmethod
-    def group_by(cls, *group_by_column_names, session: Session = None, selects=None, filters=None):
+    def group_by(cls, *group_by_column_names, session: Session = None, selects=None):
         """
         Category.group_by('icon', selects=['id', 'icon__sum']).execute()
         => [(2, 24), (1, 23)]
@@ -289,16 +289,34 @@ class CRUDMixin(Base, ObjectMixin):
         if selects:
             if not isinstance(selects, (list, tuple, set)):
                 selects = [selects]
+            #### relationship을 사용하려면, 무조건 main model이 select에 들어가야
+            # => Query has only expression-based entities - can't find property named "employee".가 안뜬다.
             select_columns = cls.create_columns(cls, column_names=selects, in_select=True) # 집계가 in_select시 coalesce
+            # select_columns = [cls] + select_columns
+            #### => cls를 무조건 포함시키되, select()에 넣지말고, select_from(cls)로 걸어주자.
+            #### => select에 cls외 다른 것을 올리고 싶다면, select_from(cls)를 주자
+            query = (
+                select(*select_columns)
+                .select_from(cls) # execute시 cls를 제외하고 싶다면, 구세주.
+            )
         else:
-            select_columns = [cls]
+            query = select(cls)
 
-        query = (
-            select(*select_columns)
-            .group_by(*group_by_columns)
-        )
+        print('query  >> ', query)
+
+
+        query = query.group_by(*group_by_columns)
 
         obj = cls.create_obj(session=session, query=query)
+
+        # if having:
+        #     obj.process_having_eager_exprs(having)
+        #     obj.set_query(group_by=group_by_columns)
+        #
+        #     obj.set_query(having=cls._create_filters_expr_with_alias_map(cls, having, obj._alias_map))
+        #     print('obj._query  >> ', obj._query)
+        # else:
+        #     obj.set_query(group_by=group_by_columns)
 
         return obj
 
@@ -310,9 +328,7 @@ class CRUDMixin(Base, ObjectMixin):
         FROM categories GROUP BY categories.icon
         HAVING sum(categories.icon) < ?
         """
-        # self.process_filter_or_orders(filters=kwargs)
-        self.process_havings(kwargs)
-
+        self.process_having_eager_exprs(kwargs)
 
         return self
 
@@ -463,7 +479,7 @@ class CRUDMixin(Base, ObjectMixin):
 
         delete_fails = []
         # args(id, pk)로 검색시와   kwargs(pk or unique key)로 검색시 column_name이 각각 다르다.
-        col_name = cls.primary_key_name if args else [*kwargs.keys()][0]
+        col_name = cls.first_primary_key_name if args else [*kwargs.keys()][0]
 
         for obj in objs:
             result, _msg = obj.delete(session=obj_for_delete._session, auto_commit=False)

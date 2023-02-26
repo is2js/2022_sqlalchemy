@@ -63,11 +63,11 @@ def _flat_schema(schema: dict):
     return result
 
 
-def _flat_filter_keys_generator(filters):
+def _flat_dict_keys_generator(filters):
     for key, value in filters.items():
         if key.lower().startswith(('and_', 'or_')):
             # yield의 depth없는 재귀 호출은 yiedl from 메서드(자식)으로 한다.
-            yield from _flat_filter_keys_generator(value)
+            yield from _flat_dict_keys_generator(value)
         # 나 자신의 처리(방출)
         else:
             yield key
@@ -192,10 +192,11 @@ class ObjectMixin(BaseQuery):
             else:
                 return False
 
-    def set_query(self, query=None, outerjoin=None, filter_by=None, order_by=None, options=None, having=None):
+    def set_query(self, query=None, eagerload=None, filter_by=None, order_by=None, options=None, outerjoin=None,
+                  group_by=None, having=None):
         def _is_chaining():
             return not (
-                        outerjoin is None and filter_by is None and order_by is None and options is None and having is None
+                    eagerload is None and filter_by is None and order_by is None and options is None and outerjoin is None and group_by is None and having is None
             )
 
         # 1. 외부X -> return False로 초기화 (set실패) -> 초기화시 select(self.__class__)로 초기화
@@ -212,11 +213,30 @@ class ObjectMixin(BaseQuery):
 
             # 이미 select( main )으로 작성된 상황이라면 체이닝을 해야하는데,
             # -> 하려면 인자로 expression만 받아서, 틀에 끼워넣어줘야한다.
-            if outerjoin:
+            if eagerload:
+                # filter_by, order_by는 cls model객체에 담기위해
+                # => 1) outerjoin해서 필터링 가능하게 하고
+                # => 2) conatinas_eager를 select(cls)자동으로서, cls 관계필드에 접근하기 위해 container_eager까지
+                aliased_rel_model, rel_attr, rel_path = eagerload
+
                 self._query = (
                     self._query
-                    .outerjoin(outerjoin[0], outerjoin[1])
-                    .options(contains_eager(outerjoin[2], alias=outerjoin[0]))
+                    .outerjoin(aliased_rel_model, rel_attr)
+                    .options(contains_eager(rel_path, alias=aliased_rel_model))
+                )
+
+            if outerjoin:
+                # eagerload와 다르게, execute용인 group_by / having시에는
+                # 1) outerjoin해서 필터링 가능하게 하지만
+                # 2) select(cls)가 아닌 select( 필드, 집계필드).select_from(cls) 상황에서는
+                # => contains_eager까지 하면, select()에 cls가 포함안된 경우,
+                #   can't find property named "employee".로 관계칼럼을 찾지못해 outerjoin이 안된다.
+                aliased_rel_model, rel_attr = outerjoin
+
+                self._query = (
+                    self._query
+                    .outerjoin(aliased_rel_model, rel_attr)
+                    # .options(contains_eager(rel_path, alias=aliased_rel_model))
                 )
 
             if filter_by:
@@ -235,6 +255,12 @@ class ObjectMixin(BaseQuery):
                 self._query = (
                     self._query
                     .options(*options)
+                )
+
+            if group_by:
+                self._query = (
+                    self._query
+                    .group_by(*group_by)
                 )
 
             if having:
@@ -278,18 +304,20 @@ class ObjectMixin(BaseQuery):
         #    udpate VS 빈값에 할당 => set_alias_map 내부에서
         filter_or_order_attrs = []
         if filters:
-            filter_or_order_attrs += list(_flat_filter_keys_generator(filters))
+            filter_or_order_attrs += list(_flat_dict_keys_generator(filters))
         if orders:
             if orders and not isinstance(orders, (list, tuple, set)):
                 orders = [orders]
             filter_or_order_attrs += list(map(lambda s: s.lstrip(DESC_PREFIX), orders))
 
         # 2-1. alias_map 채우기 => 내부에서  update VS 빈값에 할당? (자료구조의 경우 update위주로)
-        self._set_alias_map_and_loaded_rel_paths_and_eager_exprs(parent_model=self.__class__, parent_path='',
-                                                                 attrs=filter_or_order_attrs)
+        self._set_alias_map_and_loaded_rel_paths(parent_model=self.__class__, parent_path='',
+                                                 attrs=filter_or_order_attrs)
         # 2-2. set된 alias_map -> eager expression 체이닝 후 loaded_rel_paths 채워 업데이트
-        # self._set_eager_exprs_and_load_rel_paths_from_alias_map()
         # => set_alias_map 시 자동으로 처리되어야하므로 내부의 마지막으로 이동
+        # => 다시 가져옴. filter/orders 처리와 having(only execute, no select(cls))의 처리가 다름.
+        self._set_eager_exprs_and_load_rel_paths(only_execute=False)
+
         # 2-3.
         self._set_filter_or_order_exprs(filters=filters, orders=orders)
 
@@ -297,16 +325,24 @@ class ObjectMixin(BaseQuery):
         # self._set_unloaded_eager_exprs()
         # => unloaded는 .first() 등의 실행메서드로 옮겨감. filter, order 다 처리하고나서 로드
 
-    def process_havings(self, havings: dict):
-        if not havings:
+    def process_having_eager_exprs(self, having: dict):
+        if not having:
             return False
+        # filter/orders 재귀로 attrs추출 재활용
+        having_attrs = list(_flat_dict_keys_generator(having))
 
-        having_attrs = list(_flat_filter_keys_generator(havings))
-        self._set_alias_map_and_loaded_rel_paths_and_eager_exprs(parent_model=self.__class__, parent_path='',
-                                                                 attrs=having_attrs)
-        self.set_query(having=self._create_filters_expr_with_alias_map(self.__class__, havings, self._alias_map))
+        self._set_alias_map_and_loaded_rel_paths(parent_model=self.__class__, parent_path='',
+                                                 attrs=having_attrs)
+        # filter/orders의 select(cls)용 eager exprs (outerjoin + contains_eager)이 다르다.
+        # <-> groupby(select(칼럼선택).select_from(cls) -> having용 eager exprs(only outerjoin)
+        # => select(칼럼선택).select_from(cls)는 contains_eager시 rel_path를 못읽는다.
+        # => only_execute=True옵션을 줘서, 내부에서 contains_eager안하도록 한다.
+        self._set_eager_exprs_and_load_rel_paths(only_execute=True)
 
-    def _set_alias_map_and_loaded_rel_paths_and_eager_exprs(self, parent_model, parent_path, attrs):
+        # filter expr 생성을 재활용
+        self.set_query(having=self._create_filters_or_having_expr_with_alias_map(self.__class__, having, self._alias_map))
+
+    def _set_alias_map_and_loaded_rel_paths(self, parent_model, parent_path, attrs):
         """
         input attrs: ['id__gt', 'id__lt', 'tags___property__in']
         output: => OrderedDict([('tags', (<AliasedClass at 0x1de19e32908; Tag>, <sqlalchemy.orm.attributes.InstrumentedAttribute object at 0x000001DE19999150>))])
@@ -336,14 +372,12 @@ class ObjectMixin(BaseQuery):
             if path not in self._alias_map.keys():
                 self._alias_map[path] = aliased_rel_model, rel_column
 
-            self._set_alias_map_and_loaded_rel_paths_and_eager_exprs(aliased_rel_model, path, rel_attr)
+            self._set_alias_map_and_loaded_rel_paths(aliased_rel_model, path, rel_attr)
 
-        # 2-2. set된 alias_map -> eager expression 체이닝 후 loaded_rel_paths 채워 업데이트
-        self._set_eager_exprs_and_load_rel_paths()
 
     #### 이미 초기화된 상태에서 filter, order 처리하기
     # -> 초반부분 1. set_alias_map + 2. outerjoin+eagerload는 동일하나 -> 3 query부분만 다르다.
-    def _set_eager_exprs_and_load_rel_paths(self):
+    def _set_eager_exprs_and_load_rel_paths(self, only_execute=False):
         # 1. attrs -> alias_map -> rel_path파싱 -> [기존 확인후 없으면] loaded_rel_paths 채우기 + query expression 채우기
         for path, (aliased_rel_model, rel_attr) in self._alias_map.items():
             rel_path = path.replace(self.RELATION_SPLITTER, '.')
@@ -375,8 +409,12 @@ class ObjectMixin(BaseQuery):
             # [0]: outerjoin(첫번재rel_model) 이자 contains_eager의 alias=인자,  ex> AliasedClass Post
             # [1]: outerjoin의 2번재 인자 (main class의 관계칼럼) ex> User.posts
             # [2]: conatains_eager의 1번째 인자 rel_path ex> posts
-
-            self.set_query(outerjoin=(aliased_rel_model, rel_attr, rel_path))
+            if only_execute:
+                # execute만 할거면 select(cls)가 아닌 다른 칼럼들 select상황
+                # + select_from(cls)에서 contains_eager(  ,rel_path)의 rel_path 못읽게 된다.
+                self.set_query(outerjoin=(aliased_rel_model, rel_attr))
+            else:
+                self.set_query(eagerload=(aliased_rel_model, rel_attr, rel_path))
 
             self._loaded_rel_paths.append(rel_path)
 
@@ -386,7 +424,7 @@ class ObjectMixin(BaseQuery):
         #    BaseQuery가 -> smartmixin, objectmixin에서 양방향으로 쓰이므로, smartmixin은 objectmixin을 슬 수 없다?
         #               -> smartmixin은 BaseQuery를 일단 못쓰게 막고, objectmixin을 가지고 테스트 한다.
         if filters:
-            self.set_query(filter_by=self._create_filters_expr_with_alias_map(self.__class__, filters, self._alias_map))
+            self.set_query(filter_by=self._create_filters_or_having_expr_with_alias_map(self.__class__, filters, self._alias_map))
         if orders:
             self.set_query(order_by=self._create_order_exprs_with_alias_map(self.__class__, orders, self._alias_map))
 
