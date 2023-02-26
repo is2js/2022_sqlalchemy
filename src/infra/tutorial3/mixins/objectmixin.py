@@ -157,7 +157,8 @@ class ObjectMixin(BaseQuery):
 
         self.served = None  # set_session_and_check_served에서 T/F 초기화
         self._session = self.set_session_and_check_served(session)  # 내부에서 어떻게든 초기화
-        self._query = self.set_query(query) or select(self.__class__)  # None으로 초기화하지말고, select(main mdoel)로 초기화
+        self._query = self.set_query(query) if self.set_query(query) is not None else select(
+            self.__class__)  # None으로 초기화하지말고, select(main mdoel)로 초기화
         self._flatten_schema = self.set_schema(schema) or {}
 
         self._loaded_rel_paths = []  # filter or orders가 존재시, process_filter_or_orders에서 채워짐.
@@ -191,13 +192,15 @@ class ObjectMixin(BaseQuery):
             else:
                 return False
 
-    def set_query(self, query=None, outerjoin=None, filter_by=None, order_by=None, options=None):
+    def set_query(self, query=None, outerjoin=None, filter_by=None, order_by=None, options=None, having=None):
         def _is_chaining():
-            return not (outerjoin is None and filter_by is None and order_by is None and options is None)
+            return not (
+                        outerjoin is None and filter_by is None and order_by is None and options is None and having is None
+            )
 
         # 1. 외부X -> return False로 초기화 (set실패) -> 초기화시 select(self.__class__)로 초기화
         if not _is_chaining() and query is None:
-            return False  # -> 초기화 select(self.__class__)
+            return None  # 이것만 return False말고 reutrn None -> 초기화 select(self.__class__)
 
         # 2. 외부O -> 내부확인후 존재하면 update  VS  초기화빈값이면 assign
         # => 내부는 항상 select(main)으로 존재하게 만들어놨음.
@@ -232,6 +235,12 @@ class ObjectMixin(BaseQuery):
                 self._query = (
                     self._query
                     .options(*options)
+                )
+
+            if having:
+                self._query = (
+                    self._query
+                    .having(*having)
                 )
 
         # 체이닝이 아닌 query가 들어올 경우, 최초 init시 들어온 query=로서 할당 초기화
@@ -287,6 +296,15 @@ class ObjectMixin(BaseQuery):
         # 2-4. flatten_schema + loaded_rel_paths -> unloaded schema처리하기
         # self._set_unloaded_eager_exprs()
         # => unloaded는 .first() 등의 실행메서드로 옮겨감. filter, order 다 처리하고나서 로드
+
+    def process_havings(self, havings: dict):
+        if not havings:
+            return False
+
+        having_attrs = list(_flat_filter_keys_generator(havings))
+        self._set_alias_map_and_loaded_rel_paths_and_eager_exprs(parent_model=self.__class__, parent_path='',
+                                                                 attrs=having_attrs)
+        self.set_query(having=self._create_filters_expr_with_alias_map(self.__class__, havings, self._alias_map))
 
     def _set_alias_map_and_loaded_rel_paths_and_eager_exprs(self, parent_model, parent_path, attrs):
         """

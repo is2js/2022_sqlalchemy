@@ -1,5 +1,5 @@
 # ObjectMixin(BaseQuery) 이후로는 세팅된 Base를 사용하여, BaseModel이 Base대신 이것을 상속한다.
-from sqlalchemy import PrimaryKeyConstraint, ForeignKeyConstraint, UniqueConstraint, exists, MetaData, inspect
+from sqlalchemy import PrimaryKeyConstraint, ForeignKeyConstraint, UniqueConstraint, exists, MetaData, inspect, select
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Session, RelationshipProperty
@@ -170,7 +170,6 @@ class CRUDMixin(Base, ObjectMixin):
         """
 
         obj = cls.create_obj(session=session, filters=kwargs)
-        print('obj._query  >> ', obj._query)
 
         return obj
 
@@ -184,7 +183,6 @@ class CRUDMixin(Base, ObjectMixin):
         WHERE employee_departments.id = :id_1
         """
         self.process_filter_or_orders(filters=kwargs)
-        print('self._query in filter_by  >> ', self._query)
 
         return self
 
@@ -276,6 +274,47 @@ class CRUDMixin(Base, ObjectMixin):
             raise Exception(f'primary key가 존재하지 않습니다.')
 
         return self_primary_key
+
+    ###################
+    # Group By -      #
+    ###################
+    @classmethod
+    def group_by(cls, *group_by_column_names, session: Session = None, selects=None, filters=None):
+        """
+        Category.group_by('icon', selects=['id', 'icon__sum']).execute()
+        => [(2, 24), (1, 23)]
+        """
+        group_by_columns = cls.create_columns(cls, group_by_column_names)
+
+        if selects:
+            if not isinstance(selects, (list, tuple, set)):
+                selects = [selects]
+            select_columns = cls.create_columns(cls, column_names=selects, in_select=True) # 집계가 in_select시 coalesce
+        else:
+            select_columns = [cls]
+
+        query = (
+            select(*select_columns)
+            .group_by(*group_by_columns)
+        )
+
+        obj = cls.create_obj(session=session, query=query)
+
+        return obj
+
+    def having(self, **kwargs):
+        """
+        Category.group_by('icon', selects=['id', 'icon__sum']).having(icon__sum__lt=24).execute()
+        =>
+        SELECT categories.id, coalesce(sum(categories.icon), ?) AS icon_sum
+        FROM categories GROUP BY categories.icon
+        HAVING sum(categories.icon) < ?
+        """
+        # self.process_filter_or_orders(filters=kwargs)
+        self.process_havings(kwargs)
+
+
+        return self
 
     ###################
     # Update -        # -> only self method => create_obj없이 model_obj에서 [최초호출].init_obj()로 초기화

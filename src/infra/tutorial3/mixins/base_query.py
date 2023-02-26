@@ -199,19 +199,21 @@ class BaseQuery:
             #### func 적용 apply_func = 인자 추가
             if func_name.startswith('count'):
                 if in_select:
-                    column = func.coalesce(func.count(column).label(func_name), 0)
+                    column = func.coalesce(func.count(column).label(column_name +'_' +  func_name), 0)
                 else:
-                    column = func.count(column).label(func_name)
+                    column = func.count(column).label(column_name +'_' +  func_name)
             elif func_name.startswith('sum'):
                 if in_select:
-                    column = func.coalesce(func.sum(cast(column, Integer)), 0).label(func_name)
+                    # column = func.coalesce(func.sum(cast(column, Integer)), 0).label(column_name +'_' +  func_name)
+                    column = func.coalesce(func.sum(column), 0).label(column_name +'_' +  func_name)
                 else:
-                    column = func.sum(cast(column, Integer)).label(func_name)
+                    # column = func.sum(cast(column, Integer)).label(column_name +'_' +  func_name)
+                    column = func.sum(column).label(column_name +'_' +  func_name)
             elif func_name.startswith('length'):
                 if in_select:
-                    column = func.coalesce(func.length(column), 0).label(func_name)
+                    column = func.coalesce(func.length(column), 0).label(column_name +'_' +  func_name)
                 else:
-                    column = func.length(column).label(func_name)
+                    column = func.length(column).label(column_name + '_' + func_name)
 
             else:
                 raise NotImplementedError(f'Invalid column func_name: {func_name}')
@@ -458,92 +460,92 @@ class BaseQuery:
                cls.get_hybrid_property_names(model) + cls.get_hybrid_method_names(model)
 
     # for _create_filters_expr_with_alias_map
+    # @classmethod
+    # def create_filter_exprs(cls, model, **filters):
+    #     """
+    #     forms expressions like [Product.age_from = 5,
+    #                             Product.subject_ids.in_([1,2])]
+    #     from filters like {'age_from': 5, 'subject_ids__in': [1,2]}
+    #     Example 1:
+    #         db.query(Product).filter(
+    #             *Product.create_filter_exprs(age_from = 5, subject_ids__in=[1, 2]))
+    #     Example 2:
+    #         filters = {'age_from': 5, 'subject_ids__in': [1,2]}
+    #         db.query(Product).filter(*Product.create_filter_exprs(**filters))
+    #     ### About alias ###:
+    #     If we will use alias:
+    #         alias = aliased(Product) # table name will be product_1
+    #     we can't just write query like
+    #         db.query(alias).filter(*Product.create_filter_exprs(age_from=5))
+    #     because it will be compiled to
+    #         SELECT * FROM product_1 WHERE product.age_from=5
+    #     which is wrong: we select from 'product_1' but filter on 'product'
+    #     such filter will not work
+    #     We need to obtain
+    #         SELECT * FROM product_1 WHERE product_1.age_from=5
+    #     For such case, we can call create_filter_exprs ON ALIAS:
+    #         alias = aliased(Product)
+    #         db.query(alias).filter(*alias.create_filter_exprs(age_from=5))
+    #     Alias realization details:
+    #       * we allow to call this method
+    #         either ON ALIAS (say, alias.create_filter_exprs())
+    #         or on class (Product.create_filter_exprs())
+    #       * when method is called on alias, we need to generate SQL using
+    #         aliased table (say, product_1), but we also need to have a real
+    #         class to call methods on (say, Product.get_relation_column_names)
+    #       * so, we have 'mapper' that holds table name
+    #         and 'cls' that holds real class
+    #         when we call this method ON ALIAS, we will have:
+    #             mapper = <product_1 table>
+    #             cls = <Product>
+    #         when we call this method ON CLASS, we will simply have:
+    #             mapper = <Product> (or we could write <Product>.__mapper__.
+    #                                 It doesn't matter because when we call
+    #                                 <Product>.getattr, SA will magically
+    #                                 call <Product>.__mapper__.getattr())
+    #             cls = <Product>
+    #     """
+    #     # 1. main model외 relation의 alias가 들어온다면, inspect().mapper.class_로 관계model을 가져온다.
+    #     #    => main model 및 관계 alias  =>  mapper로 표현  +  model은 쌩 class만 취급.
+    #     # mapper for create_column / model for attrs검사
+    #     mapper, model = cls.split_mapper_and_model_for_alias(model)
+    #
+    #     # 2. filter를 돌면서, 표현식을 만든다.
+    #     expressions = []
+    #
+    #     # 연산자 split후 남은 필터옵션(name__eq -> name)이 해당model의 필터링에 쓸 수 있는지 확인한다.
+    #     valid_attrs = cls.get_filterable_attr_names(model)
+    #
+    #     for attr, value in filters.items():
+    #         # 2-1) 입력한 필터 옵션이 hybrid method로서 호출될 경우
+    #         #      hybrid메서드는  연산자 연산이 아니라, method(value)를 expr로서 넣어준다.
+    #         #   => 이대, hybrid메서드 호출 주체를 alias로 주기 위해 mapper=옵션을 준다.
+    #         if attr in cls.get_hybrid_method_names(model):
+    #             method = getattr(cls, attr)
+    #             expressions.append(method(value, mapper=mapper))
+    #         # 2-2) 입력한 필터 옵션이 연산자처리인 경우
+    #         else:
+    #             # 2-2-1) 연산자 포함된 경우, id__gt=1
+    #             if cls.OPERATOR_OR_AGG_SPLITTER in attr:
+    #                 attr_name, op_name = attr.rsplit(cls.OPERATOR_OR_AGG_SPLITTER, 1)
+    #                 if op_name not in _operators:
+    #                     raise KeyError(f'Invalid Operator name `{op_name}` in `{attr}`')
+    #                 op = _operators[op_name]
+    #             # 2-2-1) 연산자가 생략되어 eq인 경우, name=1
+    #             else:
+    #                 attr_name, op = attr, operators.eq
+    #
+    #             # 3. 연산자 split후 남아있는 attr 이름이 해당model의 필터링 컬럼으로 유효한지 확인.
+    #             if attr_name not in valid_attrs:
+    #                 raise KeyError(f'Invalid filtering attr name `{attr_name}` in `{attr}`')
+    #             column = getattr(mapper, attr_name)
+    #
+    #             expressions.append(op(column, value))
+    #
+    #     return expressions
+
     @classmethod
     def create_filter_exprs(cls, model, **filters):
-        """
-        forms expressions like [Product.age_from = 5,
-                                Product.subject_ids.in_([1,2])]
-        from filters like {'age_from': 5, 'subject_ids__in': [1,2]}
-        Example 1:
-            db.query(Product).filter(
-                *Product.create_filter_exprs(age_from = 5, subject_ids__in=[1, 2]))
-        Example 2:
-            filters = {'age_from': 5, 'subject_ids__in': [1,2]}
-            db.query(Product).filter(*Product.create_filter_exprs(**filters))
-        ### About alias ###:
-        If we will use alias:
-            alias = aliased(Product) # table name will be product_1
-        we can't just write query like
-            db.query(alias).filter(*Product.create_filter_exprs(age_from=5))
-        because it will be compiled to
-            SELECT * FROM product_1 WHERE product.age_from=5
-        which is wrong: we select from 'product_1' but filter on 'product'
-        such filter will not work
-        We need to obtain
-            SELECT * FROM product_1 WHERE product_1.age_from=5
-        For such case, we can call create_filter_exprs ON ALIAS:
-            alias = aliased(Product)
-            db.query(alias).filter(*alias.create_filter_exprs(age_from=5))
-        Alias realization details:
-          * we allow to call this method
-            either ON ALIAS (say, alias.create_filter_exprs())
-            or on class (Product.create_filter_exprs())
-          * when method is called on alias, we need to generate SQL using
-            aliased table (say, product_1), but we also need to have a real
-            class to call methods on (say, Product.get_relation_column_names)
-          * so, we have 'mapper' that holds table name
-            and 'cls' that holds real class
-            when we call this method ON ALIAS, we will have:
-                mapper = <product_1 table>
-                cls = <Product>
-            when we call this method ON CLASS, we will simply have:
-                mapper = <Product> (or we could write <Product>.__mapper__.
-                                    It doesn't matter because when we call
-                                    <Product>.getattr, SA will magically
-                                    call <Product>.__mapper__.getattr())
-                cls = <Product>
-        """
-        # 1. main model외 relation의 alias가 들어온다면, inspect().mapper.class_로 관계model을 가져온다.
-        #    => main model 및 관계 alias  =>  mapper로 표현  +  model은 쌩 class만 취급.
-        # mapper for create_column / model for attrs검사
-        mapper, model = cls.split_mapper_and_model_for_alias(model)
-
-        # 2. filter를 돌면서, 표현식을 만든다.
-        expressions = []
-
-        # 연산자 split후 남은 필터옵션(name__eq -> name)이 해당model의 필터링에 쓸 수 있는지 확인한다.
-        valid_attrs = cls.get_filterable_attr_names(model)
-
-        for attr, value in filters.items():
-            # 2-1) 입력한 필터 옵션이 hybrid method로서 호출될 경우
-            #      hybrid메서드는  연산자 연산이 아니라, method(value)를 expr로서 넣어준다.
-            #   => 이대, hybrid메서드 호출 주체를 alias로 주기 위해 mapper=옵션을 준다.
-            if attr in cls.get_hybrid_method_names(model):
-                method = getattr(cls, attr)
-                expressions.append(method(value, mapper=mapper))
-            # 2-2) 입력한 필터 옵션이 연산자처리인 경우
-            else:
-                # 2-2-1) 연산자 포함된 경우, id__gt=1
-                if cls.OPERATOR_OR_AGG_SPLITTER in attr:
-                    attr_name, op_name = attr.rsplit(cls.OPERATOR_OR_AGG_SPLITTER, 1)
-                    if op_name not in _operators:
-                        raise KeyError(f'Invalid Operator name `{op_name}` in `{attr}`')
-                    op = _operators[op_name]
-                # 2-2-1) 연산자가 생략되어 eq인 경우, name=1
-                else:
-                    attr_name, op = attr, operators.eq
-
-                # 3. 연산자 split후 남아있는 attr 이름이 해당model의 필터링 컬럼으로 유효한지 확인.
-                if attr_name not in valid_attrs:
-                    raise KeyError(f'Invalid filtering attr name `{attr_name}` in `{attr}`')
-                column = getattr(mapper, attr_name)
-
-                expressions.append(op(column, value))
-
-        return expressions
-
-    @classmethod
-    def create_having_exprs(cls, model, **filters):
         """
         forms expressions like [Product.age_from = 5,
                                 Product.subject_ids.in_([1,2])]
