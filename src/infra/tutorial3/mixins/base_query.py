@@ -36,8 +36,6 @@ Mixin 완성본 참고:  https://github.com/absent1706/sqlalchemy-mixins/tree/ce
 - inpsect mixins: https://github.com/absent1706/sqlalchemy-mixins/blob/ce4badbc51f8049783fa3909615ccfc7c1198d98/sqlalchemy_mixins/inspection.py
 """
 
-
-
 # https://github.com/absent1706/sqlalchemy-mixins/blob/ce4badbc51f8049783fa3909615ccfc7c1198d98/sqlalchemy_mixins/smartquery.py#L396
 op_dict = {
     "==": "eq",
@@ -129,10 +127,6 @@ eager_load_map = {
 }
 
 
-
-
-
-
 class BaseQuery:
     DIALECT_NAME = db_config.get_dialect_name()
 
@@ -205,13 +199,20 @@ class BaseQuery:
             #### func 적용 apply_func = 인자 추가
             if func_name.startswith('count'):
                 if in_select:
-                    column = func.coalesce(func.count(column), 0).label(func_name)
+                    column = func.coalesce(func.count(column).label(func_name), 0)
                 else:
                     column = func.count(column).label(func_name)
             elif func_name.startswith('sum'):
-                column = func.coalesce(func.sum(cast(column, Integer)), 0).label(func_name)
+                if in_select:
+                    column = func.coalesce(func.sum(cast(column, Integer)), 0).label(func_name)
+                else:
+                    column = func.sum(cast(column, Integer)).label(func_name)
             elif func_name.startswith('length'):
-                column = func.coalesce(func.length(column), 0).label(func_name)
+                if in_select:
+                    column = func.coalesce(func.length(column), 0).label(func_name)
+                else:
+                    column = func.length(column).label(func_name)
+
             else:
                 raise NotImplementedError(f'Invalid column func_name: {func_name}')
 
@@ -230,7 +231,7 @@ class BaseQuery:
             return cls.get_column(model, column_name)
 
     @classmethod
-    def create_columns(cls, model, column_names=None):
+    def create_columns(cls, model, column_names=None, in_select=False):
         """
         return a list of columns from the model
         - https://vscode.dev/github/adpmhel24/jpsc_ordering_system
@@ -262,7 +263,7 @@ class BaseQuery:
             #         raise Exception(f'Invalid column name: {column_name}')
             #     column_name, apply_func = column_name
             # => 집계를 ['id__count', 'name']형식으로 바꾸자.
-            columns.append(cls.create_column(model, column_name))
+            columns.append(cls.create_column(model, column_name, in_select=in_select))
 
         return columns
 
@@ -522,6 +523,90 @@ class BaseQuery:
                 expressions.append(method(value, mapper=mapper))
             # 2-2) 입력한 필터 옵션이 연산자처리인 경우
             else:
+                # 2-2-1) 연산자 포함된 경우, id__gt=1
+                if cls.OPERATOR_OR_AGG_SPLITTER in attr:
+                    attr_name, op_name = attr.rsplit(cls.OPERATOR_OR_AGG_SPLITTER, 1)
+                    if op_name not in _operators:
+                        raise KeyError(f'Invalid Operator name `{op_name}` in `{attr}`')
+                    op = _operators[op_name]
+                # 2-2-1) 연산자가 생략되어 eq인 경우, name=1
+                else:
+                    attr_name, op = attr, operators.eq
+
+                # 3. 연산자 split후 남아있는 attr 이름이 해당model의 필터링 컬럼으로 유효한지 확인.
+                if attr_name not in valid_attrs:
+                    raise KeyError(f'Invalid filtering attr name `{attr_name}` in `{attr}`')
+                column = getattr(mapper, attr_name)
+
+                expressions.append(op(column, value))
+
+        return expressions
+
+    @classmethod
+    def create_having_exprs(cls, model, **filters):
+        """
+        forms expressions like [Product.age_from = 5,
+                                Product.subject_ids.in_([1,2])]
+        from filters like {'age_from': 5, 'subject_ids__in': [1,2]}
+        Example 1:
+            db.query(Product).filter(
+                *Product.create_filter_exprs(age_from = 5, subject_ids__in=[1, 2]))
+        Example 2:
+            filters = {'age_from': 5, 'subject_ids__in': [1,2]}
+            db.query(Product).filter(*Product.create_filter_exprs(**filters))
+        ### About alias ###:
+        If we will use alias:
+            alias = aliased(Product) # table name will be product_1
+        we can't just write query like
+            db.query(alias).filter(*Product.create_filter_exprs(age_from=5))
+        because it will be compiled to
+            SELECT * FROM product_1 WHERE product.age_from=5
+        which is wrong: we select from 'product_1' but filter on 'product'
+        such filter will not work
+        We need to obtain
+            SELECT * FROM product_1 WHERE product_1.age_from=5
+        For such case, we can call create_filter_exprs ON ALIAS:
+            alias = aliased(Product)
+            db.query(alias).filter(*alias.create_filter_exprs(age_from=5))
+        Alias realization details:
+          * we allow to call this method
+            either ON ALIAS (say, alias.create_filter_exprs())
+            or on class (Product.create_filter_exprs())
+          * when method is called on alias, we need to generate SQL using
+            aliased table (say, product_1), but we also need to have a real
+            class to call methods on (say, Product.get_relation_column_names)
+          * so, we have 'mapper' that holds table name
+            and 'cls' that holds real class
+            when we call this method ON ALIAS, we will have:
+                mapper = <product_1 table>
+                cls = <Product>
+            when we call this method ON CLASS, we will simply have:
+                mapper = <Product> (or we could write <Product>.__mapper__.
+                                    It doesn't matter because when we call
+                                    <Product>.getattr, SA will magically
+                                    call <Product>.__mapper__.getattr())
+                cls = <Product>
+        """
+        # 1. main model외 relation의 alias가 들어온다면, inspect().mapper.class_로 관계model을 가져온다.
+        #    => main model 및 관계 alias  =>  mapper로 표현  +  model은 쌩 class만 취급.
+        # mapper for create_column / model for attrs검사
+        mapper, model = cls.split_mapper_and_model_for_alias(model)
+
+        # 2. filter를 돌면서, 표현식을 만든다.
+        expressions = []
+
+        # 연산자 split후 남은 필터옵션(name__eq -> name)이 해당model의 필터링에 쓸 수 있는지 확인한다.
+        valid_attrs = cls.get_filterable_attr_names(model)
+
+        for attr, value in filters.items():
+            # 2-1) 입력한 필터 옵션이 hybrid method로서 호출될 경우
+            #      hybrid메서드는  연산자 연산이 아니라, method(value)를 expr로서 넣어준다.
+            #   => 이대, hybrid메서드 호출 주체를 alias로 주기 위해 mapper=옵션을 준다.
+            if attr in cls.get_hybrid_method_names(model):
+                method = getattr(cls, attr)
+                expressions.append(method(value, mapper=mapper))
+            # 2-2) 입력한 필터 옵션이 연산자처리인 경우
+            else:
                 # # 2-2-1) 연산자 포함된 경우, id__gt=1
                 # if cls.OPERATOR_OR_FUNC_SPLITTER in attr:
                 #     attr_name, op_name = attr.rsplit(cls.OPERATOR_OR_FUNC_SPLITTER, 1)
@@ -591,7 +676,6 @@ class BaseQuery:
                     if attr_name not in valid_attrs:
                         raise KeyError(f'Invalid filtering attr name `{attr_name}` in `{attr}`')
                     column = getattr(mapper, attr_name)
-
 
                 expressions.append(op(column, value))
 
@@ -740,10 +824,10 @@ class BaseQuery:
         if orders and not isinstance(orders, (list, tuple, set)):
             orders = [orders]
 
-
         # 1. filter의 key들만 순서대로 평탄화한다. => _flat_schema처럼 dict {}에 depth로 저장할 게 아니라면
         #   yield를 통해 순차적으로 재귀 방출할 수 있게 한다.
-        filter_and_order_attrs = list(cls._flat_filter_keys_generator(filters))  # ['id__gt', 'id__lt', 'tags___property__in']
+        filter_and_order_attrs = list(
+            cls._flat_filter_keys_generator(filters))  # ['id__gt', 'id__lt', 'tags___property__in']
         # orders에만 포함된 칼럼도 -> alias_map에 포함되어서 -> outerjoin되어야한다.
         # -> 여기는 연산자가 없이 -name, tags___name 형태로, 존재하니 앞에 -만 떼서 넣어주면 된다.
         filter_and_order_attrs += list(map(lambda s: s.lstrip(cls.DESC_PREFIX), orders))
@@ -1539,6 +1623,7 @@ class BaseQuery:
             result.append(eager_load_map[eager_type](column_name))
 
         return result
+
 
 class StaticsQuery(BaseQuery):
 
