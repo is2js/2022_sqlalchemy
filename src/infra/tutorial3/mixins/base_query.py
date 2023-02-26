@@ -137,7 +137,7 @@ class BaseQuery:
     DIALECT_NAME = db_config.get_dialect_name()
 
     DESC_PREFIX = '-'
-    OPERATOR_OR_FUNC_SPLITTER = '__'
+    OPERATOR_OR_AGG_SPLITTER = '__'
     RELATION_SPLITTER = '___'
 
     ## eager types
@@ -175,14 +175,14 @@ class BaseQuery:
 
     @classmethod
     def check_and_split_attr_names(cls, column_name):
-        column_name = column_name.split(f'{cls.OPERATOR_OR_FUNC_SPLITTER}')
+        column_name = column_name.split(f'{cls.OPERATOR_OR_AGG_SPLITTER}')
         if len(column_name) > 3:
             raise Exception(f'Invalid func column name: {column_name}')
 
         return column_name
 
     @classmethod
-    def create_column(cls, model, column_name):
+    def create_column(cls, model, column_name, in_select=False):
         """
         BaseQuery.create_column(User, 'id')
         <sqlalchemy.orm.attributes.InstrumentedAttribute object at 0x0000024B4967A5C8>
@@ -204,7 +204,10 @@ class BaseQuery:
 
             #### func 적용 apply_func = 인자 추가
             if func_name.startswith('count'):
-                column = func.coalesce(func.count(column), 0).label(func_name)
+                if in_select:
+                    column = func.coalesce(func.count(column), 0).label(func_name)
+                else:
+                    column = func.count(column).label(func_name)
             elif func_name.startswith('sum'):
                 column = func.coalesce(func.sum(cast(column, Integer)), 0).label(func_name)
             elif func_name.startswith('length'):
@@ -501,6 +504,7 @@ class BaseQuery:
         """
         # 1. main model외 relation의 alias가 들어온다면, inspect().mapper.class_로 관계model을 가져온다.
         #    => main model 및 관계 alias  =>  mapper로 표현  +  model은 쌩 class만 취급.
+        # mapper for create_column / model for attrs검사
         mapper, model = cls.split_mapper_and_model_for_alias(model)
 
         # 2. filter를 돌면서, 표현식을 만든다.
@@ -518,21 +522,76 @@ class BaseQuery:
                 expressions.append(method(value, mapper=mapper))
             # 2-2) 입력한 필터 옵션이 연산자처리인 경우
             else:
-                # 2-2-1) 연산자 포함된 경우, id__gt=1
-                if cls.OPERATOR_OR_FUNC_SPLITTER in attr:
-                    attr_name, op_name = attr.rsplit(cls.OPERATOR_OR_FUNC_SPLITTER, 1)
-                    if op_name not in _operators:
-                        raise KeyError(f'Invalid Operator name `{op_name}` in `{attr}`')
-                    op = _operators[op_name]
-                # 2-2-1) 연산자가 생략되어 eq인 경우, name=1
+                # # 2-2-1) 연산자 포함된 경우, id__gt=1
+                # if cls.OPERATOR_OR_FUNC_SPLITTER in attr:
+                #     attr_name, op_name = attr.rsplit(cls.OPERATOR_OR_FUNC_SPLITTER, 1)
+                #     if op_name not in _operators:
+                #         raise KeyError(f'Invalid Operator name `{op_name}` in `{attr}`')
+                #     op = _operators[op_name]
+                # # 2-2-1) 연산자가 생략되어 eq인 경우, name=1
+                # else:
+                #     attr_name, op = attr, operators.eq
+                #
+                # # 3. 연산자 split후 남아있는 attr 이름이 해당model의 필터링 컬럼으로 유효한지 확인.
+                # if attr_name not in valid_attrs:
+                #     raise KeyError(f'Invalid filtering attr name `{attr_name}` in `{attr}`')
+                # column = getattr(mapper, attr_name)
+
+                # 이미 관계는 처리한 상태에서, model + attr로, 표현식만 만들면 된다.
+                # 'id'  'id__eq'   'id__count' 'id__count__eq' -> select/order와 다르게,
+                # 2-2-1) filter expr는 if __가 있다면, [1]op 'id__eq' [2] op(eq)이 생략된 집계 'id__count' OR  [3] op명시 집계 'id__count__eq'
+                #                    __   없다면,  무조건 eq의 생략 & 집계 X이다. 'id'
+                print('1. attr  >> ', attr)
+
+                if cls.OPERATOR_OR_AGG_SPLITTER in attr:
+                    # attr_name, op_name = attr.rsplit(cls.OPERATOR_OR_AGG_SPLITTER, 1)
+                    # 2-2-1-1) __가 있다면, 3 중 1   'id__eq' or 'id__count' or 'id__count__eq'
+                    # => 우측 자르기 'id' + op VS  'id' + agg or 'id__count' + op
+                    # => 좌측 자르기 'id' + 'eq' VS 'id' + 'count  or  'id' + 'count__op'
+                    # => 집계 VS 비집계를 나누려면, 좌측자르기 한 뒤, 확인해야한다?!
+                    attr_name, op_or_agg_name = attr.split(cls.OPERATOR_OR_AGG_SPLITTER, 1)
+                    print('2. attr_name, op_or_agg_name  >> ', attr_name, op_or_agg_name)
+
+                    # 2-2-1-1-1) 집계인 경우(count or count__eq) => attr_name + agg_name을 create_column으로 보내서 만든다.?!
+                    # 'id' + 'count' or 'count__eq'
+                    #  => 다시 한번 __여부를 확인하여 없으면 eq생략, 있으면 해당연산자다
+                    if op_or_agg_name.startswith(('count', 'sum', 'length')):
+                        # 'count__eq'
+                        if cls.OPERATOR_OR_AGG_SPLITTER in op_or_agg_name:
+                            agg_name, op_name = op_or_agg_name.split(cls.OPERATOR_OR_AGG_SPLITTER, 1)
+                            print('3. agg_name, op_name  >> ', agg_name, op_name)
+
+                            op = _operators[op_name]
+                            attr_name = attr_name + '__' + agg_name
+                            print('4. attr_name  >> ', attr_name)
+
+                            column = cls.create_column(mapper, attr_name)
+
+                        # 'count'
+                        else:
+                            agg_name = op_or_agg_name
+                            print('3. agg_name(no op_name)  >> ', agg_name)
+                            attr_name = attr_name + '__' + agg_name
+                            print('4. attr_name  >> ', attr_name)
+                            column = cls.create_column(mapper, attr_name)
+                            op = operators.eq
+
+                    # 2-2-1-1-2) 집계아닌 경우 'id' + 'eq'
+                    else:
+                        attr_name, op_name = attr.rsplit(cls.OPERATOR_OR_AGG_SPLITTER, 1)
+                        if op_name not in _operators:
+                            raise KeyError(f'Invalid Operator name `{op_name}` in `{attr}`')
+                        op = _operators[op_name]
+                        column = getattr(mapper, attr_name)
+
+                    # expressions.append(op(column, value))
+                # 2-2-2) __가 없다면, 무조건 eq가 생략된 집계없는 attr
                 else:
                     attr_name, op = attr, operators.eq
+                    if attr_name not in valid_attrs:
+                        raise KeyError(f'Invalid filtering attr name `{attr_name}` in `{attr}`')
+                    column = getattr(mapper, attr_name)
 
-                # 3. 연산자 split후 남아있는 attr 이름이 해당model의 필터링 컬럼으로 유효한지 확인.
-                if attr_name not in valid_attrs:
-                    raise KeyError(f'Invalid fiiltering attr name `{attr_name}` in `{attr}`')
-
-                column = getattr(mapper, attr_name)
 
                 expressions.append(op(column, value))
 
@@ -1024,8 +1083,8 @@ class BaseQuery:
                 else (asc, attr)
 
             #### 추가 column_name에 id__count 등 집계함수가 있을 수 있다. => 검사는 순수 칼럼네임만 받아야한다.
-            if cls.OPERATOR_OR_FUNC_SPLITTER in attr:
-                column_name_for_check, func_name = attr.split(cls.OPERATOR_OR_FUNC_SPLITTER)
+            if cls.OPERATOR_OR_AGG_SPLITTER in attr:
+                column_name_for_check, func_name = attr.split(cls.OPERATOR_OR_AGG_SPLITTER)
                 cls.check_sortable_column_name(model, column_name_for_check)
             else:
                 cls.check_sortable_column_name(model, attr)

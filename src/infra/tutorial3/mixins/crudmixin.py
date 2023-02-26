@@ -1,9 +1,9 @@
 # ObjectMixin(BaseQuery) 이후로는 세팅된 Base를 사용하여, BaseModel이 Base대신 이것을 상속한다.
-from sqlalchemy import PrimaryKeyConstraint, ForeignKeyConstraint, UniqueConstraint, exists
+from sqlalchemy import PrimaryKeyConstraint, ForeignKeyConstraint, UniqueConstraint, exists, MetaData, inspect
+from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Session, RelationshipProperty
 
-from src.infra.config.base import Base
 from src.infra.tutorial3.mixins.objectmixin import ObjectMixin
 from src.infra.tutorial3.mixins.utils.classorinstancemethod import class_or_instancemethod
 from src.infra.tutorial3.mixins.utils.classproperty import class_property
@@ -14,6 +14,15 @@ constraints_map = {
     'unique': UniqueConstraint,
 }
 
+Base = declarative_base()
+naming_convention = {
+    "ix": 'ix_%(column_0_label)s',
+    "uq": "uq_%(table_name)s_%(column_0_name)s",
+    "ck": "ck_%(table_name)s_%(column_0_name)s",
+    "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+    "pk": "pk_%(table_name)s"
+}
+Base.metadata = MetaData(naming_convention=naming_convention)
 
 class CRUDMixin(Base, ObjectMixin):
     __abstract__ = True
@@ -59,12 +68,12 @@ class CRUDMixin(Base, ObjectMixin):
         """
         User.get_constraint_attrs(target='unique')
         ['username']
-        => 파생  User.pks / User.fks / User.uks
         """
         # 제약조건 관련은 .__table__.constrains에서 꺼내 쓴다.
         if isinstance(target, str) and target.lower() not in constraints_map.keys():
             raise NotImplementedError(f'해당 {target} 제약조건의 칼럼명 목록 조회는 구현되지 않았습니다.')
 
+        #### 가짜 Base 상속해야 inpsect / cls.__table__ 모두가능  +  inspect는 constrainst 정보 없음. BUT inpsect(self)도 가능.
         constraints = cls.__table__.constraints
         target_constraint_class = constraints_map.get(target)
         target_constraint = next((c for c in constraints if isinstance(c, target_constraint_class)), None)
@@ -185,10 +194,8 @@ class CRUDMixin(Base, ObjectMixin):
     @classmethod
     def get(cls, *args, session: Session = None, **kwargs):
         """
-        1. id(pk)로  삭제 -> get을 이용 검색안되면 get에서 에러난다.
-            Category.delete_by(1, 1000) => KeyError: 'Invalid Primary Key(s): [1000]'
-            Category.delete_by(3, 4) => fk걸린 것이면 에러날 수도 있다.
-
+        1. id(pk)로  1개만 검색하는 경우 where  =    .first()
+            User.get(1)
 
         2. id(pk)   2개이상입력시 where in      .all()
             User.get(1, 2) => WHERE users.id IN (__[POSTCOMPILE_id_1]) => [<User>, <.User object at 0x000002BE16C02FD0>]
@@ -227,7 +234,8 @@ class CRUDMixin(Base, ObjectMixin):
                 return results
 
         # 2) kwargs(unique 칼럼)으로 검색하는 경우
-        if kwargs and not args:
+        # if kwargs and not args:
+        else:
             # kwargs검색은 오직 keyword9(uk) 1개만 허용
             if len(kwargs.keys()) != 1:
                 raise KeyError(f'Only one keyword(pk or unique key) value allowed.')
@@ -385,8 +393,11 @@ class CRUDMixin(Base, ObjectMixin):
     def delete_by(cls, *args, session: Session = None, auto_commit=True, **kwargs):
         """
         1. Category.delete_by(1, 2, 3)
-        
+            Category.delete_by(1, 1000) => KeyError: 'Invalid Primary Key(s): [1000]'
+            Category.delete_by(3, 4) => fk걸린 것이면 에러날 수도 있다.
+
         2. Category.delete_by(name=['aaa','bbb'])
+
         """
         if not (args or kwargs) or (args and kwargs):
             raise KeyError(f'id를 입력하거나 키워드 형식으로 unique칼럼을 지정하되 방법은 1가지만 선택해주세요.')

@@ -10,6 +10,7 @@ from src.infra.config.base import Base
 from src.infra.tutorial3.mixins import StaticsMixin, RelationMixin
 from src.infra.tutorial3.mixins.crudmixin import CRUDMixin
 from src.infra.tutorial3.mixins.objectmixin import ObjectMixin
+from src.infra.tutorial3.mixins.reprmixin import ReprMixin
 from src.infra.tutorial3.mixins.smart_mixin import SmartMixin
 from src.main.templates.filters import format_date, format_datetime
 
@@ -22,7 +23,7 @@ default_table_args = {
 # => Mixin은 Base를 새로 만들어서 기능을 땡겨쓰기만 하고, 여기 Base와는 별개다.
 # class BaseModel(CRUDMixin):
 # class BaseModel(Base, SmartMixin):
-class BaseModel(CRUDMixin):
+class BaseModel(Base, ReprMixin, CRUDMixin):
     # 추상화 안해주면, does not have a __table__ or __tablename__ specified and does not inherit from an existing table-mapped class.
     __abstract__ = True
     # @declared_attr
