@@ -1,5 +1,5 @@
 # ObjectMixin(BaseQuery) 이후로는 세팅된 Base를 사용하여, BaseModel이 Base대신 이것을 상속한다.
-from sqlalchemy import PrimaryKeyConstraint, ForeignKeyConstraint, UniqueConstraint, exists, MetaData, inspect, select
+from sqlalchemy import PrimaryKeyConstraint, ForeignKeyConstraint, UniqueConstraint, exists, MetaData
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Session, RelationshipProperty
@@ -320,11 +320,11 @@ class CRUDMixin(Base, ObjectMixin):
         Category.group_by('icon', selects=['id', 'icon__sum']).execute()
         => [(2, 24), (1, 23)]
         """
-        obj = cls.create_obj(session=session)
+        obj = cls.create_obj(session=session, selects=selects)
 
-        if selects:
-            # obj.process_selects_eager_exprs(selects)
-            obj.process_non_conditional_attrs(selects=selects)
+        # if selects:
+        #     # obj.process_selects_eager_exprs(selects)
+        #     obj.process_non_conditional_attrs(selects=selects)
             #### relationship -> contains_eager로 사용하려면, 무조건 main model(cls) select에 들어가야
             # => Query has only expression-based entities - can't find property named "employee".가 안뜬다.
             # select_columns = cls.create_columns(cls, column_names=selects, in_select=True) # 집계가 in_select시 coalesce
@@ -347,7 +347,7 @@ class CRUDMixin(Base, ObjectMixin):
         FROM categories GROUP BY categories.icon
         HAVING sum(categories.icon) < ?
         """
-        self.process_having_eager_exprs(kwargs)
+        self.set_attrs(having=kwargs)
 
         return self
 
