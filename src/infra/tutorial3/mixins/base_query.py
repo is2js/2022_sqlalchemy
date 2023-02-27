@@ -259,7 +259,7 @@ class BaseQuery:
         #    selectable: sortable과 동일
         #    filterable: 일반/hybrid칼럼 + 관계칼럼O + hybrid메서드O
         # => orders의 경우, prefix를 떼고 검사해야한다.
-        # => selects/filters/orders 모두 공통적으로 집계함수는 떼고 검사한다.
+        # => select/filters/orders 모두 공통적으로 집계함수는 떼고 검사한다.
         only_attr = attr.split('__', 1)[0]
         if type in [cls.SELECT, cls.ORDER_BY, cls.GROUP_BY]:
             cls.check_selectable_or_sortable_attr_name(model, only_attr)
@@ -293,6 +293,7 @@ class BaseQuery:
             # select시 coalesce적용 및 라벨 붙여주기
             if type == cls.SELECT:
                 column_expr = func.coalesce(column_expr, 0)
+
             column_expr = column_expr.label(attr + '_' + agg_name)
 
             return column_expr
@@ -1426,13 +1427,13 @@ class BaseQuery:
         WHERE users.id IN (__[POSTCOMPILE_id_1])
 
         2. selects에 뽑고 싶은 칼럼 기입
-        print(BaseQuery.create_select_statement(User, selects=['username'], filters={'id__in': [1,2,3,4]}))
+        print(BaseQuery.create_select_statement(User, select=['username'], filters={'id__in': [1,2,3,4]}))
         ---
         SELECT users.username
         FROM users
         WHERE users.id IN (__[POSTCOMPILE_id_1])
 
-        3.print(BaseQuery.create_select_statement(User, selects=['username'], filters={'id__in': [1,2,3,4]}, order_bys=['-id', 'username']))
+        3.print(BaseQuery.create_select_statement(User, select=['username'], filters={'id__in': [1,2,3,4]}, order_bys=['-id', 'username']))
         ---
         SELECT users.username
         FROM users
@@ -1472,7 +1473,7 @@ class BaseQuery:
         # => 미리 칼럼이 string  + create_column으로  만들어져서 온다.
         if is_expr:
             if not (
-                    l_selects or r_selects):  # or (selects and isinstance(join_target, (AliasedClass, Alias, Subquery))):
+                    l_selects or r_selects):  # or (select and isinstance(join_target, (AliasedClass, Alias, Subquery))):
                 # join에서 칼럼 선택상황이라면 일단 select_columns를 '*'로 채워두고 뒤에서 고를 것이다.
                 select_columns = [text('*')]
             else:

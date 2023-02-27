@@ -296,7 +296,7 @@ class CRUDMixin(Base, BaseQuery):
         User.filter_by(id=1)
         -> User[id=None]
 
-        User.filter_by(selects=['username'], id=1).all()
+        User.filter_by(select=['username'], id=1).all()
         -> ['admin']
 
         """

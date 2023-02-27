@@ -24,6 +24,7 @@ naming_convention = {
 }
 Base.metadata = MetaData(naming_convention=naming_convention)
 
+
 class CRUDMixin(Base, ObjectMixin):
     __abstract__ = True
 
@@ -32,7 +33,9 @@ class CRUDMixin(Base, ObjectMixin):
     ############
     @classmethod
     def create(cls, session: Session = None, auto_commit: bool = True, **kwargs):
-
+        """
+        Category.create(name='123')
+        """
         # obj = cls.create_obj(session=session, **kwargs)
         obj = cls.create_obj(session=session)
         obj.fill(**kwargs)  # 검증을 위해 fill을 사용한다.
@@ -46,20 +49,21 @@ class CRUDMixin(Base, ObjectMixin):
     # for create + ## 실행메서드 ##
     def exists_self(self):
         """
-        등록 obj 존재검사(X), create()전 [미등록 obj의 unique 칼럼]을 바탕으로 db 존재 검사.
+        등록 obj 존재검사(X), 등록 전, create()전 [미등록 obj의 unique 칼럼]을 바탕으로 db 존재 검사.
         =>  SELECT EXISTS (SELECT *
             FROM users
             WHERE users.username IS NULL) AS anon_1
         """
-
-        unique_attr = getattr(self, self.unique_key_name)
-        if not unique_attr:
+        # 미등록 obj에서 unique를 확인 후, 해당 값으로, 기등록 데이터가 있는지 확인함.
+        unique_column_value = getattr(self, self.first_unique_key_name)
+        if not unique_column_value:
             raise Exception(f'unique column 값을 입력하지 않았습니다.')
 
-        expressions = self.create_conditional_exprs(self.__class__,
-                                                    **{self.unique_key_name: unique_attr})
-        stmt = self._query\
-            .where(*expressions)
+        filter_exprs = self.create_conditional_exprs(self.__class__,
+                                                     **{self.first_unique_key_name: unique_column_value})
+        # 자신의 내부 쿼리는 바꾸지 않고, 일시적으로 쿼리 -> 실행까지
+        stmt = self._query \
+            .where(*filter_exprs)
 
         return self._session.scalar(exists(stmt).select())
 
@@ -67,14 +71,18 @@ class CRUDMixin(Base, ObjectMixin):
     @classmethod
     def get_constraint_attr_names(cls, target='pk'):
         """
-        User.get_constraint_attrs(target='unique')
+        User.get_constraint_attr_names(target='unique')
         ['username']
+        User.get_constraint_attr_names(target='pk')
+        ['id']
+        User.get_constraint_attr_names(target='fk')
+        ['role_id']
         """
-        # 제약조건 관련은 .__table__.constrains에서 꺼내 쓴다.
+        # 제약조건 관련은 .__table__.constrains에서만 꺼낼 수 있어서 inpsect (X)
         if isinstance(target, str) and target.lower() not in constraints_map.keys():
             raise NotImplementedError(f'해당 {target} 제약조건의 칼럼명 목록 조회는 구현되지 않았습니다.')
 
-        #### 가짜 Base 상속해야 inpsect / cls.__table__ 모두가능  +  inspect는 constrainst 정보 없음. BUT inpsect(self)도 가능.
+        #### 가짜 Base 상속해야 inspect / cls.__table__ 모두가능  +  inspect는 constrainst 정보 없음. BUT inpsect(self)도 가능.
         constraints = cls.__table__.constraints
         target_constraint_class = constraints_map.get(target)
         target_constraint = next((c for c in constraints if isinstance(c, target_constraint_class)), None)
@@ -92,9 +100,9 @@ class CRUDMixin(Base, ObjectMixin):
 
     # for exists_self
     @property
-    def unique_key_name(self):
+    def first_unique_key_name(self):
         """
-        User.unique_key
+        User.first_unique_key_name
         """
         self_unique_key = next(
             (column_name for column_name in self.column_names if column_name in self.unique_key_names), None)
@@ -102,8 +110,6 @@ class CRUDMixin(Base, ObjectMixin):
             raise Exception(f'Create 전, 존재 유무 확인을 위한 unique key를 입력하지 않았습니다.')
 
         return self_unique_key
-
-
 
     @class_property
     def foreign_key_names(cls):
@@ -129,10 +135,15 @@ class CRUDMixin(Base, ObjectMixin):
     @class_or_instancemethod
     def load(cls, schema: dict, session: Session = None):
         """
+        filter_by /order_by/ havaing의 attrs로 입력하지 않고 바로 eagerload를 수행하도록 schema를 입력함.
+        - dict형식으로 입력하되, 하위entity는 ('상위entity-load type', { '하위entity': '하위entity load type'} )로 value에 tuple을 활용
+        - tuple 생략시 joined로 load됨.
+        - 내부에서 ._flatten_schema로 등록되어, 실행메서드 호출시, 확인 후 모두 eagerload함.
+
         EmployeeDepartment.load({'employee':'selectin'})
         => obj._flatten_schema  >>  {'employee': 'selectin'}
-
-
+        EmployeeDepartment.load({'employee':('selectin', {'department': 'joined'})})
+        => obj._flatten_schema  >>  {'employee': 'selectin', 'employee.department': 'joined'}
         """
         obj = cls.create_obj(session=session, schema=schema)
 
@@ -143,7 +154,6 @@ class CRUDMixin(Base, ObjectMixin):
         """
         EmployeeDepartment.filter_by().load({'employee':'selectin'})
         => self._flatten_schema  >>  {'employee': 'selectin'}
-
         """
         # eagerload는 filter/order이후 실행메서드에서 처리되므로, schema만 올려주면 된다.
         self.set_schema(schema)
@@ -156,29 +166,28 @@ class CRUDMixin(Base, ObjectMixin):
     @class_or_instancemethod
     def filter_by(cls, session: Session = None, **kwargs):
         """
-        EmployeeDepartment.filter_by(id=1, employee___id__ne=None).all()
-        => EmployeeDepartment[id=None]
-        SELECT employees_1.*, employee_departments.*
-        FROM employee_departments
-        LEFT OUTER JOIN employees AS employees_1
-            ON employees_1.id = employee_departments.employee_id
-        WHERE employee_departments.id = :id_2 AND employees_1.id IS NOT NULL
-        """
+        1. and/or는 and_, or_를 key로하는 dict로 연결해서 사용한다.
+        2. '럼__연산자=값에서 연산자를 생략하면, eq로 취급한다.
+        3. '관계칼럼명___칼럼__연산=값' 형식으로 입력시, 내부에서 outerjoin + contains_eager이 수행되어,
+           select(cls)된 main entity에 접근할 수 있다. (단, group_by등 selects=칼럼을 지정하는 경우, execute용으로 전환되어, outerjoin만 수행)
 
-        obj = cls.create_obj(session=session, filters=kwargs)
+        EmployeeDepartment.filter_by(or_=dict(id=1, employee___id__ne=None)).all()
+        """
+        obj = cls.create_obj(session=session, filter_by=kwargs)
 
         return obj
 
     @filter_by.instancemethod
     def filter_by(self, **kwargs):
         """
-        EmployeeDepartment.filter_by().filter_by(id=1).first()
-        => EmployeeDepartment[id=None]
-        SELECT employee_departments.*
-        FROM employee_departments
-        WHERE employee_departments.id = :id_1
+        1. 딱히 사용될 일이 없을 것 같으나, load(schema=) 이후 연계할 수 있다.
+        2. group_by이후의 관계칼럼의 filter_by는  contains_eager없이 outerjoin만 된다.
+
+        ed = EmployeeDepartment.load({'department':'selectin'}).filter_by(position='상위부서장').first()
+        ed.department
+        => Department(id=1, name='상위부서', parent_id=None, sort=1, path='001')
         """
-        self.set_attrs(filters=kwargs)
+        self.set_attrs(filter_by=kwargs)
 
         return self
 
@@ -186,17 +195,18 @@ class CRUDMixin(Base, ObjectMixin):
     def order_by(cls, *args, session: Session = None):
         """
         Category.order_by("-id").all()
+        EmployeeDepartment.order_by("-department___id").all()
         """
-        obj = cls.create_obj(session=session, orders=args)
+        obj = cls.create_obj(session=session, order_by=args)
 
         return obj
 
     @order_by.instancemethod
     def order_by(self, *args):
         """
-        Category.filter_by().order_by("-id").all()
+        Category.filter_by(id__lt=5).order_by("-id").all()
         """
-        self.set_attrs(orders=args)
+        self.set_attrs(order_by=args)
 
         return self
 
@@ -225,16 +235,17 @@ class CRUDMixin(Base, ObjectMixin):
     @classmethod
     def get(cls, *args, session: Session = None, **kwargs):
         """
-        1. id(pk)로  1개만 검색하는 경우 where  =    .first()
+        1. id(pk)로  1개만 검색하는 경우 => sessioin.get(cls, id)로 찾음.
             User.get(1)
 
-        2. id(pk)   2개이상입력시 where in      .all()
+        2. id(pk)   2개이상입력시 filter_by(where) +  in      .all() 으로 찾음.
             User.get(1, 2) => WHERE users.id IN (__[POSTCOMPILE_id_1]) => [<User>, <.User object at 0x000002BE16C02FD0>]
 
-        3. kwargs(unique key or pk)로 검색하는 경우 -> .first() / .all()
+        3. kwargs(unique key or pk) key1개, values list 가능 우 -> filter_by(where)로 1개 .first() / 여러개 .all()
             User.get(username='admin')
             Category.get(name=['123', '12345'])
         """
+        # 둘중에 1개는 반드시 들어와야한다
         if not (args or kwargs) or (args and kwargs):
             raise KeyError(f'id를 입력하거나 키워드 형식으로 unique칼럼을 지정하되 방법은 1가지만 선택해주세요.')
 
@@ -249,16 +260,20 @@ class CRUDMixin(Base, ObjectMixin):
             pk_for_search = cls.first_primary_key_name
 
             if len(args) == 1:
-                obj = cls.create_obj(session=session, filters={pk_for_search: args[0]})
+                # obj = cls.create_obj(session=session, filter_by={pk_for_search: args[0]})
+                #### id 1개만 입력할 경우, session.get()으로 찾도록 변경
+                obj = cls.create_obj(session=session)
+                result = obj._session.get(cls, args)
+                obj.close()
                 # print('obj._query in one >> ', obj._query)
-                return obj.first()
+                return result
 
             else:
-                obj = cls.create_obj(session=session, filters={f'{pk_for_search}__in': args})
+                obj = cls.create_obj(session=session, filter_by={f'{pk_for_search}__in': args})
                 results = obj.all()
                 # 조회된 갯수가 다르면 못찾은 것을 찾아 에러를 방출한다.
                 if len(results) != len(args):
-                    not_searched_pks = sorted(set(args) - set([getattr(obj,pk_for_search)  for obj in results]))
+                    not_searched_pks = sorted(set(args) - set([getattr(obj, pk_for_search) for obj in results]))
                     raise KeyError(f'Invalid Primary Key(s): {not_searched_pks}')
 
                 # print('obj._query in many >> ', obj._query)
@@ -269,27 +284,25 @@ class CRUDMixin(Base, ObjectMixin):
         else:
             # kwargs검색은 오직 keyword9(uk) 1개만 허용
             if len(kwargs.keys()) != 1:
-                raise KeyError(f'Only one keyword(pk or unique key) value allowed.')
+                raise KeyError(f'Only one keyword(pk or unique key) value allowed. {[*kwargs.keys()]}')
 
-            col_name, values = [*kwargs.items()][0] # (key, '123') or (key, ['123', '456'])
+            col_name, values = [*kwargs.items()][0]  # (key, '123') or (key, ['123', '456'])
             if not isinstance(values, (list, tuple, set)):
                 values = [values]
 
             if len(values) == 1:
-                obj = cls.create_obj(session=session, filters={col_name: values[0]})
+                obj = cls.create_obj(session=session, filter_by={col_name: values[0]})
                 return obj.first()
 
             else:
-                obj = cls.create_obj(session=session, filters={f'{col_name}__in': values})
+                obj = cls.create_obj(session=session, filter_by={f'{col_name}__in': values})
                 results = obj.all()
                 # 조회된 갯수가 다르면 못찾은 것을 찾아 에러를 방출한다.
                 if len(results) != len(values):
-                    not_searched_values = sorted(set(values) - set([getattr(obj,col_name)  for obj in results]))
-                    raise KeyError(f'Invalid Values: {not_searched_values}')
-
+                    not_searched_values = sorted(set(values) - set([getattr(obj, col_name) for obj in results]))
+                    raise KeyError(f'Can\'t search pk or unique key({col_name}) value: {not_searched_values}')
                 # print('obj._query in many >> ', obj._query)
                 return results
-
 
     # for get
     @class_property
@@ -299,7 +312,7 @@ class CRUDMixin(Base, ObjectMixin):
     @class_property
     def first_primary_key_name(cls):
         """
-        User.primary_key_name
+        User.first_primary_key_name
         """
         self_primary_key = next(
             (column_name for column_name in cls.column_names if column_name in cls.primary_key_names), None)
@@ -314,23 +327,23 @@ class CRUDMixin(Base, ObjectMixin):
     @classmethod
     def group_by(cls, *group_by_column_names, session: Session = None, selects=None):
         """
-        Category.group_by('icon', selects=['id', 'icon__sum']).execute()
-        => [(2, 24), (1, 23)]
+        Category.group_by('icon', selects=['name', 'id__count']).execute()
+        => [('ccc', 4), ('337', 2)]
         """
         obj = cls.create_obj(session=session, selects=selects)
 
-        # if selects:
-        #     # obj.process_selects_eager_exprs(selects)
-        #     obj.process_non_conditional_attrs(selects=selects)
-            #### relationship -> contains_eager로 사용하려면, 무조건 main model(cls) select에 들어가야
-            # => Query has only expression-based entities - can't find property named "employee".가 안뜬다.
-            # select_columns = cls.create_columns(cls, column_names=selects, in_select=True) # 집계가 in_select시 coalesce
-            # select_columns = [cls] + select_columns
-            #### => select에 cls외 다른 것을 올리고 싶다면, execute용으로 전환되며, select_from(cls)를 주고
-            ####    outerjoin을 자동으로 하되, contains_eager이 빠져야한다.
+        # if select:
+        #     # obj.process_selects_eager_exprs(select)
+        #     obj.process_non_conditional_attrs(selects=select)
+        #### relationship -> contains_eager로 사용하려면, 무조건 main model(cls) select에 들어가야
+        # => Query has only expression-based entities - can't find property named "employee".가 안뜬다.
+        # select_columns = cls.create_columns(cls, column_names=select, in_selects=True) # 집계가 in_select시 coalesce
+        # select_columns = [cls] + select_columns
+        #### => select에 cls외 다른 것을 올리고 싶다면, execute용으로 전환되며, select_from(cls)를 주고
+        ####    outerjoin을 자동으로 하되, contains_eager이 빠져야한다.
 
-
-        group_by_column_exprs = cls.create_column_exprs_with_alias_map(cls, group_by_column_names, obj._alias_map, cls.GROUP_BY)
+        group_by_column_exprs = cls.create_column_exprs_with_alias_map(cls, group_by_column_names, obj._alias_map,
+                                                                       cls.GROUP_BY)
         obj.set_query(group_by=group_by_column_exprs)
 
         return obj
@@ -370,7 +383,6 @@ class CRUDMixin(Base, ObjectMixin):
 
         except:
             return False, '업데이트 실패'
-
 
     ###################
     # Delete          # -> only self method => create_obj없이 model_obj에서 [최초호출].init_obj()로 초기화
@@ -414,18 +426,16 @@ class CRUDMixin(Base, ObjectMixin):
         if not all(attr in cls.primary_key_names + cls.unique_key_names for attr in kwargs.keys()):
             raise KeyError(f'삭제 시 검색시, id(pk) 혹은 키워드로 unique Column을 입력해주세요.')
 
-
-
         # 한개든 여러개든 순회하며 1개의 session으로 처리한다. -> 외부session으로 취급하고 auto_commit=False로 delete
         # => 1개의 세션을 유지하려면, obj를 만들어야아한다. 바로 get으로 부르면 결과물만 나옴
         obj_for_delete = cls.create_obj(session=session)
 
         # 1) args(pk)로 삭제하는 경우 -> get()으로 검색시 args로 검색해서 가져온다.
         if args and not kwargs:
-            objs = cls.get(*args, session=obj_for_delete._session) # args(pk)검색시 발견안되면 내부에서 에러난다.
+            objs = cls.get(*args, session=obj_for_delete._session)  # args(pk)검색시 발견안되면 내부에서 에러난다.
         # 2) kwargs(pk or unique key)로 삭제하는 경우 -> get()으로 검색시 kwrags로 검색해서 가져온다.
         else:
-            objs = cls.get(session=obj_for_delete._session, **kwargs) # kwarg는 1개만 검색하며, 발견안되면 내부 에러
+            objs = cls.get(session=obj_for_delete._session, **kwargs)  # kwarg는 1개만 검색하며, 발견안되면 내부 에러
 
         # get으로 1개 또는 list 가 나올 수 있어서 list로 변환
         if not isinstance(objs, (list, tuple, set)):
@@ -452,5 +462,3 @@ class CRUDMixin(Base, ObjectMixin):
             obj_for_delete._session.commit()
 
         return True, 'All deleted.'
-
-

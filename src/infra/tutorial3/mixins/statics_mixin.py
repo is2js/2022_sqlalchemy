@@ -144,24 +144,24 @@ class StaticsMixin(CRUDMixin):
     @classmethod
     def group_by(cls, *group_by_column_names, session: Session = None, selects=None, filters=None):
         """
-        1. selects 칼럼을 안고른 경우 => model obj가 select 자동 => .all()
+        1. select 칼럼을 안고른 경우 => model obj가 select 자동 => .all()
 
         User.group_by('username', session=None).all()
         => [User[id=1,username='admin',], User[id=2,username='asdf15251',], User[id=3,username='asdf15252',], User[id=4,username='asdf15253',]]
 
         2. selects로 개별칼럼들을 가져오는 경우 => .execute()
-        User.group_by('id', selects=['username', 'id__count'], session=None).execute()
+        User.group_by('id', select=['username', 'id__count'], session=None).execute()
         => [('admin', 1), ('asdf15251', 1), ('asdf15252', 1), ('asdf15253', 1)]
 
-        User.group_by('id', 'username', selects=['id', 'id__count', 'username__length'], session=None).order_by('-username__length').execute()
+        User.group_by('id', 'username', select=['id', 'id__count', 'username__length'], session=None).order_by('-username__length').execute()
         => [(2, 1, 9), (3, 1, 9), (4, 1, 9), (1, 1, 5)]
 
         """
         # 1) groupby 칼럼들 만들기
         group_by_columns = cls.create_columns(cls, group_by_column_names)
 
-        # 2) selects(집계칼럼)칼럼 만들기 => 없다면, None이 들어가서 자동으로 cls.create_column에서 모델이 올라간다.
-        # if not selects:
+        # 2) select(집계칼럼)칼럼 만들기 => 없다면, None이 들어가서 자동으로 cls.create_column에서 모델이 올라간다.
+        # if not select:
         #     select_columns = [cls]
         if selects:
             if not isinstance(selects, (list, tuple, set)):

@@ -84,7 +84,7 @@ class RelationMixin(Base, ObjectMixin):
         Department.load(schema={Department.employee_departments:'joined'}).first()
         Department.filter_by(id=1).load(schema={Department.employee_departments:'joined'}).first()
 
-        1. selects + target selects를 안거는 경우 -> eagerload로 main entity에 정보 담기
+        1. select + target selects를 안거는 경우 -> eagerload로 main entity에 정보 담기
         # 1-1) join을 통해 eager load안한 경우 -> 관계속성 접근시 detached Error
         ed = EmployeeDepartment.filter_by(id=1).first()
         ed.employee =>  sqlalchemy.orm.exc.DetachedInstanceError:

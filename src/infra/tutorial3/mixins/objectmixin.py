@@ -168,13 +168,13 @@ class ObjectMixin(Base, BaseQuery):
 
     @classmethod
     def create_obj(cls, session: Session = None, query=None, schema=None,
-                   filters=None, orders=None, selects=None, having=None, **kwargs):
+                   filter_by=None, order_by=None, selects=None, having=None, **kwargs):
 
         obj = cls().init_obj(session=session, query=query, schema=schema)
         if kwargs:
             obj.fill(**kwargs)
 
-        obj.set_attrs(filters=filters, orders=orders, selects=selects, having=having)
+        obj.set_attrs(filter_by=filter_by, order_by=order_by, selects=selects, having=having)
 
         return obj
 
@@ -385,10 +385,11 @@ class ObjectMixin(Base, BaseQuery):
 
         return self._flatten_schema
 
-    def set_attrs(self, filters: dict = None, having: dict = None, selects=None, orders=None):
+    def set_attrs(self, filter_by: dict = None, having: dict = None, selects=None, order_by=None):
 
         """
         Column attrs : selects/order_by/group_by
+        
         Conditional attrs mean filters or having
         - filters -> for select(cls) -> all / first etc
         - having -> for select(칼럼들).select_from ->  only execute
@@ -407,19 +408,19 @@ class ObjectMixin(Base, BaseQuery):
         #     self._alias_map = OrderedDict({})
         #    -> 인자들 변환 후
         #    udpate VS 빈값에 할당 => set_alias_map 내부에서
-        self.parse_attrs_and_set_alias_map(filters=filters, having=having, orders=orders, selects=selects)
+        self.parse_attrs_and_set_alias_map(filter_by=filter_by, having=having, order_by=order_by, selects=selects)
 
         # 2-2. set된 alias_map -> eager expression 체이닝 후 loaded_rel_paths 채워 업데이트
         # 2-3. ._set_filter_or_order_exprs(filters=filters, orders=orders)
-        #### selects(group_by)만 query부터 set하고, expr (outer 등)을 삽입
-        self.set_queries_and_load_rel_paths(filters=filters, having=having, orders=orders, selects=selects)
+        #### select(group_by)만 query부터 set하고, expr (outer 등)을 삽입
+        self.set_queries_and_load_rel_paths(filter_by=filter_by, having=having, order_by=order_by, selects=selects)
 
         return True
 
-    def parse_attrs_and_set_alias_map(self, filters=None, having=None, orders=None, selects=None):
+    def parse_attrs_and_set_alias_map(self, filter_by=None, having=None, order_by=None, selects=None):
         attrs = []
-        if filters:
-            attrs += list(_flat_dict_attrs_generator(filters))
+        if filter_by:
+            attrs += list(_flat_dict_attrs_generator(filter_by))
 
         if having:
             attrs += list(_flat_dict_attrs_generator(having))
@@ -428,36 +429,39 @@ class ObjectMixin(Base, BaseQuery):
             if selects and not isinstance(selects, (list, tuple, set)):
                 selects = [selects]
             attrs += selects
-        if orders:
-            if orders and not isinstance(orders, (list, tuple, set)):
-                orders = [orders]
-            attrs += list(map(lambda s: s.lstrip(DESC_PREFIX), orders))
+        if order_by:
+            if order_by and not isinstance(order_by, (list, tuple, set)):
+                order_by = [order_by]
+            attrs += list(map(lambda s: s.lstrip(DESC_PREFIX), order_by))
 
         # 2-1. alias_map 채우기 => 내부에서  update VS 빈값에 할당? (자료구조의 경우 update위주로)
         self._set_alias_map(parent_model=self.__class__, parent_path='', attrs=attrs)
 
-    def set_queries_and_load_rel_paths(self, filters=None, having=None, orders=None, selects=None):
+    # select()메서드와 겹쳐서 여기만 selects로 인자를 줌
+    def set_queries_and_load_rel_paths(self, filter_by=None, having=None, order_by=None, selects=None):
+        # select만 먼저 query를 만들어 defatul select(cls)를 덮어쓰도록 set_query를 먼저한다.
         if selects:
-            # select만 먼저 query를 만들어 defatul select(cls)를 덮어쓰도록 set_query를 먼저한다.
-            select_columns = self.create_column_exprs_with_alias_map(self.__class__, selects, self._alias_map,
+            select_column_exprs = self.create_column_exprs_with_alias_map(self.__class__, selects, self._alias_map,
                                                                      self.SELECT)  # select 속 집계함수의 경우, coalese를 붙인다.
             query = (
-                select(*select_columns)
+                select(*select_column_exprs)
                 .select_from(self.__class__)  # execute시 cls를 제외하고 싶다면, 구세주.
             )
             self.set_query(query)
 
             # for_execute는 (칼럼선택상황)으로서 contains_eager를 안한다.select()에 cls없이 칼럼선택하면 에러남. select_from(cls)도 안통하고 에러
             self._set_eager_query_and_load_rel_paths()
+        # select가 아니라면, 먼저 outerjoin(+contains_eager)을 하고 나서 해당 query를 set한다.
         else:
 
             self._set_eager_query_and_load_rel_paths()
-            if orders:
-                self.set_query(order_by=self.create_column_exprs_with_alias_map(self.__class__, orders, self._alias_map, self.ORDER_BY))
-            if filters:
+
+            if order_by:
+                self.set_query(order_by=self.create_column_exprs_with_alias_map(self.__class__, order_by, self._alias_map, self.ORDER_BY))
+            if filter_by:
                 # self._set_query_and_load_rel_paths(for_execute=False)
                 self.set_query(
-                    filter_by=self._create_conditional_expr_with_alias_map(self.__class__, filters, self._alias_map))
+                    filter_by=self._create_conditional_expr_with_alias_map(self.__class__, filter_by, self._alias_map))
             if having:
                 # self._set_query_and_load_rel_paths(for_execute=True)
                 self.set_query(having=self._create_conditional_expr_with_alias_map(self.__class__, having, self._alias_map))
@@ -510,15 +514,15 @@ class ObjectMixin(Base, BaseQuery):
     #
     # def process_non_conditional_attrs(self, selects=None, orders=None):
     #     """
-    #      Non conditional attrs mean selects or orders
+    #      Non conditional attrs mean select or orders
     #     - orders -> for select(cls) -> all / first etc => outerjoin + eagerload
-    #     - selects -> for select(칼럼들).select_from ->  only execute => only outerjoin
+    #     - select -> for select(칼럼들).select_from ->  only execute => only outerjoin
     #     """
     #     selects_or_order_attrs = []
     #     if selects:
-    #         if selects and not isinstance(selects, (list, tuple, set)):
-    #             selects = [selects]
-    #         selects_or_order_attrs += selects
+    #         if select and not isinstance(select, (list, tuple, set)):
+    #             select = [select]
+    #         selects_or_order_attrs += select
     #     if orders:
     #         if orders and not isinstance(orders, (list, tuple, set)):
     #             orders = [orders]
@@ -527,10 +531,10 @@ class ObjectMixin(Base, BaseQuery):
     #     self._set_alias_map(parent_model=self.__class__, parent_path='',
     #                         attrs=selects_or_order_attrs)
     #
-    #     #### selects(group_by)만 query부터 set하고, expr (outer 등)을 삽입
+    #     #### select(group_by)만 query부터 set하고, expr (outer 등)을 삽입
     #     if selects:
-    #         select_columns = self.create_columns_with_alias_map(self.__class__, selects, self._alias_map,
-    #                                                             in_select=True)  # 집계함수의 경우, coalese를 붙인다.
+    #         select_columns = self.create_columns_with_alias_map(self.__class__, select, self._alias_map,
+    #                                                             in_selects=True)  # 집계함수의 경우, coalese를 붙인다.
     #         query = (
     #             select(*select_columns)
     #             .select_from(self.__class__)  # execute시 cls를 제외하고 싶다면, 구세주.
@@ -563,16 +567,16 @@ class ObjectMixin(Base, BaseQuery):
     #     self.set_query(
     #         having=self._create_filters_or_having_expr_with_alias_map(self.__class__, having, self._alias_map))
     #
-    # def process_selects_eager_exprs(self, selects):
-    #     if selects and not isinstance(selects, (list, tuple, set)):
-    #         selects = [selects]
+    # def process_selects_eager_exprs(self, select):
+    #     if select and not isinstance(select, (list, tuple, set)):
+    #         select = [select]
     #
     #     # 맵은 일단 먼저 만들고 -> 맵으로 칼럼 + query를 만든 뒤 -> eager(outerjoin)
-    #     self._set_alias_map_and_loaded_rel_paths(parent_model=self.__class__, parent_path='', attrs=selects)
+    #     self._set_alias_map_and_loaded_rel_paths(parent_model=self.__class__, parent_path='', attrs=select)
     #
     #     # selects만  set eager expr(outerjoin) 보다 select().select_from(cls)를 먼저  set_query를 한다?
-    #     # select_columns = self.create_columns(self.__class__, column_names=selects, in_select=True)
-    #     select_columns = self.create_columns_with_alias_map(self.__class__, selects, self._alias_map, in_select=True)
+    #     # select_columns = self.create_columns(self.__class__, column_names=select, in_selects=True)
+    #     select_columns = self.create_columns_with_alias_map(self.__class__, select, self._alias_map, in_selects=True)
     #
     #     query = (
     #         select(*select_columns)
@@ -580,7 +584,7 @@ class ObjectMixin(Base, BaseQuery):
     #     )
     #     self.set_query(query)
     #
-    #     # attrs = list(map(lambda s: s.lstrip(DESC_PREFIX), selects))
+    #     # attrs = list(map(lambda s: s.lstrip(DESC_PREFIX), select))
     #
     #     self._set_eager_exprs_and_load_rel_paths(only_execute=True)
 
