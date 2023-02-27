@@ -141,31 +141,24 @@ class BaseQuery:
     SELECTIN = 'selectin'
 
     @classmethod
-    def get_column(cls, model, column_name):
-        # ORM model이 아니라 Table() 객체일 경우 -> .c에서 getattr
-        print('type(model)  >> ', type(model))
-        # # '*' 처리 2
-        # if column_name == '*':
-        #     if isinstance(model, (Table, Subquery, Alias)):
-        #         return model.c
-        #     else:
-        #         return model
+    def get_column(cls, model, attr):
         #### expr join시 model자체가 string(alias)가 들어오면 text로 작성하여 돌려보낸다.
         if isinstance(model, str):
-            return text(model + '.' + column_name)
+            return text(model + '.' + attr)
 
         #### query_obj .join()시 현재까지의stmt -> Subquery or Alias로 만드는데, 거기서 칼럼 얻어내기
         # if isinstance(model, (Table)):
         if isinstance(model, (Table, Subquery, Alias)):
-            column = getattr(model.c, column_name, None)
+            # stmt.alias() + Table + stmt.subquery()
+            column_expr = getattr(model.c, attr, None)
         else:
-            column = getattr(model, column_name, None)
-        # Table()객체는 boolean 자리에 입력시 에러
-        # if not column:
-        if column is None:
-            raise Exception(f'Invalid column_name: {column_name} in {model}')
+            # aliased, 일반class
+            column_expr = getattr(model, attr, None)
 
-        return column
+        # if column is None:
+        #     raise Exception(f'Invalid column_name: {column_name} in {model}')
+
+        return column_expr
 
     @classmethod
     def check_and_split_attr_names(cls, column_name):
@@ -198,19 +191,19 @@ class BaseQuery:
             #### func 적용 apply_func = 인자 추가
             if func_name.startswith('count'):
                 if in_select:
-                    column = func.coalesce(func.count(column).label(column_name +'_' +  func_name), 0)
+                    column = func.coalesce(func.count(column).label(column_name + '_' + func_name), 0)
                 else:
-                    column = func.count(column).label(column_name +'_' +  func_name)
+                    column = func.count(column).label(column_name + '_' + func_name)
             elif func_name.startswith('sum'):
                 if in_select:
                     # column = func.coalesce(func.sum(cast(column, Integer)), 0).label(column_name +'_' +  func_name)
-                    column = func.coalesce(func.sum(column), 0).label(column_name +'_' +  func_name)
+                    column = func.coalesce(func.sum(column), 0).label(column_name + '_' + func_name)
                 else:
                     # column = func.sum(cast(column, Integer)).label(column_name +'_' +  func_name)
-                    column = func.sum(column).label(column_name +'_' +  func_name)
+                    column = func.sum(column).label(column_name + '_' + func_name)
             elif func_name.startswith('length'):
                 if in_select:
-                    column = func.coalesce(func.length(column), 0).label(column_name +'_' +  func_name)
+                    column = func.coalesce(func.length(column), 0).label(column_name + '_' + func_name)
                 else:
                     column = func.length(column).label(column_name + '_' + func_name)
 
@@ -230,6 +223,74 @@ class BaseQuery:
 
         else:
             return cls.get_column(model, column_name)
+
+    @classmethod
+    def create_column_expr(cls, model, attr, type=None):
+        if not type:
+            raise KeyError(f'Input type "select or filter_by or order_by or having"')
+        """
+        column expression => select or order_by에 들어갈 칼럼 표현
+        filter의 경우, 칼럼__집계__연산자 중에, 연산자 때고, 칼럼__집계 까지 같이 들어올 수 있다.
+        """
+
+        # 일단 ___ 관계는 속성명이 떼고, model은 cls or aliased가 올 수 있다.
+        # condition expr가 아니기 때문에, __는 집계함수만 올 수 있다.(연산자X)
+        # 또한, order_by에서느 이미 "-"를 떼고 온다.
+        # 1) alias를 위해, 테이블칼럼 검증용 model vs 테이블칼럼 getattr용 mapper로 구분한다.
+        # => 밖에서는 alias_map에서 model만 꺼내주고, 내부에서 변환하여 사용해보자.
+        mapper, model = cls.split_mapper_and_model_for_alias(model)
+
+        # 2) select 칼럼 vs order 칼럼 type에 따라서, 검증이 다르다
+        #    sortable : 일반/hybrid칼럼 (관계칼럼x, hybrid메서드x)
+        #    selectable: sortable과 동일
+        #    filterable: 일반/hybrid칼럼 + 관계칼럼O + hybrid메서드O
+        # => orders의 경우, prefix를 떼고 검사해야한다.
+        # => selects/filters/orders 모두 공통적으로 집계함수는 떼고 검사한다.
+        only_attr = attr.split('__', 1)[0]
+        if type in ["select", "order_by"]:
+            cls.check_selectable_or_sortable_attr_name(model, only_attr)
+        else:
+            cls.check_filterable_attr_name(model, only_attr)
+
+        # 3) 집계함수가 달린 경우(filter/having에서는 연산자는 떼고 들어온다)
+        # -> 집계처리를 해주되, select인 경우, coalecse까지 붙인 뒤, label을 적어주자.
+        if '__' in attr:
+            attr, agg_name = cls.check_and_split_attr_names(attr)  # split결과 3개이상나오면 에러 1개, 2개는 넘어감
+
+            column_expr = cls.get_column(mapper, attr)
+
+            if agg_name.startswith('count'):
+                column_expr = func.count(column_expr)
+            elif agg_name.startswith('sum'):
+                column_expr = func.sum(column_expr)
+            elif agg_name.startswith('length'):
+                column_expr = func.length(column_expr)
+            else:
+                raise NotImplementedError(f'Invalid column func_name: {agg_name}')
+
+            # 집계함수이름뒤에 _distinct가 달렸다면
+            if '_' in agg_name:
+                additional_agg_name = agg_name.split('_')[-1]
+                if additional_agg_name == 'distinct':
+                    column_expr = distinct(column_expr)
+                else:
+                    raise NotImplementedError(f'Invalid additional func_name: {additional_agg_name}')
+
+            # select시 coalesce적용 및 라벨 붙여주기
+            if type == 'select':
+                column_expr = func.coalesce(column_expr, 0)
+            column_expr = column_expr.label(attr + '_' + agg_name)
+
+            return column_expr
+
+        # 4) 집계함수 안달렸으면 바로 반환
+        else:
+            return cls.get_column(mapper, attr)
+
+    @classmethod
+    def check_filterable_attr_name(cls, model, attr):
+        if attr not in cls.get_filterable_attr_names(model):
+            raise KeyError(f'Invalid filter_by or having attr name: {attr}')
 
     @classmethod
     def create_columns(cls, model, column_names=None, in_select=False):
@@ -286,11 +347,10 @@ class BaseQuery:
             # 2) 없으면 현재 model에서 가져온다.
             else:
                 attr_name = column_name
-            # 3) select모델인 경우, agg_func에 coalesce를 안달기 위해 in_select를 True로 넘겨준다.
+            # 3) select모델인 경우, agg_func에 coalesce를 달기 위해 in_select를 True로 넘겨준다.
             columns.append(cls.create_column(model, attr_name, in_select=in_select))
 
         return columns
-
 
     # for agg_with_rel
     # for join relation_mixin
@@ -753,14 +813,18 @@ class BaseQuery:
         # 2) - 달리면 desc를 아니면 asc func을 따로 빼준다.
         order_func, attr = (desc, attr[1:]) if attr.startswith(cls.DESC_PREFIX) \
             else (asc, attr)
-        cls.check_sortable_column_name(model, attr)
         # 1) main model 외 aliased rel model이 올 경우, mapper(Alias), model(원본 rel model class)를 구분한다.
         # -> model로는 sortable한 칼럼인지 검사한다.
         # -> mapper로는 getattr( , attr_name)으로 칼럼을 가져온다.
-        mapper, model = cls.split_mapper_and_model_for_alias(model)
+
+        ####  create_column_expr에서 내부적으로 변환 및 검사하도록 수정
+        # mapper, model = cls.split_mapper_and_model_for_alias(model)
+        # cls.check_selectable_or_sortable_attr_name(model, attr)
+
         # 3) sortable한 칼럼인지 확인한다.
         # 4) 실제 칼럼을 가져올 땐, mapper에서 가져온다(검사만model)
-        return order_func(getattr(mapper, attr))
+        # return order_func(getattr(mapper, attr))
+        return order_func(cls.create_column_expr(model, attr, type='order_by'))
 
     @classmethod
     def _create_order_exprs_with_alias_map(cls, model, orders, alias_map):
@@ -1098,7 +1162,7 @@ class BaseQuery:
         #       list(inspect(User).all_orm_descriptors)
 
         #### AttributeError: 'AliasedInsp' object has no attribute 'columns'
-        #=> alias도 쓰기 위해선 inspect()말고 mapper를 뽑아서 써야한다.?!
+        # => alias도 쓰기 위해선 inspect()말고 mapper를 뽑아서 써야한다.?!
         _, model = cls.split_mapper_and_model_for_alias(model)
         return inspect(model).columns.keys()
 
@@ -1128,14 +1192,14 @@ class BaseQuery:
     # for create_order_bys
     # @classproperty
     @classmethod
-    def get_sortable_columns(cls, model):
+    def get_selectable_or_sortable_attr_names(cls, model):
         return cls.get_column_names(model) + cls.get_hybrid_property_names(model)
 
     # for create_order_bys
     @classmethod
-    def check_sortable_column_name(cls, model, attr):
-        if attr not in cls.get_sortable_columns(model):
-            raise KeyError(f'Invalid order by column: {attr}')
+    def check_selectable_or_sortable_attr_name(cls, model, attr):
+        if attr not in cls.get_selectable_or_sortable_attr_names(model):
+            raise KeyError(f'Invalid select or order_by attr name : {attr}')
 
     @classmethod
     def create_order_bys(cls, attrs, model=None):
@@ -1193,9 +1257,9 @@ class BaseQuery:
             #### 추가 column_name에 id__count 등 집계함수가 있을 수 있다. => 검사는 순수 칼럼네임만 받아야한다.
             if cls.OPERATOR_OR_AGG_SPLITTER in attr:
                 column_name_for_check, func_name = attr.split(cls.OPERATOR_OR_AGG_SPLITTER)
-                cls.check_sortable_column_name(model, column_name_for_check)
+                cls.check_selectable_or_sortable_attr_name(model, column_name_for_check)
             else:
-                cls.check_sortable_column_name(model, attr)
+                cls.check_selectable_or_sortable_attr_name(model, attr)
 
             # column을 만들고, desc()나 asc()를 지연으로 맥인다.
             order_by_column = order_func(cls.create_column(model, attr))
