@@ -97,6 +97,7 @@ class ObjectMixin(Base, BaseQuery):
         self._flatten_schema = None
         self._loaded_rel_paths = None
         self._alias_map = None
+        self._expression_base = None
 
     @classmethod
     def _get_session_and_mark_served(cls, session):
@@ -251,6 +252,7 @@ class ObjectMixin(Base, BaseQuery):
         self._flatten_schema = self.set_schema(schema) or {}
         self._loaded_rel_paths = []
         self._alias_map = OrderedDict({})
+        self._expression_based = False
 
         return self
 
@@ -386,10 +388,15 @@ class ObjectMixin(Base, BaseQuery):
     def set_attrs(self, filters: dict = None, having: dict = None, selects=None, orders=None):
 
         """
+        Column attrs : selects/order_by/group_by
         Conditional attrs mean filters or having
         - filters -> for select(cls) -> all / first etc
         - having -> for select(칼럼들).select_from ->  only execute
+
         """
+        # 한번이라도 selects가 들어오면, expression_based로서 => eager load할 때, outerjoin만 (contains_eager X)
+        if selects:
+            self._expression_based = True
         # 의존성 필드 포함시 내부에서 같이 초기화 -> 내부/외부여부에 따라 외부x시-> 내부 존재여부 확인후 초기화 -> 외부o시 할당 초기화
         # 1. 외부x시 내부 확인후 없으면 return False 초기화
         # if not (filters or having):
@@ -405,7 +412,7 @@ class ObjectMixin(Base, BaseQuery):
         # 2-2. set된 alias_map -> eager expression 체이닝 후 loaded_rel_paths 채워 업데이트
         # 2-3. ._set_filter_or_order_exprs(filters=filters, orders=orders)
         #### selects(group_by)만 query부터 set하고, expr (outer 등)을 삽입
-        self.set_queries_with_alias_map(filters=filters, having=having, orders=orders, selects=selects)
+        self.set_queries_and_load_rel_paths(filters=filters, having=having, orders=orders, selects=selects)
 
         return True
 
@@ -429,7 +436,7 @@ class ObjectMixin(Base, BaseQuery):
         # 2-1. alias_map 채우기 => 내부에서  update VS 빈값에 할당? (자료구조의 경우 update위주로)
         self._set_alias_map(parent_model=self.__class__, parent_path='', attrs=attrs)
 
-    def set_queries_with_alias_map(self, filters=None, having=None, orders=None, selects=None):
+    def set_queries_and_load_rel_paths(self, filters=None, having=None, orders=None, selects=None):
         if selects:
             # select만 먼저 query를 만들어 defatul select(cls)를 덮어쓰도록 set_query를 먼저한다.
             select_columns = self.create_column_exprs_with_alias_map(self.__class__, selects, self._alias_map,
@@ -439,19 +446,21 @@ class ObjectMixin(Base, BaseQuery):
                 .select_from(self.__class__)  # execute시 cls를 제외하고 싶다면, 구세주.
             )
             self.set_query(query)
+
             # for_execute는 (칼럼선택상황)으로서 contains_eager를 안한다.select()에 cls없이 칼럼선택하면 에러남. select_from(cls)도 안통하고 에러
-            self._set_query_for_eager_or_execute_and_load_rel_paths(for_execute=True)
-        if orders:
-            self._set_query_for_eager_or_execute_and_load_rel_paths(for_execute=False)
-            self.set_query(order_by=self.create_column_exprs_with_alias_map(self.__class__, orders, self._alias_map, self.ORDER_BY))
-        if filters:
-            self._set_query_for_eager_or_execute_and_load_rel_paths(for_execute=False)
-            self.set_query(
-                filter_by=self._create_conditional_expr_with_alias_map(self.__class__, filters, self._alias_map))
-        if having:
-            self._set_query_for_eager_or_execute_and_load_rel_paths(for_execute=True)
-            self.set_query(
-                having=self._create_conditional_expr_with_alias_map(self.__class__, having, self._alias_map))
+            self._set_eager_query_and_load_rel_paths()
+        else:
+
+            self._set_eager_query_and_load_rel_paths()
+            if orders:
+                self.set_query(order_by=self.create_column_exprs_with_alias_map(self.__class__, orders, self._alias_map, self.ORDER_BY))
+            if filters:
+                # self._set_query_and_load_rel_paths(for_execute=False)
+                self.set_query(
+                    filter_by=self._create_conditional_expr_with_alias_map(self.__class__, filters, self._alias_map))
+            if having:
+                # self._set_query_and_load_rel_paths(for_execute=True)
+                self.set_query(having=self._create_conditional_expr_with_alias_map(self.__class__, having, self._alias_map))
 
     # # filters, orders -> filter_or_order_attrs 통해  alias_map이 채워진다.
     # def process_conditional_attrs(self, filters: dict = None, having: dict = None):
@@ -609,7 +618,7 @@ class ObjectMixin(Base, BaseQuery):
 
     #### 이미 초기화된 상태에서 filter, order 처리하기
     # -> 초반부분 1. set_alias_map + 2. outerjoin+eagerload는 동일하나 -> 3 query부분만 다르다.
-    def _set_query_for_eager_or_execute_and_load_rel_paths(self, for_execute=False):
+    def _set_eager_query_and_load_rel_paths(self):
         # 1. attrs -> alias_map -> rel_path파싱 -> [기존 확인후 없으면] loaded_rel_paths 채우기 + query expression 채우기
         for path, (aliased_rel_model, rel_attr) in self._alias_map.items():
             rel_path = path.replace(self.RELATION_SPLITTER, '.')
@@ -641,10 +650,12 @@ class ObjectMixin(Base, BaseQuery):
             # [0]: outerjoin(첫번재rel_model) 이자 contains_eager의 alias=인자,  ex> AliasedClass Post
             # [1]: outerjoin의 2번재 인자 (main class의 관계칼럼) ex> User.posts
             # [2]: conatains_eager의 1번째 인자 rel_path ex> posts
-            if for_execute:
+            #### selects가 한번이라도 들어왔다면, only expression으로서 eageroad없이 outerjoin만
+            if self._expression_based:
                 # execute만 할거면 select(cls)가 아닌 다른 칼럼들 select상황
                 # + select_from(cls)에서 contains_eager(  ,rel_path)의 rel_path 못읽게 된다.
                 self.set_query(outerjoin=(aliased_rel_model, rel_attr))
+            #### selects가 한번도 안들어왔으면 select(cls)상황으로서 contains_eager까지 포함한 outerjoin
             else:
                 self.set_query(eagerload=(aliased_rel_model, rel_attr, rel_path))
 
