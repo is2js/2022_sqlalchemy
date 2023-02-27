@@ -301,7 +301,7 @@ class ObjectMixin(BaseQuery):
         return self._flatten_schema
 
     # filters, orders -> filter_or_order_attrs 통해  alias_map이 채워진다.
-    def process_conditional_attrs(self, filters: dict = None, having:dict=None):
+    def process_conditional_attrs(self, filters: dict = None, having: dict = None):
         """
         Conditional attrs mean filters or having
         - filters -> for select(cls) -> all / first etc
@@ -346,7 +346,12 @@ class ObjectMixin(BaseQuery):
         # self._set_unloaded_eager_exprs()
         # => unloaded는 .first() 등의 실행메서드로 옮겨감. filter, order 다 처리하고나서 로드
 
-    def process_non_conditional_attrs(self, selects = None, orders=None):
+    def process_non_conditional_attrs(self, selects=None, orders=None):
+        """
+         Non conditional attrs mean selects or orders
+        - orders -> for select(cls) -> all / first etc => outerjoin + eagerload
+        - selects -> for select(칼럼들).select_from ->  only execute => only outerjoin
+        """
         selects_or_order_attrs = []
         if selects:
             if selects and not isinstance(selects, (list, tuple, set)):
