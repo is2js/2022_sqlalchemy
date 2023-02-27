@@ -150,7 +150,6 @@ class CRUDMixin(Base, ObjectMixin):
         """
         # eagerload는 filter/order이후 실행메서드에서 처리되므로, schema만 올려주면 된다.
         self.set_schema(schema)
-        print('self._flatten_schema in load >> ', self._flatten_schema)
 
         return self
 
@@ -203,6 +202,26 @@ class CRUDMixin(Base, ObjectMixin):
         self.process_filter_or_orders(orders=args)
 
         return self
+
+    @class_or_instancemethod
+    def limit(cls, limit, session: Session = None):
+        """
+        Category.order_by("-id").all()
+        """
+        obj = cls.create_obj(session=session)
+        obj.set_query(limit=limit)
+
+        return obj
+
+    @limit.instancemethod
+    def limit(self, limit):
+        """
+        Category.filter_by().order_by("-id").all()
+        """
+        self.set_query(limit=limit)
+
+        return self
+
     ###################
     # Read - get      #
     ###################
