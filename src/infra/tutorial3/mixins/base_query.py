@@ -187,7 +187,6 @@ class BaseQuery:
         BaseQuery.create_column(User, 'id__count_distinct')
         DISTINCT coalesce(count(users.id), :coalesce_1)
 
-
         """
 
         # 칼럼이 집계함수와 같이 들어온다면 집계함수를 적용할 수 있게 한다.
@@ -274,25 +273,20 @@ class BaseQuery:
         """
 
         """
-        if not isinstance(model, str) and not column_names:
-            return [model]
-
-        # expr for join으로 l_select만 None이라고 해서 text('*')를 건네면 안되므로 빈 값을 건네주자.
-        elif isinstance(model, str) and not column_names:
-            return []
-
         if not isinstance(column_names, (list, tuple, set)):
             column_names = [column_names]
 
         columns = []
 
         for column_name in column_names:
+            # 1) 안에 ___가 있으면, alias_map에서 users___name(rel_column)으로 가져온다.
             if cls.RELATION_SPLITTER in column_name:
-                # 2)
                 rel_column_and_attr_name = column_name.rsplit(cls.RELATION_SPLITTER, 1)
                 model, attr_name = alias_map[rel_column_and_attr_name[0]][0], rel_column_and_attr_name[1]
+            # 2) 없으면 현재 model에서 가져온다.
             else:
                 attr_name = column_name
+            # 3) select모델인 경우, agg_func에 coalesce를 안달기 위해 in_select를 True로 넘겨준다.
             columns.append(cls.create_column(model, attr_name, in_select=in_select))
 
         return columns
@@ -756,15 +750,15 @@ class BaseQuery:
     # for _create_order_exprs_with_alias_map
     @classmethod
     def create_order_expr(cls, model, attr):
+        # 2) - 달리면 desc를 아니면 asc func을 따로 빼준다.
+        order_func, attr = (desc, attr[1:]) if attr.startswith(cls.DESC_PREFIX) \
+            else (asc, attr)
+        cls.check_sortable_column_name(model, attr)
         # 1) main model 외 aliased rel model이 올 경우, mapper(Alias), model(원본 rel model class)를 구분한다.
         # -> model로는 sortable한 칼럼인지 검사한다.
         # -> mapper로는 getattr( , attr_name)으로 칼럼을 가져온다.
         mapper, model = cls.split_mapper_and_model_for_alias(model)
-        # 2) - 달리면 desc를 아니면 asc func을 따로 빼준다.
-        order_func, attr = (desc, attr[1:]) if attr.startswith(cls.DESC_PREFIX) \
-            else (asc, attr)
         # 3) sortable한 칼럼인지 확인한다.
-        cls.check_sortable_column_name(model, attr)
         # 4) 실제 칼럼을 가져올 땐, mapper에서 가져온다(검사만model)
         return order_func(getattr(mapper, attr))
 
@@ -782,29 +776,21 @@ class BaseQuery:
         for attr in orders:
             # 1) attr에서는 일단 relation부터 확인한 뒤, alias에서 빼와서 각각의 expr를 만든다.
             if cls.RELATION_SPLITTER in attr:
-                # 2) 빼내기 전에 desc 여부를 있으면 떼어내야한다.
+                # 2) 현재model(alias포함)을 빼내기 전에 desc 여부를 있으면 떼어내야한다.
                 desc_prefix = ''
                 if attr.startswith(cls.DESC_PREFIX):
                     desc_prefix = cls.DESC_PREFIX
                     attr = attr.lstrip(cls.DESC_PREFIX)
+
                 # 3) 관계명을 떼온 뒤, alias에서 aliased_rel_model , rel_column을 가져온다.
-                # print('attr  >> ', attr)
-
                 rel_column_and_attr_name = attr.rsplit(cls.RELATION_SPLITTER, 1)
-                # print('rel_column_and_attr_name  >> ', rel_column_and_attr_name)
-
                 current_model, attr = alias_map[rel_column_and_attr_name[0]][0], desc_prefix + rel_column_and_attr_name[
                     1]
             else:
                 # 4)관계명이 없는 경후, 현재 호출 model을 model로, +-을 통째로 attr을 넣어 메서드 내부에서 만들게 한다.
                 current_model = model
 
-            # 5) 해당 모델 + attr_name을 가지고 표현식을 만든다.
-            # -> main model 전용이라 그냥 들어간다면,
-            # print('model, attr  >> ', current_model, attr)
-
-            # print('current_model, attr  >> ', current_model, attr)
-
+            # 5) 현재 모델(cls or alias) + attr_name(prefix포함)을 가지고 표현식을 만든다.
             expressions.append(cls.create_order_expr(current_model, attr))
 
         return expressions
@@ -1110,6 +1096,10 @@ class BaseQuery:
         # => __table__을 활용하면 hybrid property 등을 차후 확인할 수 없게 된다.
         #   ex> 'Table' object has no attribute 'all_orm_descriptors'
         #       list(inspect(User).all_orm_descriptors)
+
+        #### AttributeError: 'AliasedInsp' object has no attribute 'columns'
+        #=> alias도 쓰기 위해선 inspect()말고 mapper를 뽑아서 써야한다.?!
+        _, model = cls.split_mapper_and_model_for_alias(model)
         return inspect(model).columns.keys()
 
     # for create_order_bys
@@ -1117,12 +1107,14 @@ class BaseQuery:
     # @classproperty
     @classmethod
     def get_hybrid_property_names(cls, model):
+        _, model = cls.split_mapper_and_model_for_alias(model)
         items = inspect(model).all_orm_descriptors
         return [item.__name__ for item in items if isinstance(item, hybrid_property)]
 
     # for create_filter0
     @classmethod
     def get_hybrid_method_dict(cls, model):
+        _, model = cls.split_mapper_and_model_for_alias(model)
         items = inspect(model).all_orm_descriptors
         return {item.func.__name__: item
                 for item in items if type(item) == hybrid_method}
@@ -1130,6 +1122,7 @@ class BaseQuery:
     # for create_filter0 - create_filter_exprs
     @classmethod
     def get_hybrid_method_names(cls, model):
+        _, model = cls.split_mapper_and_model_for_alias(model)
         return list(cls.get_hybrid_method_dict(model).keys())
 
     # for create_order_bys

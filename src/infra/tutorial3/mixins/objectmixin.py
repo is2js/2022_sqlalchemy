@@ -178,11 +178,10 @@ class ObjectMixin(Base, BaseQuery):
         return obj
 
     ###################
-    # Fill for Update # -> .save()하기 전에, 채울 때 settable_column_name인지 확인용 / 같은 값은 아닌지 확인용으로 사용할 수 있다.
+    # Fill for create_obj/Update/Create # -> .save()하기 전에, 채울 때 settable_column_name인지 확인용 / 같은 값은 아닌지 확인용으로 사용할 수 있다.
     ###################
-    # for update + for create + for create_obj
+    # for Update + for Create + for create_obj
     def fill(self, **kwargs):
-
         is_updated = False
 
         for column_name, new_value in kwargs.items():
