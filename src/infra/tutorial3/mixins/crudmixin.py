@@ -320,27 +320,21 @@ class CRUDMixin(Base, ObjectMixin):
         Category.group_by('icon', selects=['id', 'icon__sum']).execute()
         => [(2, 24), (1, 23)]
         """
-        group_by_columns = cls.create_columns(cls, group_by_column_names)
+        obj = cls.create_obj(session=session)
 
         if selects:
-            if not isinstance(selects, (list, tuple, set)):
-                selects = [selects]
+            obj.process_selects_eager_exprs(selects)
             #### relationship -> contains_eager로 사용하려면, 무조건 main model(cls) select에 들어가야
             # => Query has only expression-based entities - can't find property named "employee".가 안뜬다.
-            select_columns = cls.create_columns(cls, column_names=selects, in_select=True) # 집계가 in_select시 coalesce
+            # select_columns = cls.create_columns(cls, column_names=selects, in_select=True) # 집계가 in_select시 coalesce
             # select_columns = [cls] + select_columns
             #### => select에 cls외 다른 것을 올리고 싶다면, execute용으로 전환되며, select_from(cls)를 주고
             ####    outerjoin을 자동으로 하되, contains_eager이 빠져야한다.
-            query = (
-                select(*select_columns)
-                .select_from(cls) # execute시 cls를 제외하고 싶다면, 구세주.
-            )
-        else:
-            query = select(cls)
 
-        query = query.group_by(*group_by_columns)
 
-        obj = cls.create_obj(session=session, query=query)
+        group_by_columns = cls.create_columns(cls, group_by_column_names)
+        obj.set_query(group_by=group_by_columns)
+
 
         return obj
 

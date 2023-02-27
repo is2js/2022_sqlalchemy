@@ -193,10 +193,10 @@ class ObjectMixin(BaseQuery):
                 return False
 
     def set_query(self, query=None, eagerload=None, filter_by=None, order_by=None, options=None, outerjoin=None,
-                  group_by=None, having=None):
+                  group_by=None, having=None, limit=None):
         def _is_chaining():
             return not (
-                    eagerload is None and filter_by is None and order_by is None and options is None and outerjoin is None and group_by is None and having is None
+                    eagerload is None and filter_by is None and order_by is None and options is None and outerjoin is None and group_by is None and having is None and limit is None
             )
 
         # 1. 외부X -> return False로 초기화 (set실패) -> 초기화시 select(self.__class__)로 초기화
@@ -267,6 +267,12 @@ class ObjectMixin(BaseQuery):
                 self._query = (
                     self._query
                     .having(*having)
+                )
+
+            if limit:
+                self._query = (
+                    self._query
+                    .limit(limit)
                 )
 
         # 체이닝이 아닌 query가 들어올 경우, 최초 init시 들어온 query=로서 할당 초기화
@@ -342,6 +348,31 @@ class ObjectMixin(BaseQuery):
         # filter expr 생성을 재활용
         self.set_query(having=self._create_filters_or_having_expr_with_alias_map(self.__class__, having, self._alias_map))
 
+    def process_selects_eager_exprs(self, selects):
+        if selects and not isinstance(selects, (list, tuple, set)):
+            selects = [selects]
+
+        # 맵은 일단 먼저 만들고 -> 맵으로 칼럼 + query를 만든 뒤 -> eager(outerjoin)
+        self._set_alias_map_and_loaded_rel_paths(parent_model=self.__class__, parent_path='', attrs=selects)
+
+        # selects만  set eager expr(outerjoin) 보다 select().select_from(cls)를 먼저  set_query를 한다?
+        # select_columns = self.create_columns(self.__class__, column_names=selects, in_select=True)
+        select_columns = self.create_columns_with_alias_map(self.__class__, selects, self._alias_map, in_select=True)
+
+        query = (
+            select(*select_columns)
+            .select_from(self.__class__)  # execute시 cls를 제외하고 싶다면, 구세주.
+        )
+        self.set_query(query)
+
+
+        # attrs = list(map(lambda s: s.lstrip(DESC_PREFIX), selects))
+
+
+        self._set_eager_exprs_and_load_rel_paths(only_execute=True)
+
+
+
     def _set_alias_map_and_loaded_rel_paths(self, parent_model, parent_path, attrs):
         """
         input attrs: ['id__gt', 'id__lt', 'tags___property__in']
@@ -412,8 +443,12 @@ class ObjectMixin(BaseQuery):
             if only_execute:
                 # execute만 할거면 select(cls)가 아닌 다른 칼럼들 select상황
                 # + select_from(cls)에서 contains_eager(  ,rel_path)의 rel_path 못읽게 된다.
+                print('self._query in only_execute  >> ', self._query)
+
+
                 self.set_query(outerjoin=(aliased_rel_model, rel_attr))
             else:
+                print('self._query in not only_execute  >> ', self._query)
                 self.set_query(eagerload=(aliased_rel_model, rel_attr, rel_path))
 
             self._loaded_rel_paths.append(rel_path)

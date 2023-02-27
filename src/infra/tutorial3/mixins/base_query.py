@@ -269,6 +269,35 @@ class BaseQuery:
 
         return columns
 
+    @classmethod
+    def create_columns_with_alias_map(cls, model, column_names, alias_map, in_select=False):
+        """
+
+        """
+        if not isinstance(model, str) and not column_names:
+            return [model]
+
+        # expr for join으로 l_select만 None이라고 해서 text('*')를 건네면 안되므로 빈 값을 건네주자.
+        elif isinstance(model, str) and not column_names:
+            return []
+
+        if not isinstance(column_names, (list, tuple, set)):
+            column_names = [column_names]
+
+        columns = []
+
+        for column_name in column_names:
+            if cls.RELATION_SPLITTER in column_name:
+                # 2)
+                rel_column_and_attr_name = column_name.rsplit(cls.RELATION_SPLITTER, 1)
+                model, attr_name = alias_map[rel_column_and_attr_name[0]][0], rel_column_and_attr_name[1]
+            else:
+                attr_name = column_name
+            columns.append(cls.create_column(model, attr_name, in_select=in_select))
+
+        return columns
+
+
     # for agg_with_rel
     # for join relation_mixin
     @classmethod
@@ -745,7 +774,7 @@ class BaseQuery:
             return []
         if orders and not isinstance(orders, (list, tuple, set)):
             orders = [orders]
-        print('*orders  >> ', *orders)
+        # print('*orders  >> ', *orders)
 
         expressions = []
 
@@ -774,7 +803,7 @@ class BaseQuery:
             # -> main model 전용이라 그냥 들어간다면,
             # print('model, attr  >> ', current_model, attr)
 
-            print('current_model, attr  >> ', current_model, attr)
+            # print('current_model, attr  >> ', current_model, attr)
 
             expressions.append(cls.create_order_expr(current_model, attr))
 
