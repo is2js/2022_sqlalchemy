@@ -102,10 +102,7 @@ class CRUDMixin(Base, ObjectMixin):
 
         return self_unique_key
 
-    # for exists_self + for update - fill - settable column snames
-    @class_property
-    def column_names(cls):
-        return cls.__table__.columns.keys()
+
 
     @class_property
     def foreign_key_names(cls):
@@ -137,7 +134,6 @@ class CRUDMixin(Base, ObjectMixin):
 
         """
         obj = cls.create_obj(session=session, schema=schema)
-        print('obj._flatten_schema in load  >> ', obj._flatten_schema)
 
         return obj
 
@@ -181,7 +177,7 @@ class CRUDMixin(Base, ObjectMixin):
         FROM employee_departments
         WHERE employee_departments.id = :id_1
         """
-        self.process_conditional_attrs(filters=kwargs)
+        self.set_attrs(filters=kwargs)
 
         return self
 
@@ -199,14 +195,14 @@ class CRUDMixin(Base, ObjectMixin):
         """
         Category.filter_by().order_by("-id").all()
         """
-        self.process_non_conditional_attrs(orders=args)
+        self.set_attrs(orders=args)
 
         return self
 
     @class_or_instancemethod
     def limit(cls, limit, session: Session = None):
         """
-        Category.order_by("-id").all()
+        Category.limit(2).all()
         """
         obj = cls.create_obj(session=session)
         obj.set_query(limit=limit)
@@ -216,7 +212,7 @@ class CRUDMixin(Base, ObjectMixin):
     @limit.instancemethod
     def limit(self, limit):
         """
-        Category.filter_by().order_by("-id").all()
+        Category.filter_by(id__ne=None).limit(2).all()
         """
         self.set_query(limit=limit)
 
@@ -375,67 +371,6 @@ class CRUDMixin(Base, ObjectMixin):
         except:
             return False, '업데이트 실패'
 
-    ###################
-    # Fill for Update # -> .save()하기 전에, 채울 때 settable_column_name인지 확인용 / 같은 값은 아닌지 확인용으로 사용할 수 있다.
-    ###################
-    # for update + for create
-    def fill(self, **kwargs):
-
-        is_updated = False
-
-        for column_name, new_value in kwargs.items():
-            if column_name not in self.settable_column_names:
-                raise KeyError(f"Invalid column name: {column_name}")
-
-            # 같은 값은 업데이트 안하고 넘김
-            if getattr(self, column_name) == new_value:
-                continue
-
-            setattr(self, column_name, new_value)
-            # 1개라도 업뎃 되면 flag 1번만 표시
-            if not is_updated:
-                is_updated = True
-
-        return is_updated  # 한번 이라도 업뎃되면 True/ 아니면 False 반환
-
-    # for update - fill
-    @class_property
-    def settable_column_names(cls):
-        return cls.column_names + cls.settable_relation_names + cls.hybrid_property_names
-
-    @class_property
-    def settable_relation_names(cls):
-        """
-        User.settable_relation_names
-        ['role', 'inviters', 'invitees', 'employee']
-        """
-        return [prop for prop in cls.relation_names if getattr(cls, prop).property.viewonly is False]
-
-    @class_property
-    def relation_names(cls):
-        """
-        User.relation_names
-        ['role', 'inviters', 'invitees', 'employee']
-        """
-        mapper = cls.__mapper__
-        # mapper.relationships.items()
-        # ('role', <RelationshipProperty at 0x2c0c8947ec8; role>), ('inviters', <RelationshipProperty at 0x2c0c8947f48; inviters>),
-
-        return [prop.key for prop in mapper.iterate_properties
-                if isinstance(prop, RelationshipProperty)]
-
-    # for update - fill
-    @class_property
-    def hybrid_property_names(cls):
-        """
-        User.hybrid_property_names
-        ['is_staff', 'is_chiefstaff', 'is_executive', 'is_administrator', 'is_employee_active', 'has_employee_history']
-        """
-        mapper = cls.__mapper__
-        props = mapper.all_orm_descriptors
-        # [ hybrid_property  +  InstrumentedAttribute (ColumnProperty + RelationshipProperty) ]
-        return [prop.__name__ for prop in props
-                if isinstance(prop, hybrid_property)]
 
     ###################
     # Delete          # -> only self method => create_obj없이 model_obj에서 [최초호출].init_obj()로 초기화

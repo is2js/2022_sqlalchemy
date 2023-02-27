@@ -2,7 +2,8 @@ from collections import OrderedDict, defaultdict, abc
 
 from sqlalchemy import MetaData, select, func, text, exists
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import InstrumentedAttribute, aliased, contains_eager, Session
+from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.orm import InstrumentedAttribute, aliased, contains_eager, Session, RelationshipProperty
 
 from src.infra.config.connection import db
 from src.infra.tutorial3.mixins.base_query import BaseQuery
@@ -17,6 +18,7 @@ from src.infra.tutorial3.mixins.utils.classorinstancemethod import class_or_inst
 #     "pk": "pk_%(table_name)s"
 # }
 # Base.metadata = MetaData(naming_convention=naming_convention)
+from src.infra.tutorial3.mixins.utils.classproperty import class_property
 
 JOINED = 1
 DESC_PREFIX = '-'
@@ -73,11 +75,29 @@ def _flat_dict_attrs_generator(filters):
             yield key
 
 
-class ObjectMixin(BaseQuery):
+Base = declarative_base()
+naming_convention = {
+    "ix": 'ix_%(column_0_label)s',
+    "uq": "uq_%(table_name)s_%(column_0_name)s",
+    "ck": "ck_%(table_name)s_%(column_0_name)s",
+    "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+    "pk": "pk_%(table_name)s"
+}
+Base.metadata = MetaData(naming_convention=naming_convention)
+
+
+class ObjectMixin(Base, BaseQuery):
     __abstract__ = True
 
-    # 1. obj의 session처리
-    # mixin 7. 이것도 cls메서드로 바꾼다.
+
+    def __init__(self):
+        self.served = None
+        self._session = None
+        self._query = None
+        self._flatten_schema = None
+        self._loaded_rel_paths = None
+        self._alias_map = None
+
     @classmethod
     def _get_session_and_mark_served(cls, session):
         # 새로 만든 session일 경우 되돌려주기(close처리) 상태(cls.served=)를  아직 False상태로 만들어놓는다.
@@ -149,15 +169,80 @@ class ObjectMixin(BaseQuery):
     def create_obj(cls, session: Session = None, query=None, schema=None,
                    filters=None, orders=None, selects=None, having=None, **kwargs):
 
-        obj = cls(**kwargs).init_obj(session=session, query=query, schema=schema)
+        obj = cls().init_obj(session=session, query=query, schema=schema)
+        if kwargs:
+            obj.fill(**kwargs)
 
-        attrs = {k:v for k, v in locals().items() if k in ['filters', 'orders', 'selects', 'having']}
-        # print('attrs  >> ', attrs)
-        # {'filters': None, 'orders': None, 'selects': None, 'having': None}
-        # {'filters': None, 'orders': None, 'selects': ['position', 'id__count', 'employee___name'], 'having': None}
-        obj.set_attrs(**attrs)
+        obj.set_attrs(filters=filters, orders=orders, selects=selects, having=having)
 
         return obj
+
+    ###################
+    # Fill for Update # -> .save()하기 전에, 채울 때 settable_column_name인지 확인용 / 같은 값은 아닌지 확인용으로 사용할 수 있다.
+    ###################
+    # for update + for create + for create_obj
+    def fill(self, **kwargs):
+
+        is_updated = False
+
+        for column_name, new_value in kwargs.items():
+            if column_name not in self.settable_column_names:
+                raise KeyError(f"Invalid column name: {column_name}")
+
+            # 같은 값은 업데이트 안하고 넘김
+            if getattr(self, column_name) == new_value:
+                continue
+
+            setattr(self, column_name, new_value)
+            # 1개라도 업뎃 되면 flag 1번만 표시
+            if not is_updated:
+                is_updated = True
+
+        return is_updated  # 한번 이라도 업뎃되면 True/ 아니면 False 반환
+
+    # for exists_self + for update - fill - settable column snames
+    @class_property
+    def column_names(cls):
+        return cls.__table__.columns.keys()
+
+    # for update - fill
+    @class_property
+    def settable_column_names(cls):
+        return cls.column_names + cls.settable_relation_names + cls.hybrid_property_names
+
+    @class_property
+    def settable_relation_names(cls):
+        """
+        User.settable_relation_names
+        ['role', 'inviters', 'invitees', 'employee']
+        """
+        return [prop for prop in cls.relation_names if getattr(cls, prop).property.viewonly is False]
+
+    @class_property
+    def relation_names(cls):
+        """
+        User.relation_names
+        ['role', 'inviters', 'invitees', 'employee']
+        """
+        mapper = cls.__mapper__
+        # mapper.relationships.items()
+        # ('role', <RelationshipProperty at 0x2c0c8947ec8; role>), ('inviters', <RelationshipProperty at 0x2c0c8947f48; inviters>),
+
+        return [prop.key for prop in mapper.iterate_properties
+                if isinstance(prop, RelationshipProperty)]
+
+    # for update - fill
+    @class_property
+    def hybrid_property_names(cls):
+        """
+        User.hybrid_property_names
+        ['is_staff', 'is_chiefstaff', 'is_executive', 'is_administrator', 'is_employee_active', 'has_employee_history']
+        """
+        mapper = cls.__mapper__
+        props = mapper.all_orm_descriptors
+        # [ hybrid_property  +  InstrumentedAttribute (ColumnProperty + RelationshipProperty) ]
+        return [prop.__name__ for prop in props
+                if isinstance(prop, hybrid_property)]
 
     def init_obj(self, session: Session = None, query=None, schema=None):
 
@@ -165,12 +250,8 @@ class ObjectMixin(BaseQuery):
         self._session = self.set_session_and_check_served(session)  # 내부에서 어떻게든 None 아닌 것으로 초기화
         self._query = self.set_query(query) if self.set_query(query) is not None else select(self.__class__)
         self._flatten_schema = self.set_schema(schema) or {}
-
-        self._loaded_rel_paths = []  # filter or orders가 존재시, process_filter_or_orders에서 채워짐.
-        # self._alias_map = self.process_filter_or_orders(filters=filters, orders=orders) or OrderedDict({})
-        # 최초에 외부 filters O -> return false가 안되고 진행하는데, 처리할때 초기화가 안된상태여서 문제
+        self._loaded_rel_paths = []
         self._alias_map = OrderedDict({})
-
 
         return self
 
@@ -325,7 +406,7 @@ class ObjectMixin(BaseQuery):
         # 2-2. set된 alias_map -> eager expression 체이닝 후 loaded_rel_paths 채워 업데이트
         # 2-3. ._set_filter_or_order_exprs(filters=filters, orders=orders)
         #### selects(group_by)만 query부터 set하고, expr (outer 등)을 삽입
-        self.set_query_with_alias_map(filters=filters, having=having, orders=orders, selects=selects)
+        self.set_queries_with_alias_map(filters=filters, having=having, orders=orders, selects=selects)
 
         return True
 
@@ -349,8 +430,7 @@ class ObjectMixin(BaseQuery):
         # 2-1. alias_map 채우기 => 내부에서  update VS 빈값에 할당? (자료구조의 경우 update위주로)
         self._set_alias_map(parent_model=self.__class__, parent_path='', attrs=attrs)
 
-
-    def set_query_with_alias_map(self, filters=None, having=None, orders=None, selects=None):
+    def set_queries_with_alias_map(self, filters=None, having=None, orders=None, selects=None):
         if selects:
             select_columns = self.create_columns_with_alias_map(self.__class__, selects, self._alias_map,
                                                                 in_select=True)  # 집계함수의 경우, coalese를 붙인다.
@@ -372,7 +452,6 @@ class ObjectMixin(BaseQuery):
             self._set_query_for_eager_or_execute_and_load_rel_paths(for_execute=True)
             self.set_query(
                 having=self._create_filters_or_having_expr_with_alias_map(self.__class__, having, self._alias_map))
-
 
     # # filters, orders -> filter_or_order_attrs 통해  alias_map이 채워진다.
     # def process_conditional_attrs(self, filters: dict = None, having: dict = None):
