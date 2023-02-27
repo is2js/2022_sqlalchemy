@@ -56,8 +56,8 @@ class CRUDMixin(Base, ObjectMixin):
         if not unique_attr:
             raise Exception(f'unique column 값을 입력하지 않았습니다.')
 
-        expressions = self.create_filter_exprs(self.__class__,
-                                               **{self.unique_key_name: unique_attr})
+        expressions = self.create_conditional_exprs(self.__class__,
+                                                    **{self.unique_key_name: unique_attr})
         stmt = self._query.where(*expressions)
 
         return self._session.scalar(exists(stmt).select())

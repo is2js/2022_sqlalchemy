@@ -446,11 +446,11 @@ class ObjectMixin(Base, BaseQuery):
         if filters:
             self._set_query_for_eager_or_execute_and_load_rel_paths(for_execute=False)
             self.set_query(
-                filter_by=self._create_filters_or_having_expr_with_alias_map(self.__class__, filters, self._alias_map))
+                filter_by=self._create_conditional_expr_with_alias_map(self.__class__, filters, self._alias_map))
         if having:
             self._set_query_for_eager_or_execute_and_load_rel_paths(for_execute=True)
             self.set_query(
-                having=self._create_filters_or_having_expr_with_alias_map(self.__class__, having, self._alias_map))
+                having=self._create_conditional_expr_with_alias_map(self.__class__, having, self._alias_map))
 
     # # filters, orders -> filter_or_order_attrs 통해  alias_map이 채워진다.
     # def process_conditional_attrs(self, filters: dict = None, having: dict = None):

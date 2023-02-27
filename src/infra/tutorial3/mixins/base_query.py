@@ -140,6 +140,12 @@ class BaseQuery:
     SUBQUERY = 'subquery'
     SELECTIN = 'selectin'
 
+    ## agg types
+    COUNT = 'count'
+    SUM = 'sum'
+    LENGTH = 'length'
+    AGG_LIST = COUNT, SUM, LENGTH
+
     @classmethod
     def get_column(cls, model, attr):
         #### expr join시 model자체가 string(alias)가 들어오면 text로 작성하여 돌려보낸다.
@@ -225,7 +231,7 @@ class BaseQuery:
             return cls.get_column(model, column_name)
 
     @classmethod
-    def create_column_expr(cls, model, attr, type=None):
+    def create_column_expr(cls, model, attr, type):
         if not type:
             raise KeyError(f'Input type "select or filter_by or order_by or having"')
         """
@@ -627,144 +633,227 @@ class BaseQuery:
     #
     #     return expressions
 
+    # @classmethod
+    # def create_conditional_exprs(cls, model, **filters):
+    #     """
+    #     forms expressions like [Product.age_from = 5,
+    #                             Product.subject_ids.in_([1,2])]
+    #     from filters like {'age_from': 5, 'subject_ids__in': [1,2]}
+    #     Example 1:
+    #         db.query(Product).filter(
+    #             *Product.create_filter_exprs(age_from = 5, subject_ids__in=[1, 2]))
+    #     Example 2:
+    #         filters = {'age_from': 5, 'subject_ids__in': [1,2]}
+    #         db.query(Product).filter(*Product.create_filter_exprs(**filters))
+    #     ### About alias ###:
+    #     If we will use alias:
+    #         alias = aliased(Product) # table name will be product_1
+    #     we can't just write query like
+    #         db.query(alias).filter(*Product.create_filter_exprs(age_from=5))
+    #     because it will be compiled to
+    #         SELECT * FROM product_1 WHERE product.age_from=5
+    #     which is wrong: we select from 'product_1' but filter on 'product'
+    #     such filter will not work
+    #     We need to obtain
+    #         SELECT * FROM product_1 WHERE product_1.age_from=5
+    #     For such case, we can call create_filter_exprs ON ALIAS:
+    #         alias = aliased(Product)
+    #         db.query(alias).filter(*alias.create_filter_exprs(age_from=5))
+    #     Alias realization details:
+    #       * we allow to call this method
+    #         either ON ALIAS (say, alias.create_filter_exprs())
+    #         or on class (Product.create_filter_exprs())
+    #       * when method is called on alias, we need to generate SQL using
+    #         aliased table (say, product_1), but we also need to have a real
+    #         class to call methods on (say, Product.get_relation_column_names)
+    #       * so, we have 'mapper' that holds table name
+    #         and 'cls' that holds real class
+    #         when we call this method ON ALIAS, we will have:
+    #             mapper = <product_1 table>
+    #             cls = <Product>
+    #         when we call this method ON CLASS, we will simply have:
+    #             mapper = <Product> (or we could write <Product>.__mapper__.
+    #                                 It doesn't matter because when we call
+    #                                 <Product>.getattr, SA will magically
+    #                                 call <Product>.__mapper__.getattr())
+    #             cls = <Product>
+    #     """
+    #     # 1. main model외 relation의 alias가 들어온다면, inspect().mapper.class_로 관계model을 가져온다.
+    #     #    => main model 및 관계 alias  =>  mapper로 표현  +  model은 쌩 class만 취급.
+    #     # mapper for create_column / model for attrs검사
+    #     mapper, model = cls.split_mapper_and_model_for_alias(model)
+    #
+    #     # 2. filter를 돌면서, 표현식을 만든다.
+    #     expressions = []
+    #
+    #     # 연산자 split후 남은 필터옵션(name__eq -> name)이 해당model의 필터링에 쓸 수 있는지 확인한다.
+    #     valid_attrs = cls.get_filterable_attr_names(model)
+    #
+    #     for attr, value in filters.items():
+    #         # 2-1) 입력한 필터 옵션이 hybrid method로서 호출될 경우
+    #         #      hybrid메서드는  연산자 연산이 아니라, method(value)를 expr로서 넣어준다.
+    #         #   => 이대, hybrid메서드 호출 주체를 alias로 주기 위해 mapper=옵션을 준다.
+    #         if attr in cls.get_hybrid_method_names(model):
+    #             method = getattr(cls, attr)
+    #             expressions.append(method(value, mapper=mapper))
+    #         # 2-2) 입력한 필터 옵션이 연산자처리인 경우
+    #         else:
+    #             # # 2-2-1) 연산자 포함된 경우, id__gt=1
+    #             # if cls.OPERATOR_OR_FUNC_SPLITTER in attr:
+    #             #     attr_name, op_name = attr.rsplit(cls.OPERATOR_OR_FUNC_SPLITTER, 1)
+    #             #     if op_name not in _operators:
+    #             #         raise KeyError(f'Invalid Operator name `{op_name}` in `{attr}`')
+    #             #     op = _operators[op_name]
+    #             # # 2-2-1) 연산자가 생략되어 eq인 경우, name=1
+    #             # else:
+    #             #     attr_name, op = attr, operators.eq
+    #             #
+    #             # # 3. 연산자 split후 남아있는 attr 이름이 해당model의 필터링 컬럼으로 유효한지 확인.
+    #             # if attr_name not in valid_attrs:
+    #             #     raise KeyError(f'Invalid filtering attr name `{attr_name}` in `{attr}`')
+    #             # column = getattr(mapper, attr_name)
+    #
+    #             # 이미 관계는 처리한 상태에서, model + attr로, 표현식만 만들면 된다.
+    #             # 'id'  'id__eq'   'id__count' 'id__count__eq' -> select/order와 다르게,
+    #             # 2-2-1) filter expr는 if __가 있다면, [1]op 'id__eq' [2] op(eq)이 생략된 집계 'id__count' OR  [3] op명시 집계 'id__count__eq'
+    #             #                    __   없다면,  무조건 eq의 생략 & 집계 X이다. 'id'
+    #             print('1. attr  >> ', attr)
+    #
+    #             if cls.OPERATOR_OR_AGG_SPLITTER in attr:
+    #                 # attr_name, op_name = attr.rsplit(cls.OPERATOR_OR_AGG_SPLITTER, 1)
+    #                 # 2-2-1-1) __가 있다면, 3 중 1   'id__eq' or 'id__count' or 'id__count__eq'
+    #                 # => 우측 자르기 'id' + op VS  'id' + agg or 'id__count' + op
+    #                 # => 좌측 자르기 'id' + 'eq' VS 'id' + 'count  or  'id' + 'count__op'
+    #                 # => 집계 VS 비집계를 나누려면, 좌측자르기 한 뒤, 확인해야한다?!
+    #                 attr_name, op_or_agg_name = attr.split(cls.OPERATOR_OR_AGG_SPLITTER, 1)
+    #                 print('2. attr_name, op_or_agg_name  >> ', attr_name, op_or_agg_name)
+    #
+    #                 # 2-2-1-1-1) 집계인 경우(count or count__eq) => attr_name + agg_name을 create_column으로 보내서 만든다.?!
+    #                 # 'id' + 'count' or 'count__eq'
+    #                 #  => 다시 한번 __여부를 확인하여 없으면 eq생략, 있으면 해당연산자다
+    #                 if op_or_agg_name.startswith(('count', 'sum', 'length')):
+    #                     # 'count__eq'
+    #                     if cls.OPERATOR_OR_AGG_SPLITTER in op_or_agg_name:
+    #                         agg_name, op_name = op_or_agg_name.split(cls.OPERATOR_OR_AGG_SPLITTER, 1)
+    #                         print('3. agg_name, op_name  >> ', agg_name, op_name)
+    #
+    #                         op = _operators[op_name]
+    #                         attr_name = attr_name + '__' + agg_name
+    #                         print('4. attr_name  >> ', attr_name)
+    #
+    #                         column = cls.create_column(mapper, attr_name)
+    #
+    #                     # 'count'
+    #                     else:
+    #                         agg_name = op_or_agg_name
+    #                         print('3. agg_name(no op_name)  >> ', agg_name)
+    #                         attr_name = attr_name + '__' + agg_name
+    #                         print('4. attr_name  >> ', attr_name)
+    #                         column = cls.create_column(mapper, attr_name)
+    #                         op = operators.eq
+    #
+    #                 # 2-2-1-1-2) 집계아닌 경우 'id' + 'eq'
+    #                 else:
+    #                     attr_name, op_name = attr.rsplit(cls.OPERATOR_OR_AGG_SPLITTER, 1)
+    #                     cls.check_op_name(attr, op_name)
+    #                     op = _operators[op_name]
+    #                     column = getattr(mapper, attr_name)
+    #
+    #                 # expressions.append(op(column, value))
+    #             # 2-2-2) __가 없다면, 무조건 eq가 생략된 집계없는 attr
+    #             else:
+    #                 attr_name, op = attr, operators.eq
+    #                 if attr_name not in valid_attrs:
+    #                     raise KeyError(f'Invalid filtering attr name `{attr_name}` in `{attr}`')
+    #                 column = getattr(mapper, attr_name)
+    #
+    #             expressions.append(op(column, value))
+    #
+    #     return expressions
+
     @classmethod
-    def create_filter_exprs(cls, model, **filters):
+    def create_conditional_exprs(cls, model, **filters):
         """
-        forms expressions like [Product.age_from = 5,
-                                Product.subject_ids.in_([1,2])]
-        from filters like {'age_from': 5, 'subject_ids__in': [1,2]}
-        Example 1:
-            db.query(Product).filter(
-                *Product.create_filter_exprs(age_from = 5, subject_ids__in=[1, 2]))
-        Example 2:
-            filters = {'age_from': 5, 'subject_ids__in': [1,2]}
-            db.query(Product).filter(*Product.create_filter_exprs(**filters))
-        ### About alias ###:
-        If we will use alias:
-            alias = aliased(Product) # table name will be product_1
-        we can't just write query like
-            db.query(alias).filter(*Product.create_filter_exprs(age_from=5))
-        because it will be compiled to
-            SELECT * FROM product_1 WHERE product.age_from=5
-        which is wrong: we select from 'product_1' but filter on 'product'
-        such filter will not work
-        We need to obtain
-            SELECT * FROM product_1 WHERE product_1.age_from=5
-        For such case, we can call create_filter_exprs ON ALIAS:
-            alias = aliased(Product)
-            db.query(alias).filter(*alias.create_filter_exprs(age_from=5))
-        Alias realization details:
-          * we allow to call this method
-            either ON ALIAS (say, alias.create_filter_exprs())
-            or on class (Product.create_filter_exprs())
-          * when method is called on alias, we need to generate SQL using
-            aliased table (say, product_1), but we also need to have a real
-            class to call methods on (say, Product.get_relation_column_names)
-          * so, we have 'mapper' that holds table name
-            and 'cls' that holds real class
-            when we call this method ON ALIAS, we will have:
-                mapper = <product_1 table>
-                cls = <Product>
-            when we call this method ON CLASS, we will simply have:
-                mapper = <Product> (or we could write <Product>.__mapper__.
-                                    It doesn't matter because when we call
-                                    <Product>.getattr, SA will magically
-                                    call <Product>.__mapper__.getattr())
-                cls = <Product>
+        Category.filter_by(id=1).first()
+        Category.filter_by(id__eq=1).first()
+        Category.filter_by(id__eq=1, posts___title__ne=None).first()
+        Category.filter_by(id__eq=1, posts___title__length__ne=None).first()
+
         """
-        # 1. main model외 relation의 alias가 들어온다면, inspect().mapper.class_로 관계model을 가져온다.
-        #    => main model 및 관계 alias  =>  mapper로 표현  +  model은 쌩 class만 취급.
-        # mapper for create_column / model for attrs검사
+
+        # 1. alias 칼럼/검증(칼럼은 내부에서 하나, 여기선 hybridmethod검사를 위해) 위해 나누기.
         mapper, model = cls.split_mapper_and_model_for_alias(model)
 
-        # 2. filter를 돌면서, 표현식을 만든다.
+        # valid_attrs = cls.get_filterable_attr_names(model) # 칼럼 검증은 create_column_expr에서 하기?!
         expressions = []
 
-        # 연산자 split후 남은 필터옵션(name__eq -> name)이 해당model의 필터링에 쓸 수 있는지 확인한다.
-        valid_attrs = cls.get_filterable_attr_names(model)
-
         for attr, value in filters.items():
-            # 2-1) 입력한 필터 옵션이 hybrid method로서 호출될 경우
-            #      hybrid메서드는  연산자 연산이 아니라, method(value)를 expr로서 넣어준다.
-            #   => 이대, hybrid메서드 호출 주체를 alias로 주기 위해 mapper=옵션을 준다.
+            # 2-1) 우선 적으로 hybrid_method인지 검사하여 다르게 처리
             if attr in cls.get_hybrid_method_names(model):
                 method = getattr(cls, attr)
                 expressions.append(method(value, mapper=mapper))
+                continue
             # 2-2) 입력한 필터 옵션이 연산자처리인 경우
-            else:
-                # # 2-2-1) 연산자 포함된 경우, id__gt=1
-                # if cls.OPERATOR_OR_FUNC_SPLITTER in attr:
-                #     attr_name, op_name = attr.rsplit(cls.OPERATOR_OR_FUNC_SPLITTER, 1)
-                #     if op_name not in _operators:
-                #         raise KeyError(f'Invalid Operator name `{op_name}` in `{attr}`')
-                #     op = _operators[op_name]
-                # # 2-2-1) 연산자가 생략되어 eq인 경우, name=1
-                # else:
-                #     attr_name, op = attr, operators.eq
-                #
-                # # 3. 연산자 split후 남아있는 attr 이름이 해당model의 필터링 컬럼으로 유효한지 확인.
-                # if attr_name not in valid_attrs:
-                #     raise KeyError(f'Invalid filtering attr name `{attr_name}` in `{attr}`')
-                # column = getattr(mapper, attr_name)
+            # 2-2-1) filter expr는 if __가 있다면, [1]op 'id__eq' [2] op(eq)이 생략된 집계 'id__count' OR  [3] op명시 집계 'id__count__eq'
+            # 'id'  'id__eq'   'id__count' 'id__count__eq' -> select/order와 다르게,
+            print('1. attr  >> ', attr)
+            if cls.OPERATOR_OR_AGG_SPLITTER in attr:
+                # attr_name, op_name = attr.rsplit(cls.OPERATOR_OR_AGG_SPLITTER, 1)
+                # 2-2-1-1) __가 있다면, 3 중 1   'id__eq' or 'id__count' or 'id__count__eq'
+                # => 우측 자르기 'id' + eq VS  'id' + 'count' or 'id__count' + op
+                # => 좌측 자르기 'id' + 'eq' VS 'id' + 'count  or  'id' + 'count__op'
+                # => 집계 VS 비집계를 나누려면, 좌측자르기 한 뒤, 확인해야한다?!
+                attr_name, op_or_agg_name = attr.split(cls.OPERATOR_OR_AGG_SPLITTER, 1)
+                print('2. attr_name, op_or_agg_name  >> ', attr_name, op_or_agg_name)
+                # 2-2-1-1-1) 집계인 경우(count or count__eq) => attr_name + agg_name을 create_column으로 보내서 만든다.?!
+                # 'id' + 'count' or 'id' + 'count__eq'
+                #  => 다시 한번 __여부를 확인하여 없으면 eq생략, 있으면 해당연산자다
+                if op_or_agg_name.startswith(cls.AGG_LIST):
+                    if cls.OPERATOR_OR_AGG_SPLITTER in op_or_agg_name:
+                        # 'id' + 'count__eq'
+                        # => 연산자만 떼어내고, 다시 집계랑 합쳐서 column식을 만든다.
+                        agg_name, op_name = op_or_agg_name.split(cls.OPERATOR_OR_AGG_SPLITTER, 1)
+                        cls.check_op_name(attr, op_name)
+                        print('3. agg_name, op_name  >> ', agg_name, op_name)
 
-                # 이미 관계는 처리한 상태에서, model + attr로, 표현식만 만들면 된다.
-                # 'id'  'id__eq'   'id__count' 'id__count__eq' -> select/order와 다르게,
-                # 2-2-1) filter expr는 if __가 있다면, [1]op 'id__eq' [2] op(eq)이 생략된 집계 'id__count' OR  [3] op명시 집계 'id__count__eq'
-                #                    __   없다면,  무조건 eq의 생략 & 집계 X이다. 'id'
-                print('1. attr  >> ', attr)
-
-                if cls.OPERATOR_OR_AGG_SPLITTER in attr:
-                    # attr_name, op_name = attr.rsplit(cls.OPERATOR_OR_AGG_SPLITTER, 1)
-                    # 2-2-1-1) __가 있다면, 3 중 1   'id__eq' or 'id__count' or 'id__count__eq'
-                    # => 우측 자르기 'id' + op VS  'id' + agg or 'id__count' + op
-                    # => 좌측 자르기 'id' + 'eq' VS 'id' + 'count  or  'id' + 'count__op'
-                    # => 집계 VS 비집계를 나누려면, 좌측자르기 한 뒤, 확인해야한다?!
-                    attr_name, op_or_agg_name = attr.split(cls.OPERATOR_OR_AGG_SPLITTER, 1)
-                    print('2. attr_name, op_or_agg_name  >> ', attr_name, op_or_agg_name)
-
-                    # 2-2-1-1-1) 집계인 경우(count or count__eq) => attr_name + agg_name을 create_column으로 보내서 만든다.?!
-                    # 'id' + 'count' or 'count__eq'
-                    #  => 다시 한번 __여부를 확인하여 없으면 eq생략, 있으면 해당연산자다
-                    if op_or_agg_name.startswith(('count', 'sum', 'length')):
-                        # 'count__eq'
-                        if cls.OPERATOR_OR_AGG_SPLITTER in op_or_agg_name:
-                            agg_name, op_name = op_or_agg_name.split(cls.OPERATOR_OR_AGG_SPLITTER, 1)
-                            print('3. agg_name, op_name  >> ', agg_name, op_name)
-
-                            op = _operators[op_name]
-                            attr_name = attr_name + '__' + agg_name
-                            print('4. attr_name  >> ', attr_name)
-
-                            column = cls.create_column(mapper, attr_name)
-
-                        # 'count'
-                        else:
-                            agg_name = op_or_agg_name
-                            print('3. agg_name(no op_name)  >> ', agg_name)
-                            attr_name = attr_name + '__' + agg_name
-                            print('4. attr_name  >> ', attr_name)
-                            column = cls.create_column(mapper, attr_name)
-                            op = operators.eq
-
-                    # 2-2-1-1-2) 집계아닌 경우 'id' + 'eq'
-                    else:
-                        attr_name, op_name = attr.rsplit(cls.OPERATOR_OR_AGG_SPLITTER, 1)
-                        if op_name not in _operators:
-                            raise KeyError(f'Invalid Operator name `{op_name}` in `{attr}`')
                         op = _operators[op_name]
-                        column = getattr(mapper, attr_name)
+                        attr_name = attr_name + cls.OPERATOR_OR_AGG_SPLITTER + agg_name
+                        print('4. attr_name  >> ', attr_name)
+                        column_expr = cls.create_column_expr(mapper, attr_name, type='filter_by')
+                        # column = cls.create_column(mapper, attr_name)
 
-                    # expressions.append(op(column, value))
-                # 2-2-2) __가 없다면, 무조건 eq가 생략된 집계없는 attr
+                    else:
+                        # 'id + 'count'
+                        op = operators.eq
+                        agg_name = op_or_agg_name
+                        print('3. agg_name(no op_name)  >> ', agg_name)
+                        attr_name = attr_name + cls.OPERATOR_OR_AGG_SPLITTER + agg_name
+                        print('4. attr_name  >> ', attr_name)
+                        column_expr = cls.create_column_expr(mapper, attr_name, type='filter_by')
+                        # column = cls.create_column(mapper, attr_name)
+
+                # 3) __달렸는데, 비집계 경우 'id' + 'eq'
                 else:
-                    attr_name, op = attr, operators.eq
-                    if attr_name not in valid_attrs:
-                        raise KeyError(f'Invalid filtering attr name `{attr_name}` in `{attr}`')
-                    column = getattr(mapper, attr_name)
+                    attr_name, op_name = attr.rsplit(cls.OPERATOR_OR_AGG_SPLITTER, 1)
+                    cls.check_op_name(attr, op_name)
+                    op = _operators[op_name]
+                    column_expr = cls.create_column_expr(mapper, attr_name, type='filter_by')
+                    # column = getattr(mapper, attr_name)
 
-                expressions.append(op(column, value))
+                # expressions.append(op(column, value))
+            # 2-2-2) __가 생략된 eq
+            else:
+                attr_name, op = attr, operators.eq
+                column_expr = cls.create_column_expr(mapper, attr_name, type='filter_by')
+
+            expressions.append(op(column_expr, value))
 
         return expressions
+
+    @classmethod
+    def check_op_name(cls, attr, op_name):
+        if op_name not in _operators:
+            raise KeyError(f'Invalid Operator name `{op_name}` in `{attr}`')
 
     # for filter_expr and order_expr
     @classmethod
@@ -777,18 +866,18 @@ class BaseQuery:
 
     # for create_filters0
     @classmethod
-    def _create_filters_or_having_expr_with_alias_map(cls, model, filters, alias_map):
+    def _create_conditional_expr_with_alias_map(cls, model, filters, alias_map):
         """
-
+        Conditional -> filter or having
         """
         for key, value in filters.items():
             # 재귀
             if key.lower().startswith(('and_', 'or_')):
                 # 자신의 처리 결과물은 yield from [generator]라서, 재귀호출시 (*재귀)로 처리할 수 있따.
                 if key.lower().startswith(('and_')):
-                    yield and_(*cls._create_filters_or_having_expr_with_alias_map(model, value, alias_map))
+                    yield and_(*cls._create_conditional_expr_with_alias_map(model, value, alias_map))
                 else:
-                    yield or_(*cls._create_filters_or_having_expr_with_alias_map(model, value, alias_map))
+                    yield or_(*cls._create_conditional_expr_with_alias_map(model, value, alias_map))
                 continue
             # 자신의 처리 filter expr 생성 by cls.create_filters()
             # -> 관계꺼면, 관계model을 map에서 꺼내서 호출하고,
@@ -805,7 +894,7 @@ class BaseQuery:
                 attr_name = key
 
             # 2) filter입력key에 ___가 입력된 model이 entity / 없으면 attr이다
-            yield from cls.create_filter_exprs(model, **{attr_name: value})
+            yield from cls.create_conditional_exprs(model, **{attr_name: value})
 
     # for _create_order_exprs_with_alias_map
     @classmethod
@@ -1015,7 +1104,7 @@ class BaseQuery:
         # -> 메서드를 재귀 yield로 제네레이터를 만들어도 *로 반출 가능하다.
         query = (
             query
-            .where(*cls._create_filters_or_having_expr_with_alias_map(model, filters, alias_map))
+            .where(*cls._create_conditional_expr_with_alias_map(model, filters, alias_map))
         )
         # => query :
         # WHERE posts.id > :id_2 OR
