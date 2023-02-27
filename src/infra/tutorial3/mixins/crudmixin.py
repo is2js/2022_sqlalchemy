@@ -58,7 +58,8 @@ class CRUDMixin(Base, ObjectMixin):
 
         expressions = self.create_conditional_exprs(self.__class__,
                                                     **{self.unique_key_name: unique_attr})
-        stmt = self._query.where(*expressions)
+        stmt = self._query\
+            .where(*expressions)
 
         return self._session.scalar(exists(stmt).select())
 
@@ -329,9 +330,8 @@ class CRUDMixin(Base, ObjectMixin):
             ####    outerjoin을 자동으로 하되, contains_eager이 빠져야한다.
 
 
-        group_by_columns = cls.create_columns(cls, group_by_column_names)
-        obj.set_query(group_by=group_by_columns)
-
+        group_by_column_exprs = cls.create_column_exprs_with_alias_map(cls, group_by_column_names, obj._alias_map, cls.GROUP_BY)
+        obj.set_query(group_by=group_by_column_exprs)
 
         return obj
 

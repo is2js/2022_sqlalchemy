@@ -431,18 +431,19 @@ class ObjectMixin(Base, BaseQuery):
 
     def set_queries_with_alias_map(self, filters=None, having=None, orders=None, selects=None):
         if selects:
-            select_columns = self.create_columns_with_alias_map(self.__class__, selects, self._alias_map,
-                                                                in_select=True)  # 집계함수의 경우, coalese를 붙인다.
+            # select만 먼저 query를 만들어 defatul select(cls)를 덮어쓰도록 set_query를 먼저한다.
+            select_columns = self.create_column_exprs_with_alias_map(self.__class__, selects, self._alias_map,
+                                                                     self.SELECT)  # select 속 집계함수의 경우, coalese를 붙인다.
             query = (
                 select(*select_columns)
                 .select_from(self.__class__)  # execute시 cls를 제외하고 싶다면, 구세주.
             )
             self.set_query(query)
-
+            # for_execute는 (칼럼선택상황)으로서 contains_eager를 안한다.select()에 cls없이 칼럼선택하면 에러남. select_from(cls)도 안통하고 에러
             self._set_query_for_eager_or_execute_and_load_rel_paths(for_execute=True)
         if orders:
             self._set_query_for_eager_or_execute_and_load_rel_paths(for_execute=False)
-            self.set_query(order_by=self._create_order_exprs_with_alias_map(self.__class__, orders, self._alias_map))
+            self.set_query(order_by=self.create_column_exprs_with_alias_map(self.__class__, orders, self._alias_map, self.ORDER_BY))
         if filters:
             self._set_query_for_eager_or_execute_and_load_rel_paths(for_execute=False)
             self.set_query(

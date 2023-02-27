@@ -21,6 +21,7 @@ from src.infra.config.connection import DBConnectionHandler
 from src.infra.tutorial3.mixins.utils.classproperty import class_property
 
 
+
 def to_string_date(last_month):
     return datetime.strftime(last_month, '%Y-%m-%d')
 
@@ -146,6 +147,13 @@ class BaseQuery:
     LENGTH = 'length'
     AGG_LIST = COUNT, SUM, LENGTH
 
+    ## expression create type
+    SELECT = 'select'
+    ORDER_BY = 'order_by'
+    FILTER_BY = 'filter_by'
+    HAVING = 'having'
+    GROUP_BY = 'group_by'
+
     @classmethod
     def get_column(cls, model, attr):
         #### expr join시 model자체가 string(alias)가 들어오면 text로 작성하여 돌려보낸다.
@@ -253,14 +261,14 @@ class BaseQuery:
         # => orders의 경우, prefix를 떼고 검사해야한다.
         # => selects/filters/orders 모두 공통적으로 집계함수는 떼고 검사한다.
         only_attr = attr.split('__', 1)[0]
-        if type in ["select", "order_by"]:
+        if type in [cls.SELECT, cls.ORDER_BY, cls.GROUP_BY]:
             cls.check_selectable_or_sortable_attr_name(model, only_attr)
         else:
             cls.check_filterable_attr_name(model, only_attr)
 
         # 3) 집계함수가 달린 경우(filter/having에서는 연산자는 떼고 들어온다)
         # -> 집계처리를 해주되, select인 경우, coalecse까지 붙인 뒤, label을 적어주자.
-        if '__' in attr:
+        if cls.OPERATOR_OR_AGG_SPLITTER in attr:
             attr, agg_name = cls.check_and_split_attr_names(attr)  # split결과 3개이상나오면 에러 1개, 2개는 넘어감
 
             column_expr = cls.get_column(mapper, attr)
@@ -283,7 +291,7 @@ class BaseQuery:
                     raise NotImplementedError(f'Invalid additional func_name: {additional_agg_name}')
 
             # select시 coalesce적용 및 라벨 붙여주기
-            if type == 'select':
+            if type == cls.SELECT:
                 column_expr = func.coalesce(column_expr, 0)
             column_expr = column_expr.label(attr + '_' + agg_name)
 
@@ -336,27 +344,41 @@ class BaseQuery:
         return columns
 
     @classmethod
-    def create_columns_with_alias_map(cls, model, column_names, alias_map, in_select=False):
+    def create_column_exprs_with_alias_map(cls, model, attrs, alias_map, type):
         """
-
+        Column_expression -> select / order_by / group_by
         """
-        if not isinstance(column_names, (list, tuple, set)):
-            column_names = [column_names]
+        if not isinstance(attrs, (list, tuple, set)):
+            attrs = [attrs]
 
-        columns = []
+        column_expressions = []
 
-        for column_name in column_names:
+        for attr in attrs:
+            # 1-2) type이 order_by인 경우 앞에 prefix를 잘라줘야한다.
+            desc_prefix = ''
+            if type == cls.ORDER_BY and attr.startswith(cls.DESC_PREFIX):
+                    desc_prefix = cls.DESC_PREFIX
+                    attr = attr.lstrip(cls.DESC_PREFIX)
+
             # 1) 안에 ___가 있으면, alias_map에서 users___name(rel_column)으로 가져온다.
-            if cls.RELATION_SPLITTER in column_name:
-                rel_column_and_attr_name = column_name.rsplit(cls.RELATION_SPLITTER, 1)
+            if cls.RELATION_SPLITTER in attr:
+
+                rel_column_and_attr_name = attr.rsplit(cls.RELATION_SPLITTER, 1)
                 model, attr_name = alias_map[rel_column_and_attr_name[0]][0], rel_column_and_attr_name[1]
             # 2) 없으면 현재 model에서 가져온다.
             else:
-                attr_name = column_name
-            # 3) select모델인 경우, agg_func에 coalesce를 달기 위해 in_select를 True로 넘겨준다.
-            columns.append(cls.create_column(model, attr_name, in_select=in_select))
+                attr_name = attr
 
-        return columns
+            column_expr = cls.create_column_expr(model, attr_name, type)
+
+            # 3) type이 order_by인 경우, prefix에 따라 함수를 씌워줘야한다.
+            if type == cls.ORDER_BY:
+                order_func = desc if desc_prefix else asc
+                column_expr = order_func(column_expr)
+
+            column_expressions.append(column_expr)
+
+        return column_expressions
 
     # for agg_with_rel
     # for join relation_mixin
@@ -913,7 +935,7 @@ class BaseQuery:
         # 3) sortable한 칼럼인지 확인한다.
         # 4) 실제 칼럼을 가져올 땐, mapper에서 가져온다(검사만model)
         # return order_func(getattr(mapper, attr))
-        return order_func(cls.create_column_expr(model, attr, type='order_by'))
+        return order_func(cls.create_column_expr(model, attr, cls.ORDER_BY))
 
     @classmethod
     def _create_order_exprs_with_alias_map(cls, model, orders, alias_map):
