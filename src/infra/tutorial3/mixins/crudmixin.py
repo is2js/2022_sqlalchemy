@@ -181,7 +181,7 @@ class CRUDMixin(Base, ObjectMixin):
         FROM employee_departments
         WHERE employee_departments.id = :id_1
         """
-        self.process_filter_or_orders(filters=kwargs)
+        self.process_conditional_attrs(filters=kwargs)
 
         return self
 
@@ -199,7 +199,7 @@ class CRUDMixin(Base, ObjectMixin):
         """
         Category.filter_by().order_by("-id").all()
         """
-        self.process_filter_or_orders(orders=args)
+        self.process_non_conditional_attrs(orders=args)
 
         return self
 
@@ -323,7 +323,8 @@ class CRUDMixin(Base, ObjectMixin):
         obj = cls.create_obj(session=session)
 
         if selects:
-            obj.process_selects_eager_exprs(selects)
+            # obj.process_selects_eager_exprs(selects)
+            obj.process_non_conditional_attrs(selects=selects)
             #### relationship -> contains_eager로 사용하려면, 무조건 main model(cls) select에 들어가야
             # => Query has only expression-based entities - can't find property named "employee".가 안뜬다.
             # select_columns = cls.create_columns(cls, column_names=selects, in_select=True) # 집계가 in_select시 coalesce

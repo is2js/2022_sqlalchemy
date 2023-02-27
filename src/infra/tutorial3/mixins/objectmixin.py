@@ -164,7 +164,11 @@ class ObjectMixin(BaseQuery):
         self._loaded_rel_paths = []  # filter or orders가 존재시, process_filter_or_orders에서 채워짐.
         # self._alias_map = self.process_filter_or_orders(filters=filters, orders=orders) or OrderedDict({})
         # 최초에 외부 filters O -> return false가 안되고 진행하는데, 처리할때 초기화가 안된상태여서 문제
-        self._alias_map = self.process_filter_or_orders(filters=filters, orders=orders) or OrderedDict({})
+        self._alias_map = OrderedDict({})
+        if filters:
+            self.process_conditional_attrs(filters=filters)
+        if orders:
+            self.process_non_conditional_attrs(orders=orders)
 
         return self
 
@@ -297,81 +301,121 @@ class ObjectMixin(BaseQuery):
         return self._flatten_schema
 
     # filters, orders -> filter_or_order_attrs 통해  alias_map이 채워진다.
-    def process_filter_or_orders(self, filters: dict = None, orders=None):
+    def process_conditional_attrs(self, filters: dict = None, having:dict=None):
+        """
+        Conditional attrs mean filters or having
+        - filters -> for select(cls) -> all / first etc
+        - having -> for select(칼럼들).select_from ->  only execute
+        """
         # 의존성 필드 포함시 내부에서 같이 초기화 -> 내부/외부여부에 따라 외부x시-> 내부 존재여부 확인후 초기화 -> 외부o시 할당 초기화
         # 1. 외부x시 내부 확인후 없으면 return False 초기화
-        if not (filters or orders):
-            return False  # -> alias_map 초기화
+        # if not (filters or having):
+        #     return False  # -> alias_map 초기화
 
         # 2. 외부o시 내부 존재확인 후 (내부 초기화도 안된 상태일 수 있어서 없으면 초기화까지 추가)
-        if not hasattr(self, '_alias_map'):
-            self._alias_map = OrderedDict({})
+        # if not hasattr(self, '_alias_map'):
+        #     self._alias_map = OrderedDict({})
         #    -> 인자들 변환 후
         #    udpate VS 빈값에 할당 => set_alias_map 내부에서
-        filter_or_order_attrs = []
+        filter_or_having_attrs = []
         if filters:
-            filter_or_order_attrs += list(_flat_dict_keys_generator(filters))
-        if orders:
-            if orders and not isinstance(orders, (list, tuple, set)):
-                orders = [orders]
-            filter_or_order_attrs += list(map(lambda s: s.lstrip(DESC_PREFIX), orders))
+            filter_or_having_attrs += list(_flat_dict_keys_generator(filters))
+        if having:
+            filter_or_having_attrs += list(_flat_dict_keys_generator(having))
 
         # 2-1. alias_map 채우기 => 내부에서  update VS 빈값에 할당? (자료구조의 경우 update위주로)
         self._set_alias_map_and_loaded_rel_paths(parent_model=self.__class__, parent_path='',
-                                                 attrs=filter_or_order_attrs)
+                                                 attrs=filter_or_having_attrs)
         # 2-2. set된 alias_map -> eager expression 체이닝 후 loaded_rel_paths 채워 업데이트
         # => set_alias_map 시 자동으로 처리되어야하므로 내부의 마지막으로 이동
         # => 다시 가져옴. filter/orders 처리와 having(only execute, no select(cls))의 처리가 다름.
-        self._set_eager_exprs_and_load_rel_paths(only_execute=False)
+        if filters:
+            self._set_eager_exprs_and_load_rel_paths(only_execute=False)
+            self.set_query(
+                filter_by=self._create_filters_or_having_expr_with_alias_map(self.__class__, filters, self._alias_map))
+        if having:
+            self._set_eager_exprs_and_load_rel_paths(only_execute=True)
+            self.set_query(
+                having=self._create_filters_or_having_expr_with_alias_map(self.__class__, having, self._alias_map))
 
         # 2-3.
-        self._set_filter_or_order_exprs(filters=filters, orders=orders)
+        # self._set_filter_or_order_exprs(filters=filters, orders=orders)
 
+        return True
         # 2-4. flatten_schema + loaded_rel_paths -> unloaded schema처리하기
         # self._set_unloaded_eager_exprs()
         # => unloaded는 .first() 등의 실행메서드로 옮겨감. filter, order 다 처리하고나서 로드
 
-    def process_having_eager_exprs(self, having: dict):
-        if not having:
-            return False
-        # filter/orders 재귀로 attrs추출 재활용
-        having_attrs = list(_flat_dict_keys_generator(having))
+    def process_non_conditional_attrs(self, selects = None, orders=None):
+        selects_or_order_attrs = []
+        if selects:
+            if selects and not isinstance(selects, (list, tuple, set)):
+                selects = [selects]
+            selects_or_order_attrs += selects
+        if orders:
+            if orders and not isinstance(orders, (list, tuple, set)):
+                orders = [orders]
+            selects_or_order_attrs += list(map(lambda s: s.lstrip(DESC_PREFIX), orders))
 
         self._set_alias_map_and_loaded_rel_paths(parent_model=self.__class__, parent_path='',
-                                                 attrs=having_attrs)
-        # filter/orders의 select(cls)용 eager exprs (outerjoin + contains_eager)이 다르다.
-        # <-> groupby(select(칼럼선택).select_from(cls) -> having용 eager exprs(only outerjoin)
-        # => select(칼럼선택).select_from(cls)는 contains_eager시 rel_path를 못읽는다.
-        # => only_execute=True옵션을 줘서, 내부에서 contains_eager안하도록 한다.
-        self._set_eager_exprs_and_load_rel_paths(only_execute=True)
+                                                 attrs=selects_or_order_attrs)
 
-        # filter expr 생성을 재활용
-        self.set_query(having=self._create_filters_or_having_expr_with_alias_map(self.__class__, having, self._alias_map))
+        #### selects(group_by)만 query부터 set하고, expr (outer 등)을 삽입
+        if selects:
+            select_columns = self.create_columns_with_alias_map(self.__class__, selects, self._alias_map,
+                                                                in_select=True)
+            query = (
+                select(*select_columns)
+                .select_from(self.__class__)  # execute시 cls를 제외하고 싶다면, 구세주.
+            )
+            self.set_query(query)
 
-    def process_selects_eager_exprs(self, selects):
-        if selects and not isinstance(selects, (list, tuple, set)):
-            selects = [selects]
+            self._set_eager_exprs_and_load_rel_paths(only_execute=True)
 
-        # 맵은 일단 먼저 만들고 -> 맵으로 칼럼 + query를 만든 뒤 -> eager(outerjoin)
-        self._set_alias_map_and_loaded_rel_paths(parent_model=self.__class__, parent_path='', attrs=selects)
+        if orders:
+            self._set_eager_exprs_and_load_rel_paths(only_execute=False)
+            self.set_query(order_by=self._create_order_exprs_with_alias_map(self.__class__, orders, self._alias_map))
 
-        # selects만  set eager expr(outerjoin) 보다 select().select_from(cls)를 먼저  set_query를 한다?
-        # select_columns = self.create_columns(self.__class__, column_names=selects, in_select=True)
-        select_columns = self.create_columns_with_alias_map(self.__class__, selects, self._alias_map, in_select=True)
+        return True
 
-        query = (
-            select(*select_columns)
-            .select_from(self.__class__)  # execute시 cls를 제외하고 싶다면, 구세주.
-        )
-        self.set_query(query)
-
-
-        # attrs = list(map(lambda s: s.lstrip(DESC_PREFIX), selects))
-
-
-        self._set_eager_exprs_and_load_rel_paths(only_execute=True)
-
-
+    # def process_having_eager_exprs(self, having: dict):
+    #     if not having:
+    #         return False
+    #     # filter/orders 재귀로 attrs추출 재활용
+    #     having_attrs = list(_flat_dict_keys_generator(having))
+    #
+    #     self._set_alias_map_and_loaded_rel_paths(parent_model=self.__class__, parent_path='',
+    #                                              attrs=having_attrs)
+    #     # filter/orders의 select(cls)용 eager exprs (outerjoin + contains_eager)이 다르다.
+    #     # <-> groupby(select(칼럼선택).select_from(cls) -> having용 eager exprs(only outerjoin)
+    #     # => select(칼럼선택).select_from(cls)는 contains_eager시 rel_path를 못읽는다.
+    #     # => only_execute=True옵션을 줘서, 내부에서 contains_eager안하도록 한다.
+    #     self._set_eager_exprs_and_load_rel_paths(only_execute=True)
+    #
+    #     # filter expr 생성을 재활용
+    #     self.set_query(
+    #         having=self._create_filters_or_having_expr_with_alias_map(self.__class__, having, self._alias_map))
+    #
+    # def process_selects_eager_exprs(self, selects):
+    #     if selects and not isinstance(selects, (list, tuple, set)):
+    #         selects = [selects]
+    #
+    #     # 맵은 일단 먼저 만들고 -> 맵으로 칼럼 + query를 만든 뒤 -> eager(outerjoin)
+    #     self._set_alias_map_and_loaded_rel_paths(parent_model=self.__class__, parent_path='', attrs=selects)
+    #
+    #     # selects만  set eager expr(outerjoin) 보다 select().select_from(cls)를 먼저  set_query를 한다?
+    #     # select_columns = self.create_columns(self.__class__, column_names=selects, in_select=True)
+    #     select_columns = self.create_columns_with_alias_map(self.__class__, selects, self._alias_map, in_select=True)
+    #
+    #     query = (
+    #         select(*select_columns)
+    #         .select_from(self.__class__)  # execute시 cls를 제외하고 싶다면, 구세주.
+    #     )
+    #     self.set_query(query)
+    #
+    #     # attrs = list(map(lambda s: s.lstrip(DESC_PREFIX), selects))
+    #
+    #     self._set_eager_exprs_and_load_rel_paths(only_execute=True)
 
     def _set_alias_map_and_loaded_rel_paths(self, parent_model, parent_path, attrs):
         """
@@ -404,7 +448,6 @@ class ObjectMixin(BaseQuery):
                 self._alias_map[path] = aliased_rel_model, rel_column
 
             self._set_alias_map_and_loaded_rel_paths(aliased_rel_model, path, rel_attr)
-
 
     #### 이미 초기화된 상태에서 filter, order 처리하기
     # -> 초반부분 1. set_alias_map + 2. outerjoin+eagerload는 동일하나 -> 3 query부분만 다르다.
@@ -443,12 +486,8 @@ class ObjectMixin(BaseQuery):
             if only_execute:
                 # execute만 할거면 select(cls)가 아닌 다른 칼럼들 select상황
                 # + select_from(cls)에서 contains_eager(  ,rel_path)의 rel_path 못읽게 된다.
-                print('self._query in only_execute  >> ', self._query)
-
-
                 self.set_query(outerjoin=(aliased_rel_model, rel_attr))
             else:
-                print('self._query in not only_execute  >> ', self._query)
                 self.set_query(eagerload=(aliased_rel_model, rel_attr, rel_path))
 
             self._loaded_rel_paths.append(rel_path)
@@ -458,10 +497,11 @@ class ObjectMixin(BaseQuery):
         #### BaseQuery -> smartmixin(Class단위 전체 호출)에서 쓸 수 있도록, 남겨두고, 재활용하자.
         #    BaseQuery가 -> smartmixin, objectmixin에서 양방향으로 쓰이므로, smartmixin은 objectmixin을 슬 수 없다?
         #               -> smartmixin은 BaseQuery를 일단 못쓰게 막고, objectmixin을 가지고 테스트 한다.
-        if filters:
-            self.set_query(filter_by=self._create_filters_or_having_expr_with_alias_map(self.__class__, filters, self._alias_map))
-        if orders:
-            self.set_query(order_by=self._create_order_exprs_with_alias_map(self.__class__, orders, self._alias_map))
+        # if filters:
+        #     self.set_query(filter_by=self._create_filters_or_having_expr_with_alias_map(self.__class__, filters, self._alias_map))
+        # if orders:
+        #     self.set_query(order_by=self._create_order_exprs_with_alias_map(self.__class__, orders, self._alias_map))
+        ...
 
     def _set_unloaded_eager_exprs(self):
         # 1. unloaded = flatten_schema가 있을 때만  => flatten - loaded의 나머지 'subquery', 'selectin'을 eagerload한다.

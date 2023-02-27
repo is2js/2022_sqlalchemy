@@ -22,7 +22,7 @@ class Category(BaseModel):
     posts = relationship('Post', backref=backref('category', lazy='subquery'),
                          cascade="all, delete",  # 방법1)
                          passive_deletes=True,  # 해결책2 - 자식FK애 ondelete='CASCADE' 이후 부모relationshio에 이것을 주면, 부모만 삭제하고, 나머지는 DB가 수동적 삭제한다
-                         lazy=True
+                         # lazy=True
                          )
 
     # def __repr__(self):
