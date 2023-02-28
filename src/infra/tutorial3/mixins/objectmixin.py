@@ -758,9 +758,15 @@ class ObjectMixin(Base, BaseQuery):
     @all.instancemethod
     def all(self):
         self._set_unloaded_eager_exprs()
-        print('self._query  >> ', self._query)
-
-        result = self._session.scalars(self._query).all()
+        #### outerjoin + joinedload으로 1객체당 여러데이터가 붙었다면,
+        #    select(cls)의 상황에서는 1개의 main entity만 나오고, 관계칼럼(many) 접근시 그에 대해 딸린 것들이 나와야한다.
+        #    하지만, outerjoin의 특성상 many가 join되면, one도 그만큼 row가 늘어나는데, 그것을 방지하기 위해
+        #    one <- many에서 붙은 many의 row만큼 one-many1 one-many2 one-many3을 방지하기 위해,
+        #    => unique()를 select(cls)의 pk별 1개씩만 유지시켜서, 일반 객체 조회가 되게 한다.
+        if not self._expression_based:
+            result = self._session.scalars(self._query).unique().all()
+        else:
+            result = self._session.scalars(self._query).all()
 
         self.close()
         return result
@@ -773,22 +779,14 @@ class ObjectMixin(Base, BaseQuery):
         self.close()
         return result
 
-    def execute(self, selects=None):
+    def execute(self):
         self._set_unloaded_eager_exprs()
 
-        if selects:
-            # self._query = self._query # outerjoin한 것 골라내지나, select_from()을 한 순간  최초select(self.__class__)만 select에 들어간다.
-            # alias도  없이 칼럼명 그대로 AS 원래칼럼명으로 잡히게 된다.
-            ##### => main model에서만 골라낼 수 있도록 하자.
-            if not isinstance(selects, (list, tuple, set)):
-                selects = [selects]
+        if not self._expression_based:
+            result = self._session.execute(self._query.unique())
+        else:
+            result = self._session.execute(self._query)
 
-            self._query = (
-                select([text(col_name) for col_name in selects])
-                .select_from(self._query)
-            )
-
-        result = self._session.execute(self._query)
         # 내부 session일 경우, 닫혀서 외부에서 내부row객체 조회가 안된다.
         # execute한 것은 list()로 풀어해쳐줘야 밖에서 쓸 수 있다.? -> fetchall()로 쓸 수 있게 한다.
         if not self.served:
@@ -798,6 +796,16 @@ class ObjectMixin(Base, BaseQuery):
 
         return result
 
+    @class_or_instancemethod
+    def count(cls, session: Session = None):
+        """
+        Category.count()
+        """
+        obj = cls.create_obj(session=session)
+
+        return obj.count()
+
+    @count.instancemethod
     def count(self):
         self._set_unloaded_eager_exprs()
 
