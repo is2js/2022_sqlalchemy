@@ -776,7 +776,11 @@ class ObjectMixin(Base, BaseQuery):
     def scalar(self):
         self._set_unloaded_eager_exprs()
 
-        result = self._session.scalar(self._query)
+        if not self._expression_based:
+            result = self._session.scalar(self._query.unique())
+        else:
+            result = self._session.scalar(self._query)
+
 
         self.close()
         return result

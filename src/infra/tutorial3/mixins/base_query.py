@@ -275,6 +275,14 @@ class BaseQuery:
 
             column_expr = cls.get_column(mapper, attr)
 
+            # 집계함수이름뒤에 _distinct가 달렸다면, 먼저 씌워야한다.
+            if 'distinct' in agg_name:
+                additional_agg_name = agg_name.split('_')[-1]
+                if additional_agg_name == cls.DISTINCT:
+                    column_expr = distinct(column_expr)
+                else:
+                    raise NotImplementedError(f'Invalid additional func_name: {additional_agg_name}')
+
             if agg_name.startswith('count'):
                 column_expr = func.count(column_expr)
             elif agg_name.startswith('sum'):
@@ -284,15 +292,7 @@ class BaseQuery:
             else:
                 raise NotImplementedError(f'Invalid column func_name: {agg_name}')
 
-            # 집계함수이름뒤에 _distinct가 달렸다면
-            if '_' in agg_name:
-                additional_agg_name = agg_name.split('_')[-1]
-                if additional_agg_name == cls.DISTINCT:
-                    column_expr = distinct(column_expr)
-                    # label에서 distinctㅈ 지우기 위해, agg_name에서 제거하기
-                    agg_name = agg_name.replace('_' + cls.DISTINCT, '')
-                else:
-                    raise NotImplementedError(f'Invalid additional func_name: {additional_agg_name}')
+
 
             # select시 coalesce적용 및 라벨 붙여주기
             if type == cls.SELECT:
