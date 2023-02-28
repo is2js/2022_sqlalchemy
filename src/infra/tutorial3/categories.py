@@ -42,6 +42,8 @@ posttags = Table('posttags', Base.metadata,
 
 # class PostPublishType(enum.Enum):
 class PostPublishType(enum.IntEnum):
+    #### outerjoin 조인으로 들어왔을 때, 해당 칼럼에 None이 찍히는데, -> 0을 내부반환하고, 그것을 표시할 DEFAULT NONE 상수를 필수로 써야한다.
+    NONE = 0
     ## IntEnum을 Post의 필드타입으로 정의한 순간, db는 int지만, 객체에서는 enum의 필드명으로 모든게 표시될 예정이므로 한글로 바꿔봄.
     DRAFT = 1  # DRAFT
     SHOW = 2  # release

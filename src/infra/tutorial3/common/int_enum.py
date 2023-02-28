@@ -60,9 +60,14 @@ class IntEnum(TypeDecorator):
         # => ValueError: None is not a valid SexType
         # for eager load
         # print('process_result_value =>>', value, dialect)
+        #### outer join으로 인해, 해당칼럼에 None이 찰 수 도 있다.
+        #### => 그 때, None값을 다시 객체ENum으로 만들어주는 과정이 차후 생기는데,
+        #       객체Enum은  ( value )를 받아서 생성한다.
+        #       여기서 customEnum( None )을 받아줄, None 대신 0을 반환하게 하고
+        #       => 해당 CustomEnum에서는, NONE = 0으로 받아서 생성은 되게 default를 주자.
         if value is None:
             return 0
-            # => 이걸 해줘도 또다른 에러남.
-            # sqlalchemy.exc.InvalidRequestError: The unique() method must be invoked on this Result, as it contains results that include joined eager loads against collections
+        #     # => 이걸 해줘도 또다른 에러남.
+        #     # sqlalchemy.exc.InvalidRequestError: The unique() method must be invoked on this Result, as it contains results that include joined eager loads against collections
 
         return self._enumtype(value)

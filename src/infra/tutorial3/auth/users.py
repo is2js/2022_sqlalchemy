@@ -340,6 +340,8 @@ class User(BaseModel):
 
 
 class Permission(enum.IntEnum):
+    #### outerjoin 조인으로 들어왔을 때, 해당 칼럼에 None이 찍히는데, -> 0을 내부반환하고, 그것을 표시할 DEFAULT NONE 상수를 필수로 써야한다.
+    NONE = 0
     FOLLOW = 1
     COMMENT = 2
     WRITE = 4  # User
