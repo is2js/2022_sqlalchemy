@@ -22,6 +22,7 @@ from src.infra.tutorial3.mixins.utils.classproperty import class_property
 
 
 
+
 def to_string_date(last_month):
     return datetime.strftime(last_month, '%Y-%m-%d')
 
@@ -146,6 +147,7 @@ class BaseQuery:
     SUM = 'sum'
     LENGTH = 'length'
     AGG_LIST = COUNT, SUM, LENGTH
+    DISTINCT = 'distinct'
 
     ## expression create type
     SELECT = 'select'
@@ -285,8 +287,10 @@ class BaseQuery:
             # 집계함수이름뒤에 _distinct가 달렸다면
             if '_' in agg_name:
                 additional_agg_name = agg_name.split('_')[-1]
-                if additional_agg_name == 'distinct':
+                if additional_agg_name == cls.DISTINCT:
                     column_expr = distinct(column_expr)
+                    # label에서 distinctㅈ 지우기 위해, agg_name에서 제거하기
+                    agg_name = agg_name.replace('_' + cls.DISTINCT, '')
                 else:
                     raise NotImplementedError(f'Invalid additional func_name: {additional_agg_name}')
 

@@ -252,7 +252,9 @@ class ObjectMixin(Base, BaseQuery):
         self._flatten_schema = self.set_schema(schema) or {}
         self._loaded_rel_paths = []
         self._alias_map = OrderedDict({})
-        self._expression_based = False
+        # 사실상 query가 미리 주어지는 것도 select(cls)가 아닌 미리 selects를 주는 것과 같아서
+        # -> selects => set_attrs가 아니고 미리 selects문장을 만든 query도 주어진다면, expression based로 봐야한다.
+        self._expression_based = False if query is None else True
 
         return self
 
