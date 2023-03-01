@@ -870,3 +870,15 @@ class ObjectMixin(Base, BaseQuery):
     # sel = select([table1.c.a, table1.c.b]).where(table1.c.c > 5)
     # ins = table2.insert().from_select(sel.c, sel)
     # The statement sel.c somehow return the array of col
+
+    # for expressionmixin의 count_per_date_unit_subquery
+    def subquery(self):
+        """
+        메서드 내부에서 self_.query.subquery()를 반환함. 이 때, 내부생성 session이라면 삭제해주자.
+        """
+        # print('self._query.subquery()  >> ', self._query.subquery())
+        #### 실행메서드같지만, session안받아 session 내부생성되어있으므로, close처리
+        self._session.close()
+
+        return self._query.subquery()
+
