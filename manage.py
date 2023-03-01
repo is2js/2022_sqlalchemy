@@ -1,14 +1,15 @@
 import datetime
 import os
 
+import pyecharts
 from dateutil.relativedelta import relativedelta
-from pyecharts.charts.chart import Chart
 from sqlalchemy import select, inspect, func, text
 from sqlalchemy.orm import aliased
 
 from src.infra.config.connection import db
 from src.infra.tutorial3 import *
 from src.infra.tutorial3.mixins.base_query import BaseQuery
+from src.infra.tutorial3.wrapper.pyechartswrapper import Chart
 from src.main.config import create_app
 
 
@@ -26,7 +27,8 @@ def make_shell_context():
                 Employee=Employee,
                 Department=Department,
                 BaseQuery=BaseQuery,
-                chart=Chart(),
+                Chart=Chart,
                 today=datetime.date.today(),
                 relativedelta=relativedelta,
+                pyecharts=pyecharts
                 )

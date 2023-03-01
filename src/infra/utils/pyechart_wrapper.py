@@ -38,7 +38,7 @@ class Chart:
                                                  interval_value=interval_value, start_date=start_date, filters=filters,
                                                  add_korean=add_korean)
 
-        # 이미 동적으로 comment를 채워주지만, 동적 comment채움을 적용하지 않는 model에 대해서, cls.__nname__으로 대체
+        # 이미 동적으로 comment를 채워주지만, 동적 comment채움을 적용하지 않는 model에 대해서, cls.__name__으로 대체
         model_comment = model.__table__.comment if model.__table__.comment else model.__class__.name
 
         bar_chart = (
