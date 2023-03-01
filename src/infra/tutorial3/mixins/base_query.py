@@ -21,8 +21,6 @@ from src.infra.config.connection import DBConnectionHandler
 from src.infra.tutorial3.mixins.utils.classproperty import class_property
 
 
-
-
 def to_string_date(last_month):
     return datetime.strftime(last_month, '%Y-%m-%d')
 
@@ -241,7 +239,7 @@ class BaseQuery:
             return cls.get_column(model, column_name)
 
     @classmethod
-    def create_column_expr(cls, model, attr, type):
+    def create_column_expr(cls, model, attr, type, label=None):
         if not type:
             raise KeyError(f'Input type "select or filter_by or order_by or having"')
         """
@@ -292,13 +290,15 @@ class BaseQuery:
             else:
                 raise NotImplementedError(f'Invalid column func_name: {agg_name}')
 
-
-
             # select시 coalesce적용 및 라벨 붙여주기
             if type == cls.SELECT:
                 column_expr = func.coalesce(column_expr, 0)
 
-            column_expr = column_expr.label(attr + '_' + agg_name)
+            # subquery의 label('date')지정할 필요가 있어서 추가.
+            if not label:
+                column_expr = column_expr.label(attr + '_' + agg_name)
+            else:
+                column_expr = column_expr.label(label)
 
             return column_expr
 
@@ -362,8 +362,8 @@ class BaseQuery:
             # 1-2) type이 order_by인 경우 앞에 prefix를 잘라줘야한다.
             desc_prefix = ''
             if type == cls.ORDER_BY and attr.startswith(cls.DESC_PREFIX):
-                    desc_prefix = cls.DESC_PREFIX
-                    attr = attr.lstrip(cls.DESC_PREFIX)
+                desc_prefix = cls.DESC_PREFIX
+                attr = attr.lstrip(cls.DESC_PREFIX)
 
             # 1) 안에 ___가 있으면, alias_map에서 users___name(rel_column)으로 가져온다.
             if cls.RELATION_SPLITTER in attr:
@@ -799,7 +799,7 @@ class BaseQuery:
     #     return expressions
 
     @classmethod
-    def create_conditional_exprs(cls, model, **filters):
+    def create_conditional_exprs(cls, model, filters):
         """
         Category.filter_by(id=1).first()
         Category.filter_by(id__eq=1).first()
@@ -921,7 +921,7 @@ class BaseQuery:
                 attr_name = key
 
             # 2) filter입력key에 ___가 입력된 model이 entity / 없으면 attr이다
-            yield from cls.create_conditional_exprs(model, **{attr_name: value})
+            yield from cls.create_conditional_exprs(model, {attr_name: value})
 
     # for _create_order_exprs_with_alias_map
     @classmethod
