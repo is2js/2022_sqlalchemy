@@ -2,11 +2,12 @@ import datetime
 import uuid
 
 from flask import url_for
-from sqlalchemy import Column, DateTime, Boolean, String,  and_
+from sqlalchemy import Column, DateTime, Boolean, String, and_
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import declared_attr
 
 from src.infra.config.base import Base
+from src.infra.config.connection import db
 from src.infra.tutorial3.mixins import StaticsMixin, RelationMixin
 from src.infra.tutorial3.mixins.crudmixin import CRUDMixin
 from src.infra.tutorial3.mixins.expressionmixin import ExpressionMixin
@@ -20,13 +21,13 @@ default_table_args = {
     'mysql_charset': 'utf8mb4',
 }
 
+
 # mixin 1. BaseModel은 config (Base, Mixin)으로 상속해야, 라이브러리 역할을 할 수 있다.
 # => Mixin은 Base를 새로 만들어서 기능을 땡겨쓰기만 하고, 여기 Base와는 별개다.
 # class BaseModel(Base, CRUDMixin, ReprMixin, ExpressionMixin):
-class BaseModel(Base, ReprMixin, ExpressionMixin): # ExpressionMixin 작업시 CRUDMixin을 상속해서 작업하므로, CRUDMixin제외하고 작업
+class BaseModel(Base, ReprMixin, ExpressionMixin):  # ExpressionMixin 작업시 CRUDMixin을 상속해서 작업하므로, CRUDMixin제외하고 작업
     # 추상화 안해주면, does not have a __table__ or __tablename__ specified and does not inherit from an existing table-mapped class.
     __abstract__ = True
-
 
     # @declared_attr
     # def __tablename__(cls) -> str:
@@ -49,8 +50,6 @@ class BaseModel(Base, ReprMixin, ExpressionMixin): # ExpressionMixin 작업시 C
 
     add_date = Column(DateTime, nullable=False, default=datetime.datetime.now)
     pub_date = Column(DateTime, nullable=False, default=datetime.datetime.now, onupdate=datetime.datetime.now)
-
-
 
     def to_dict(self):
         # (1) inspect(self)시 관계필드까지 조회하는데, form이나 front에서 DetachedError난다.
@@ -78,6 +77,10 @@ class BaseModel(Base, ReprMixin, ExpressionMixin): # ExpressionMixin 작업시 C
     @staticmethod
     def to_dict_list(l):
         return [m.to_dict() for m in l]
+
+
+#### 내부세션 제조기 투입
+BaseModel.set_inner_session(db.get_session)
 
 
 class InviteBaseModel(Base):

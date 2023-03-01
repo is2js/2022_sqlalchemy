@@ -99,12 +99,36 @@ class ObjectMixin(Base, BaseQuery):
         self._alias_map = None
         self._expression_base = None
 
+    #### session generator를 class변수 + clsmethod setter 가지고 있어야, BaseModel에서 주입받을 수 있다.
+    _session_generator = None
+
+    @classmethod
+    def set_inner_session(cls, generator):
+        cls._session_generator = generator
+
+    #### session을 들고 있는 객체 상태에서 그 dialect뽑아내기
+    @property
+    def db_dialect(self):
+        """
+         Category.filter_by().db_dialect  / self.db_dialect
+         => 'sqlite'
+        """
+        if not self._session:
+            raise Exception(f'Current no session')
+
+        # >>> s.bind.dialect
+        # <sqlalchemy.dialects.sqlite.pysqlite.SQLiteDialect_pysqlite object at 0x000002B099E804A8>
+        # >>> s.bind.dialect.name
+        # 'sqlite'
+        return self._session.bind.dialect.name
+
     @classmethod
     def _get_session_and_mark_served(cls, session):
         # 새로 만든 session일 경우 되돌려주기(close처리) 상태(cls.served=)를  아직 False상태로 만들어놓는다.
 
         if not session:
-            session, cls.served = db.get_session(), False
+            # session, cls.served = db.get_session(), False
+            session, cls.served = cls._session_generator(), False
             return session
 
         # 외부에서 받은 session을 받았으면 served로 확인한다.
