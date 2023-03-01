@@ -393,6 +393,8 @@ class ObjectMixin(Base, BaseQuery):
         # 체이닝이 아닌 query가 들어올 경우, 최초 init시 들어온 query=로서 할당 초기화
         else:
             self._query = query
+            #### 쌩쿼리가 입력되면, only expression임을 명시하자
+            self._expression_based = True
 
         return self._query
 
@@ -789,6 +791,7 @@ class ObjectMixin(Base, BaseQuery):
         #    하지만, outerjoin의 특성상 many가 join되면, one도 그만큼 row가 늘어나는데, 그것을 방지하기 위해
         #    one <- many에서 붙은 many의 row만큼 one-many1 one-many2 one-many3을 방지하기 위해,
         #    => unique()를 select(cls)의 pk별 1개씩만 유지시켜서, 일반 객체 조회가 되게 한다.
+        #### scalars가 아닌 상황(execute)에서는 select(cls)를 위해 맨 마지막 .distinct()를 붙이자.
         if not self._expression_based:
             result = self._session.scalars(self._query).unique().all()
         else:
@@ -801,7 +804,7 @@ class ObjectMixin(Base, BaseQuery):
         self._set_unloaded_eager_exprs()
 
         if not self._expression_based:
-            result = self._session.scalar(self._query.unique())
+            result = self._session.scalar(self._query.distinct())
         else:
             result = self._session.scalar(self._query)
 
@@ -813,7 +816,7 @@ class ObjectMixin(Base, BaseQuery):
         self._set_unloaded_eager_exprs()
 
         if not self._expression_based:
-            result = self._session.execute(self._query.unique())
+            result = self._session.execute(self._query.distinct())
         else:
             result = self._session.execute(self._query)
 
