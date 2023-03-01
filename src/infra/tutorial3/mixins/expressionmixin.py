@@ -238,7 +238,8 @@ class ExpressionMixin(CRUDMixin):  # 작업시만 BaseQuery + ObjectMixin을 달
     @classmethod
     def count_for_interval(cls, date_attr,
                            end_date, interval, unit, srt_date=None,  # series + count_per_date_unit
-                           db_dialect=SQLITE, include_end_date=True,  # series
+                           # db_dialect=SQLITE, # 객체를 만들고 객체session기반으로 뽑아내도록 수정
+                           include_end_date=True,  # series
                            count_attr=None, filter_by=None,  # count_per_date_unit
                            session: Session = None, unit_name=False  # 추가
                            ):
@@ -265,18 +266,23 @@ class ExpressionMixin(CRUDMixin):  # 작업시만 BaseQuery + ObjectMixin을 달
         Category.count_for_interval('add_date', today, 3, 'month', unit_name='en')
         => {'date': ['Jan', 'Feb', 'Mar'], 'count': [0, 5, 0]}
         """
+        #### session을 가져야 dialect를 뽑아낼 수 있으므로, create_obj부터
+        # obj = cls.create_obj(session=session, query=query)
+        obj = cls.create_obj(session=session)
 
         # 1) 'series' label의 'date' label(string date) 칼럼을 가진 generate_series 생성
         series_subquery = cls.generate_series_subquery(end_date, interval, unit,
                                                        srt_date=srt_date, include_end_date=include_end_date,
-                                                       db_dialect=db_dialect)
+                                                       # db_dialect=db_dialect)
+                                                       db_dialect=obj.db_dialect)
 
         # 2) series에 outerjoin할, 'date'칼럼을 가진, 자신의 데이터 날짜 string 별 group_by해서 series별 구멍이 난
         #    'date', 'count'칼럼을 가진 count subquery 생성
         count_per_date_subquery = cls.count_per_date_unit_subquery(date_attr, end_date, interval, unit,
                                                                    srt_date=srt_date, count_attr=count_attr,
                                                                    filter_by=filter_by,
-                                                                   db_dialect=db_dialect,
+                                                                   # db_dialect=db_dialect,
+                                                                   db_dialect=obj.db_dialect,
                                                                    include_end_date=include_end_date)
 
         # 3) series <- count_per_date  outerjoin : subquery끼리는, aliased없이 table처럼 하면 된다
@@ -289,7 +295,8 @@ class ExpressionMixin(CRUDMixin):  # 작업시만 BaseQuery + ObjectMixin을 달
 
         # 4) select변경을 가한 query는 생성할 때 query도 같이 set
         #   *filter_by는 count_per_date할때만 적용되어야하므로, 미리 query에 넣어서 넣고, create_obj에서는 배제
-        obj = cls.create_obj(session=session, query=query)
+        # obj = cls.create_obj(session=session, query=query)
+        obj.set_query(query)
         rows = obj.execute()
         # return rows
         # rows:
