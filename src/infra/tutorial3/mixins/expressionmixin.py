@@ -238,7 +238,6 @@ class ExpressionMixin(CRUDMixin):  # 작업시만 BaseQuery + ObjectMixin을 달
     @classmethod
     def count_for_interval(cls, date_attr,
                            end_date, interval, unit, srt_date=None,  # series + count_per_date_unit
-                           # db_dialect=SQLITE, # 객체를 만들고 객체session기반으로 뽑아내도록 수정
                            include_end_date=True,  # series
                            count_attr=None, filter_by=None,  # count_per_date_unit
                            session: Session = None, unit_name=False  # 추가

@@ -846,7 +846,7 @@ class BaseQuery:
                         op = _operators[op_name]
                         attr_name = attr_name + cls.OPERATOR_OR_AGG_SPLITTER + agg_name
                         print('4. attr_name  >> ', attr_name)
-                        column_expr = cls.create_column_expr(mapper, attr_name, type='filter_by')
+                        column_expr = cls.create_column_expr(mapper, attr_name, type=cls.FILTER_BY)
                         # column = cls.create_column(mapper, attr_name)
 
                     else:
@@ -856,7 +856,7 @@ class BaseQuery:
                         print('3. agg_name(no op_name)  >> ', agg_name)
                         attr_name = attr_name + cls.OPERATOR_OR_AGG_SPLITTER + agg_name
                         print('4. attr_name  >> ', attr_name)
-                        column_expr = cls.create_column_expr(mapper, attr_name, type='filter_by')
+                        column_expr = cls.create_column_expr(mapper, attr_name, type=cls.FILTER_BY)
                         # column = cls.create_column(mapper, attr_name)
 
                 # 3) __달렸는데, 비집계 경우 'id' + 'eq'
@@ -893,7 +893,7 @@ class BaseQuery:
 
     # for create_filters0
     @classmethod
-    def _create_conditional_expr_with_alias_map(cls, model, filters, alias_map):
+    def _create_conditional_exprs_with_alias_map(cls, model, filters, alias_map):
         """
         Conditional -> filter or having
         """
@@ -902,9 +902,9 @@ class BaseQuery:
             if key.lower().startswith(('and_', 'or_')):
                 # 자신의 처리 결과물은 yield from [generator]라서, 재귀호출시 (*재귀)로 처리할 수 있따.
                 if key.lower().startswith(('and_')):
-                    yield and_(*cls._create_conditional_expr_with_alias_map(model, value, alias_map))
+                    yield and_(*cls._create_conditional_exprs_with_alias_map(model, value, alias_map))
                 else:
-                    yield or_(*cls._create_conditional_expr_with_alias_map(model, value, alias_map))
+                    yield or_(*cls._create_conditional_exprs_with_alias_map(model, value, alias_map))
                 continue
             # 자신의 처리 filter expr 생성 by cls.create_filters()
             # -> 관계꺼면, 관계model을 map에서 꺼내서 호출하고,
@@ -1131,7 +1131,7 @@ class BaseQuery:
         # -> 메서드를 재귀 yield로 제네레이터를 만들어도 *로 반출 가능하다.
         query = (
             query
-            .where(*cls._create_conditional_expr_with_alias_map(model, filters, alias_map))
+            .where(*cls._create_conditional_exprs_with_alias_map(model, filters, alias_map))
         )
         # => query :
         # WHERE posts.id > :id_2 OR
