@@ -795,6 +795,9 @@ class ObjectMixin(Base, BaseQuery):
 
         # 내부 session일 경우, 닫혀서 외부에서 내부row객체 조회가 안된다.
         # execute한 것은 list()로 풀어해쳐줘야 밖에서 쓸 수 있다.? -> fetchall()로 쓸 수 있게 한다.
+        # => fetchall()이 완료된 Row는 외부에서도 key명으로 접근할 수 있다.
+        # result.keys()
+        # RMKeyView(['name', 'id_count', 'has_type_sum'])
         if not self.served:
             result = result.fetchall()
 

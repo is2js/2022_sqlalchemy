@@ -60,7 +60,7 @@ class CRUDMixin(Base, ObjectMixin):
             raise Exception(f'unique column 값을 입력하지 않았습니다.')
 
         filter_exprs = self.create_conditional_exprs(self.__class__,
-                                                     **{self.first_unique_key_name: unique_column_value})
+                                                     {self.first_unique_key_name: unique_column_value})
         # 자신의 내부 쿼리는 바꾸지 않고, 일시적으로 쿼리 -> 실행까지
         stmt = self._query \
             .where(*filter_exprs)
@@ -327,8 +327,17 @@ class CRUDMixin(Base, ObjectMixin):
     @classmethod
     def group_by(cls, *group_by_column_names, session: Session = None, selects=None):
         """
+        1. 자체 집계
         Category.group_by('icon', selects=['name', 'id__count']).execute()
         => [('ccc', 4), ('337', 2)]
+
+        2. a별 b의 집계 -> a의 id로 group_by하고, b를 집계
+        Tag.group_by('id', selects=['name', 'posts___id__count', 'posts___has_type__sum'])
+           .order_by('-posts___id__count').execute()
+        => [('태그1', 1, <PostPublishType.SHOW: 2>), ('asdf', 0, <PostPublishType.NONE: 0>)]
+        => 결과 Row객체는 .keys()로 접근 필드를 확인할 수 있다.
+        result.keys() => RMKeyView(['name', 'id_count', 'has_type_sum'])
+
         """
         obj = cls.create_obj(session=session, selects=selects)
 
