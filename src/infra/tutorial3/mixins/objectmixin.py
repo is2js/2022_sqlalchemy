@@ -1,4 +1,7 @@
+import datetime
+import enum
 from collections import OrderedDict, defaultdict, abc
+from collections.abc import Iterable
 
 from sqlalchemy import MetaData, select, func, text, exists
 from sqlalchemy.ext.declarative import declarative_base
@@ -75,6 +78,16 @@ def _flat_dict_attrs_generator(filters):
             yield key
 
 
+def format_datetime(value, fmt='%Y-%m-%d %H:%M'):
+    formatted = value.strftime(fmt.encode('unicode-escape').decode()).encode().decode('unicode-escape')
+    return formatted
+
+
+def format_date(value, fmt='%Y-%m-%d'):
+    formatted = value.strftime(fmt.encode('unicode-escape').decode()).encode().decode('unicode-escape')
+    return formatted
+
+
 Base = declarative_base()
 naming_convention = {
     "ix": 'ix_%(column_0_label)s',
@@ -88,7 +101,6 @@ Base.metadata = MetaData(naming_convention=naming_convention)
 
 class ObjectMixin(Base, BaseQuery):
     __abstract__ = True
-
 
     def __init__(self):
         self.served = None
@@ -470,7 +482,7 @@ class ObjectMixin(Base, BaseQuery):
         # select만 먼저 query를 만들어 defatul select(cls)를 덮어쓰도록 set_query를 먼저한다.
         if selects:
             select_column_exprs = self.create_column_exprs_with_alias_map(self.__class__, selects, self._alias_map,
-                                                                     self.SELECT)  # select 속 집계함수의 경우, coalese를 붙인다.
+                                                                          self.SELECT)  # select 속 집계함수의 경우, coalese를 붙인다.
             query = (
                 select(*select_column_exprs)
                 .select_from(self.__class__)  # execute시 cls를 제외하고 싶다면, 구세주.
@@ -485,14 +497,17 @@ class ObjectMixin(Base, BaseQuery):
             self._set_eager_query_and_load_rel_paths()
 
             if order_by:
-                self.set_query(order_by=self.create_column_exprs_with_alias_map(self.__class__, order_by, self._alias_map, self.ORDER_BY))
+                self.set_query(
+                    order_by=self.create_column_exprs_with_alias_map(self.__class__, order_by, self._alias_map,
+                                                                     self.ORDER_BY))
             if filter_by:
                 # self._set_query_and_load_rel_paths(for_execute=False)
                 self.set_query(
                     filter_by=self._create_conditional_exprs_with_alias_map(self.__class__, filter_by, self._alias_map))
             if having:
                 # self._set_query_and_load_rel_paths(for_execute=True)
-                self.set_query(having=self._create_conditional_exprs_with_alias_map(self.__class__, having, self._alias_map))
+                self.set_query(
+                    having=self._create_conditional_exprs_with_alias_map(self.__class__, having, self._alias_map))
 
     # # filters, orders -> filter_or_order_attrs 통해  alias_map이 채워진다.
     # def process_conditional_attrs(self, filters: dict = None, having: dict = None):
@@ -626,7 +641,11 @@ class ObjectMixin(Base, BaseQuery):
 
         for attr in attrs:
             if RELATION_SPLITTER in attr:
+                print('attr  >> ', attr)
+
                 rel_column_name, rel_attr = attr.split(RELATION_SPLITTER, 1)
+                print('rel_attr  >> ', rel_attr)
+
                 relations[rel_column_name].append(rel_attr)
 
         for rel_column_name, rel_attr in relations.items():
@@ -808,7 +827,6 @@ class ObjectMixin(Base, BaseQuery):
         else:
             result = self._session.scalar(self._query)
 
-
         self.close()
         return result
 
@@ -846,6 +864,8 @@ class ObjectMixin(Base, BaseQuery):
         self._set_unloaded_eager_exprs()
 
         count_stmt = select([func.count()]).select_from(self._query)
+        print('count_stmt  >> ', count_stmt)
+
         result = self._session.scalar(count_stmt)
         self.close()
 
@@ -882,3 +902,80 @@ class ObjectMixin(Base, BaseQuery):
 
         return self._query.subquery()
 
+    # for route에서 row별 table 데이터(json) 전달
+
+    def to_dict2(self, nested=False, hybrid_attributes=False, exclude=None):
+        """
+
+        """
+        #### 1. execute용 query (selects or query삽입 -> self._expression_based == True)의 경우
+        #       실행 후 -> Row객체를 dict화 한다.
+        if self._expression_based:
+
+            rows = self.execute()
+
+            # 1개 row의 개별 값들은 인덱싱으로 접근 가능하여, row index + 칼럼명을 동시에 받아 처리?!
+            result = []
+            for row in rows:
+                row_dict = dict()
+                # for idx, column_name in enumerate(row.keys()):
+                for column_name in row.keys():
+                    # value = row[idx]
+                    _value = getattr(row, column_name)
+                    ## enum처리
+                    # row(select(칼럼들).from_select(cls) + .execute())에서 enum값은 name을
+                    # 객체(select(cls) + .first())에서 enum은 value를 뽑고 싶어한다.
+                    if isinstance(_value, enum.Enum):
+                        _value = _value.name
+                    row_dict[column_name] = _value
+
+                result.append(row_dict)
+            return result
+
+        #### 2. select(cls)의 경우(self._expression_based == False),
+        # relation포함(nested) / hybrid포함여부 / 그외 배제할 칼럼을 처리하고 dict화 한다
+        result = dict()
+
+        # 1) 배제가 없으면 .__table__.columns에서 일반 칼럼들을 다 꺼낸다. (관계x hybridx)
+        if exclude is None:
+            view_column_names = self.column_names
+        else:
+            view_column_names = filter(lambda e: e not in exclude, self.column_names)
+
+        # 2) 일반칼럼데이터들을 집어넣는다. - 시간형식은 예외처리한다.
+        for column_name in view_column_names:
+            _value = getattr(self, column_name)
+
+            if isinstance(_value, datetime.datetime):
+                _value = format_datetime(_value)
+            elif isinstance(_value, datetime.date):
+                _value = format_date(_value)
+            ## enum처리
+            # row(select(칼럼들).from_select(cls) + .execute())에서 enum값은 name을
+            # 객체(select(cls) + .first())에서 enum은 value를 뽑고 싶어한다.
+            elif isinstance(_value, enum.Enum):
+                _value = _value.value
+
+        result[column_name] = _value
+
+        # 3) 하이브리드칼럼을 넣기를 선택한다면, 순회하면서 넣는다.
+        if hybrid_attributes:
+            for column_name in self.hybrid_properties:
+                result[column_name] = getattr(self, column_name)
+
+        # 4) 관계객체의 데이터를 dict형태로 포함하여 넣고 싶다면, 재귀로 얻어낸 dict를 최종dict에 포함시킨다.
+        if nested:
+            for column_name in self.relation_names:
+                obj = getattr(self, column_name)
+
+                # 이 때, ObjectMixin을 상속한 model이 아니라, Iterable한 여러모델일 수 있다면,
+                # -> 해당하는 것만 모아서 변환 후 list로 넣어준다.
+                if isinstance(obj, ObjectMixin):
+                    result[column_name] = obj.to_dict(hybrid_attributes=hybrid_attributes)
+                elif isinstance(obj, Iterable):
+                    result[column_name] = [
+                        o.to_dict(hybrid_attributes=hybrid_attributes) for o in obj
+                        if isinstance(o, ObjectMixin)
+                    ]
+
+        return result
