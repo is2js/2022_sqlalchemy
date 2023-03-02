@@ -99,6 +99,22 @@ naming_convention = {
 Base.metadata = MetaData(naming_convention=naming_convention)
 
 
+def transform_int_enum_in_row(row, column_names, to_name=False):
+    """
+    row 변환한 것을 list append없이 한번에 모으기 위해, return 모은 것(X)
+    =>  yield 모아야할 값들 1개씩 방출(추가처리가능) => 메서드 바깥에선 tuple(generator)로 한번에 모으기 가능
+    """
+    for column_name in column_names:
+        _value = getattr(row, column_name)
+        if isinstance(_value, enum.IntEnum):
+            if to_name:
+                yield _value.name
+            else:
+                yield _value.value
+        else:
+            yield _value
+
+
 class ObjectMixin(Base, BaseQuery):
     __abstract__ = True
 
@@ -120,6 +136,7 @@ class ObjectMixin(Base, BaseQuery):
 
     ADDITIONAL_ATTRS = ['_session', 'served', '_flatten_schema', '_query', '_loaded_rel_paths', '_alias_map',
                         '_expression_based']
+
     #### session을 들고 있는 객체 상태에서 그 dialect뽑아내기
     @property
     def db_dialect(self):
@@ -836,7 +853,20 @@ class ObjectMixin(Base, BaseQuery):
         self.close()
         return result
 
-    def execute(self):
+    def execute(self, int_enum_transform=False, to_name=False):
+        """
+        실행시 enum_transform True일 경우, enum의 value를 / to_name=True까지 줄 경우 enum의 name을 뽑게 한다
+        => 내부에선 yield -> tuple(generator) -> list( generator )로 정의함.
+        ----
+        User.group_by('sex', selects=['sex', 'id__count']).execute()
+        => [(<SexType.미정: 0>, 3), (<SexType.여자: 2>, 5)]
+
+        User.group_by('sex', selects=['sex', 'id__count']).execute(enum_transform=True)
+        =>[(0, 3), (2, 5)]
+
+        User.group_by('sex', selects=['sex', 'id__count']).execute(enum_transform=True, to_name=True)
+        => [('미정', 3), ('여자', 5)]
+        """
         self._set_unloaded_eager_exprs()
 
         if not self._expression_based:
@@ -844,17 +874,30 @@ class ObjectMixin(Base, BaseQuery):
         else:
             result = self._session.execute(self._query)
 
+        #### 입력된 enum_name이나 enum_value으로 변경하게 하기
+        # => fetch전 ChunkedIteratorResult 상태여야 전체 칼럼명 확인 가능함.
+        # => 어차피 순회하며 새로만든 row를 list에 담아 return하므로
+        if int_enum_transform:
+            result = list(self.transform_int_enum_in_rows(result, to_name))
+            self.close()
+            return result
+
         # 내부 session일 경우, 닫혀서 외부에서 내부row객체 조회가 안된다.
         # execute한 것은 list()로 풀어해쳐줘야 밖에서 쓸 수 있다.? -> fetchall()로 쓸 수 있게 한다.
-        # => fetchall()이 완료된 Row는 외부에서도 key명으로 접근할 수 있다.
-        # result.keys()
-        # RMKeyView(['name', 'id_count', 'has_type_sum'])
         if not self.served:
             result = result.fetchall()
 
         self.close()
 
         return result
+
+    def transform_int_enum_in_rows(self, rows, to_name):
+        column_names = rows.keys()
+        # new_result = []
+        for row in rows:
+            yield tuple(transform_int_enum_in_row(row, column_names, to_name=to_name))
+            # new_result.append(new_row)
+        # return new_result
 
     @class_or_instancemethod
     def count(cls, session: Session = None):
@@ -870,7 +913,6 @@ class ObjectMixin(Base, BaseQuery):
         self._set_unloaded_eager_exprs()
 
         count_stmt = select([func.count()]).select_from(self._query)
-        print('count_stmt  >> ', count_stmt)
 
         result = self._session.scalar(count_stmt)
         self.close()
@@ -1077,6 +1119,7 @@ class ObjectMixin(Base, BaseQuery):
 
                     result.append(row_dict)
                 return result
+
     # for to_dict
     def get_attr_names_except_exclude(self, exclude, attr_names):
         if exclude is None:
