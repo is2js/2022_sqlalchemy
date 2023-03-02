@@ -761,6 +761,10 @@ class ObjectMixin(Base, BaseQuery):
 
     ####  .first() / .all() 을 여기서 정의, unloaded된 schema상의 'subquery', 'selectin' eagerload해주기
     def close(self):
+        # 순수모델에서 호출할 경우 예외처리
+        if not hasattr(self, '_session'):
+            return
+
         # 내부session을 -> close()
         if not self.served:
             self._session.close()
@@ -904,78 +908,244 @@ class ObjectMixin(Base, BaseQuery):
 
     # for route에서 row별 table 데이터(json) 전달
 
-    def to_dict2(self, nested=False, hybrid_attributes=False, exclude=None):
+    def to_dict2(self, nested=False, hybrid_atts=False, exclude=None, session: Session = None):
         """
+        1) 이미 mode_obj로 조회되어 session없는 순수model객체 상태(not session obj) -> has not _session
+            ex> u = User.get(1) -> (O) no session 객체 1개
+            => init_obj하여 session 보급후, add하여 relation접근가능한 상태로 만들어 처리
+            => if not hasattr(self, '_session')으로 확인
+            ----
+            c = Category.get(2)
+            c.to_dict2()
+            => {'add_date': '2023-02-15 20:18', 'pub_date': '2023-02-20 14:01', 'id': 2, 'name': '337', 'icon': '12'}
+            ----
+            c.to_dict2(nested=True, exclude=['add_date', 'pub_date'])
+            => [{'id': 2, 'name': '337', 'icon': '12', 'posts': [{'id': 2, 'title': '444444444', 'desc': '444444444444444444444444', 'content': '<p>4444444</p>', 'has_type': 2, 'category_id': 2}]}, {'id': 6, 'name': 'aaa', 'icon': '12', 'posts': []},
+            {'id': 8, 'name': 'ccc', 'icon': '3', 'posts': []},
+            {'id': 9, 'name': 'ddd', 'icon': '3', 'posts': []},
+            {'id': 10, 'name': 'sadf', 'icon': '3', 'posts': []},
+            {'id': 11, 'name': '123', 'icon': None, 'posts': []},
+            {'id': 12, 'name': '12333', 'icon': No
+ne, 'posts': []}]
 
+
+
+        2) filter_by 등으로 session obj상태이나, 아직 조회안된 상황 -> _session + not _expression_based
+            ex> User.filter_by() -> (X) 몇개 나오는지 모름
+            => 가진 session으로 all()하여 model_obj 복수로 가진 뒤, closed된 session을 재활용하여 외부session공급하여 개별model obj를 1)을 반복수행 dict list 반환
+            => else(hasattr(self, '_session')) + if self._expression_based == False로 확인
+
+        3) session obj상태이나 execute예정으로 relation는 없이, selcets칼럼들만 rows가 나오는 상태 -> _session + _expression_based
+            ex> Usef.group_by('id') -> (O) rows로 정해짐.
+            => relation접근이 없으므로 session필요없어 .execute()후 row들을 dict처리
+            => else(hasattr(self, '_session')) + if self._expression_based == True로 확인
+
+        1) 이미 mode_obj로 조회되어 session없는 순수model객체 상태(not session obj) -> has not _session
+            ex> u = User.get(1) -> (O) no session 객체 1개
+        2) session obj상태이나 execute예정으로 1개만 나오는 상태 -> _session + _expression_based
+            ex> User.group_by('id') -> (O) rows로 정해짐.
+        3) filter_by 등으로 session obj상태이나, 아직 조회안된 상황 -> _session + not _expression_based -> 배제
+            ex> User.filter_by() -> (O) obj N개 -> list로 반환
+             Category.filter_by(id__lt=10).to_dict2(nested=True, exclude=['password_hash', 'add_date', 'pub_date'])
+                [{'id': 2, 'name': '337', 'icon': '12', 'posts': [{'id': 2, 'title': '444444444', 'desc': '444444444444444444444444', 'content': '<p>4444444</p>', 'has_type': 2, 'category_id': 2}]}, {'id': 6, 'name': 'aaa', 'icon': '12', 'posts': []}, {'id':
+                8, 'name': 'ccc', 'icon': '3', 'posts': []}, {'id': 9, 'name': 'ddd', 'icon': '3', 'posts': []}]
+        1. expression_based 상태로 수행 ( hasattr(self, '_expression_based) and self._expression_based == True)
+            Tag.group_by('id', selects=['name', 'posts___id__count', 'posts___id__sum', ]).to_dict2()
+            => [
+                {'name': '태그1', 'id_count': 1, 'id_sum': 2},
+                {'name': 'asdf', 'id_count': 0, 'id_sum': 0}
+            ]
+        1-2. 배제칼럼 추가
+            Tag.group_by('id', selects=['name', 'posts___id__count', 'posts___id__sum', ]).to_dict2(exclude='name')
+            [{'id_count': 1, 'id_sum': 2}, {'id_count': 0, 'id_sum': 0}]
+
+        2. model obj에서 수행할 때(self._expression_based == False)
+            - select(cls)로 query가 구성. hybrid/relation(nest)처리 등
+                User.filter_by(id=1).to_dict2()
+                => Exception: Just after get model object, .to_dict() for seirialize.
+
+
+        3. 순수model 상태에서 수행할 때(hasattr(self, '_expression_based) == False)
+            => 이미 조회되어 session이 끝난 상태라
+            => 외부/내부생성session으로 init_obj를 한 상태에서,
+               session에 담긴상태면, sql-eagerload없이 relation에 접근할 수 있으므로
+               해당session에 add(self)한 상태로 재귀를 돌면서, to_dict를 수행한다.
+            u = User.get(1)
+            u.to_dict2()
+
+            {'add_date': '2023-02-15 01:53', 'pub_date': '2023-03-02 05:10', 'id': 1, 'username': 'admin', 'password_hash': 'pbkdf2:sha256:260000$B8emxNA8yt49c1aB$4db1b71a6b0dadea35ad2586af3f5bf7b01fbbfa2c7fbbf404f57e542b864c50', 'email': 'tingstyle1@gmai
+            l.com', 'last_seen': '2023-03-02 05:10', 'is_active': True, 'avatar': None, 'sex': 0, 'address': None, 'phone': None, 'role_id': 6}
         """
-        #### 1. execute용 query (selects or query삽입 -> self._expression_based == True)의 경우
-        #       실행 후 -> Row객체를 dict화 한다.
-        if self._expression_based:
+        # 배제할 것이 list가 아니더라도 list로 처리
+        if exclude and not isinstance(exclude, (list, tuple, set)):
+            exclude = [exclude]
 
-            rows = self.execute()
+        #### 1. model obj 1개 -> init 후, session에 add하여, relation 조회가능한 상태
+        if not hasattr(self, '_session'):
+            self.init_obj(session=session)
+            self._session.add(self)
 
-            # 1개 row의 개별 값들은 인덱싱으로 접근 가능하여, row index + 칼럼명을 동시에 받아 처리?!
-            result = []
-            for row in rows:
-                row_dict = dict()
-                # for idx, column_name in enumerate(row.keys()):
-                for column_name in row.keys():
-                    # value = row[idx]
-                    _value = getattr(row, column_name)
-                    ## enum처리
-                    # row(select(칼럼들).from_select(cls) + .execute())에서 enum값은 name을
-                    # 객체(select(cls) + .first())에서 enum은 value를 뽑고 싶어한다.
-                    if isinstance(_value, enum.Enum):
-                        _value = _value.name
-                    row_dict[column_name] = _value
+            result = dict()
 
-                result.append(row_dict)
+            # 1) 배제가 없으면 .__table__.columns에서 일반 칼럼들을 다 꺼낸다. (관계x hybridx)
+            view_column_names = self.get_attr_names_except_exclude(exclude, self.column_names)
+
+            # 2) 일반칼럼데이터들을 집어넣는다. - 시간형식은 예외처리한다.
+            for column_name in view_column_names:
+                _value = getattr(self, column_name)
+
+                if isinstance(_value, datetime.datetime):
+                    _value = format_datetime(_value)
+                elif isinstance(_value, datetime.date):
+                    _value = format_date(_value)
+                ## enum처리
+                # row(select(칼럼들).from_select(cls) + .execute())에서 enum값은 name을
+                # -> 통계처리 등 할때, name으로 분류되어야함.
+                # 객체(select(cls) + .first())에서 enum의 value를 뽑고 싶어한다.
+                # -> json으로 value가 넘어가야함.
+                elif isinstance(_value, enum.Enum):
+                    _value = _value.value
+
+                result[column_name] = _value
+
+            # 3) 하이브리드칼럼을 넣기를 선택한다면, 순회하면서 넣는다.
+            if hybrid_atts:
+                # 여기도 배제 확인
+                view_hybrid_prop_names = self.get_attr_names_except_exclude(exclude, self.hybrid_property_names)
+
+                for hybrid_prop_name in view_hybrid_prop_names:
+                    result[hybrid_prop_name] = getattr(self, hybrid_prop_name)
+
+            # 4) 관계객체의 데이터를 dict형태로 포함하여 넣고 싶다면, 재귀로 얻어낸 dict를 최종dict에 포함시킨다.
+            if nested:
+                # 배제 확인
+                view_relation_names = self.get_attr_names_except_exclude(exclude, self.relation_names)
+
+                for relation_name in view_relation_names:
+
+                    obj = getattr(self, relation_name)
+
+                    # 이 때, ObjectMixin을 상속한 model이 아니라, Iterable한 여러모델일 수 있다면,
+                    # -> 해당하는 것만 모아서 변환 후 list로 넣어준다. hybrid_atts=False,
+                    # 재귀에서도 배제를 처리하기 때문에, main - relation의 배제할 칼럼명이 안겹쳐지게 조심한다.
+                    #### relation은 1단계만 처리하기 위해, 관계객체 to_dict에선 nested옵션 + 을 안준다.
+                    if isinstance(obj, ObjectMixin):
+                        # 재귀를 돌릴 때, 같은 session을 활용하기 위해 self._session을 넣어준다.
+                        # => 만약 안넣어준다면, relation obj가 다른 session(부모처럼 자체 내부새셩 생성)에 존재한다고 뜬다.
+                        result[relation_name] = obj.to_dict2(hybrid_atts=hybrid_atts, exclude=exclude,
+                                                             session=self._session
+                                                             )
+                    # 여기는 relation obj에 접근 Many라서  경우다. 순회하면서, 각각 돌려줘야한다.
+                    elif isinstance(obj, Iterable):
+                        result[relation_name] = [
+                            o.to_dict2(hybrid_atts=hybrid_atts, exclude=exclude, session=self._session) for o in obj
+                            if isinstance(o, ObjectMixin)
+                        ]
+
+            # session없는 model_obj라도 예외처리.됨
+            # nested 하려면, relations이 load되어있어야한다.
+            self.close_obj()
+
             return result
 
-        #### 2. select(cls)의 경우(self._expression_based == False),
-        # relation포함(nested) / hybrid포함여부 / 그외 배제할 칼럼을 처리하고 dict화 한다
-        result = dict()
 
-        # 1) 배제가 없으면 .__table__.columns에서 일반 칼럼들을 다 꺼낸다. (관계x hybridx)
-        if exclude is None:
-            view_column_names = self.column_names
+        #### 2. execute용 query (selects or query삽입 -> self._expression_based == True)의 경우
+        #       실행 후 -> Row객체를 dict화 한다.
+        # => obj를 안 만든 순수 obj상태도 select(cls)  self._expression_based==False처럼 아래서 작동하도록
+        #    속성이 없으면 바로 아래로 내려가 select(cls) 상태를 수행하게 한다.
         else:
-            view_column_names = filter(lambda e: e not in exclude, self.column_names)
+            #### 2. session+query obj -> 실행해야 obj N개
+            if not self._expression_based:
+                # 1) 실행메서드.all()을 하면 sesion이 닫히고, 객체들이 빠져나간 close()가 호출되는데, 각 객체들은 순수model obj(1번상황)
+                # => 모두 add한 다음, to_dict를 개별객체마다 진행한다.?!
+                results = self.all()
+                self._session.add_all(results)
 
-        # 2) 일반칼럼데이터들을 집어넣는다. - 시간형식은 예외처리한다.
-        for column_name in view_column_names:
-            _value = getattr(self, column_name)
+                dict_list = []
+                for model_obj in results:
+                    model_dict = model_obj.to_dict2(nested=nested, hybrid_atts=hybrid_atts, exclude=exclude,
+                                                    session=self._session)
+                    dict_list.append(model_dict)
 
-            if isinstance(_value, datetime.datetime):
-                _value = format_datetime(_value)
-            elif isinstance(_value, datetime.date):
-                _value = format_date(_value)
-            ## enum처리
-            # row(select(칼럼들).from_select(cls) + .execute())에서 enum값은 name을
-            # 객체(select(cls) + .first())에서 enum은 value를 뽑고 싶어한다.
-            elif isinstance(_value, enum.Enum):
-                _value = _value.value
+                self.close()
 
-        result[column_name] = _value
+                return dict_list
 
-        # 3) 하이브리드칼럼을 넣기를 선택한다면, 순회하면서 넣는다.
-        if hybrid_attributes:
-            for column_name in self.hybrid_properties:
-                result[column_name] = getattr(self, column_name)
+                # raise Exception(f'Just after get model object, .to_dict() for seirialize. ')
 
-        # 4) 관계객체의 데이터를 dict형태로 포함하여 넣고 싶다면, 재귀로 얻어낸 dict를 최종dict에 포함시킨다.
-        if nested:
-            for column_name in self.relation_names:
-                obj = getattr(self, column_name)
+            #### 3. execute 상황
+            # if not self._expression_based:
+            else:
+                rows = self.execute()
 
-                # 이 때, ObjectMixin을 상속한 model이 아니라, Iterable한 여러모델일 수 있다면,
-                # -> 해당하는 것만 모아서 변환 후 list로 넣어준다.
-                if isinstance(obj, ObjectMixin):
-                    result[column_name] = obj.to_dict(hybrid_attributes=hybrid_attributes)
-                elif isinstance(obj, Iterable):
-                    result[column_name] = [
-                        o.to_dict(hybrid_attributes=hybrid_attributes) for o in obj
-                        if isinstance(o, ObjectMixin)
-                    ]
+                self.close()
 
-        return result
+                # 1개 row의 개별 값들은 인덱싱으로 접근 가능하여, row index + 칼럼명을 동시에 받아 처리?!
+                result = []
+                for row in rows:
+                    row_dict = dict()
+                    for column_name in row.keys():
+                        # 꺼내기 전에 배제부터 확인
+                        if exclude and column_name in exclude:
+                            continue
+                        _value = getattr(row, column_name)
+                        ## enum처리
+                        # row(select(칼럼들).from_select(cls) + .execute())에서 enum값은 name을
+                        # -> 통계처리 등 할때, name으로 분류되어야함.
+                        # 객체(select(cls) + .first())에서 enum의 value를 뽑고 싶어한다.
+                        # -> json으로 value가 넘어가야함.
+                        if isinstance(_value, enum.Enum):
+                            _value = _value.name
+                        row_dict[column_name] = _value
+
+                    result.append(row_dict)
+                return result
+
+        #### 2. select(cls)의 경우(self._expression_based == False) or 순수model obj(hasattr(self, '_expression_based')==False)
+        #       => 객체에서 값을 뽑고 변환하고, 관계/hybrid처리
+        # relation포함(nested) / hybrid포함여부 / 그외 배제할 칼럼을 처리하고 dict화 한다
+        # 0) session은 쓰지 않고, filter_by or u = User.get()으로 얻은 기본 user객체의 데이터만 뽑아서 쓰므로
+        #    subquery처럼, session은 내부생성이든 외부것이든 닫아준다.
+        #    => 순수model_obj는 session정보를 안가지고 있을 것이니, 내부에 로직을 추가해준다.
+
+        # 2-1. obj가 초기화된 상태에서, filter_by vs model_obj를 구분하여
+        # -> filter_by면 first()로 데이터를 찾고, model_obj는 찾을 필요가 없지만, relations=True시
+        #    eager로드를 해야하기 때문에 처리를 해준다.
+        # filter_by로 접근은 없다고 가정하고, 항상 객체를 찾은 상태에서 처리하도록 해보자.
+        # => nested = True라면, 해당 model을 eagerload해줘야한다.
+        #    이미 query작성은 포기. 실행된 상태로 해당 relation에 접근만 해주면 되는데?
+        #    전역session이 아니므로, 초기화된 세션에 나를 올려놓으면 접근할 수 있게 된다.
+        # 0. 순수 model obj의 접근이 있을 수 있으니 relation 등에 접근하기 위해, init부터 해준다.
+        #  ex> filter_by로 찾은 상태 X ,u = User.get(1)
+
+        # else:
+        # filter_by 상태면, session을 가진 상태지만, firts()로 사라질 것이다.?!
+        # + unique한 1obj 상태여야한다?!
+        # 배제하기 -> filter_by가 all일지/first일지 모르기 때문에 추가처리해줘야한다.
+        # raise Exception(f'Just after get model object, .to_dict() for seirialize. ')
+
+    # for to_dict
+    def get_attr_names_except_exclude(self, exclude, attr_names):
+        if exclude is None:
+            return attr_names
+
+        view_attrs = filter(lambda e: e not in exclude, attr_names)
+        return view_attrs
+
+    # for to_dict + for update/delete 모든 Model_obj에서 init하여 실행되는 함수들
+    def close_obj(self):
+        self.close()
+        if hasattr(self, '_session'):
+            delattr(self, '_session')
+        if hasattr(self, 'served'):
+            delattr(self, 'served')
+        if hasattr(self, '_flatten_schema'):
+            delattr(self, '_flatten_schema')
+        if hasattr(self, '_query'):
+            delattr(self, '_query')
+        if hasattr(self, '_loaded_rel_paths'):
+            delattr(self, '_loaded_rel_paths')
+        if hasattr(self, '_alias_map'):
+            delattr(self, '_alias_map')
+        if hasattr(self, '_expression_based'):
+            delattr(self, '_expression_based')

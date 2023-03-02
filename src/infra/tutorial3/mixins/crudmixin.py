@@ -386,6 +386,9 @@ class CRUDMixin(Base, ObjectMixin):
             if is_updated:
                 self.init_obj(session=session) \
                     .save(auto_commit=auto_commit)
+
+                # model_obj를 직접 변환시, 재호출을 위해 초기화 취소
+                self.close_obj()
                 return self, '업데이트 성공'
             else:
                 return False, '값의 변화가 없어서 업데이트 실패'
@@ -410,10 +413,11 @@ class CRUDMixin(Base, ObjectMixin):
             if auto_commit:
                 self._session.commit()
 
+            self.close_obj()
             return self, '삭제 성공'
 
         except:
-
+            self.close_obj()
             return False, '삭제 실패'
 
     ###################
