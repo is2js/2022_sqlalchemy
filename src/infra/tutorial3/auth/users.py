@@ -1094,6 +1094,7 @@ class Employee(BaseModel):
     def is_administrator(self):
         return self.role.is_(Roles.ADMINISTRATOR)
 
+
     @classmethod
     def get_by_name(cls, name):
         with DBConnectionHandler() as db:

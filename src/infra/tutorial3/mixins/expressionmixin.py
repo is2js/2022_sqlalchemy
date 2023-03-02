@@ -94,9 +94,17 @@ class ExpressionMixin(CRUDMixin):  # 작업시만 BaseQuery + ObjectMixin을 달
     # # count_and_rate_between  # for 변화율
     # ###########################
     @classmethod
-    def count_and_rate_between(cls, date_attr, from_date, to_date, count_attr=None,
-                               session: Session = None, filter_by=None
+    def count_and_rate_between(cls, date_attr, to_date,
+                               from_date=None, interval=None, unit=None, include_to_date=True,
+                               count_attr=None, session: Session = None, filter_by=None,
+
                                ):
+        if not (from_date or (interval and unit)):
+            raise Exception(f'from_date 혹은 interval + unit 둘 중 한가지를 입력해야 from_date가 정해집니다.')
+
+        if not from_date:
+            from_date = get_srt_date_by_interval(to_date, interval, unit, include_end_date=include_to_date)
+
         """
         Count_until 처음                ~            ToDate
         Count_until 처음 ~ FromDate [       between       ] => fromdate를 제외하여 count/rate를 계산한다.

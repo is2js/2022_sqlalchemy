@@ -115,9 +115,11 @@ class ObjectMixin(Base, BaseQuery):
     _session_generator = None
 
     @classmethod
-    def set_inner_session(cls, generator):
+    def set_session_generator(cls, generator):
         cls._session_generator = generator
 
+    ADDITIONAL_ATTRS = ['_session', 'served', '_flatten_schema', '_query', '_loaded_rel_paths', '_alias_map',
+                        '_expression_based']
     #### session을 들고 있는 객체 상태에서 그 dialect뽑아내기
     @property
     def db_dialect(self):
@@ -914,73 +916,52 @@ class ObjectMixin(Base, BaseQuery):
             ex> u = User.get(1) -> (O) no session 객체 1개
             => init_obj하여 session 보급후, add하여 relation접근가능한 상태로 만들어 처리
             => if not hasattr(self, '_session')으로 확인
+            => session종료와 함께, 순수model obj_init으로 생긴 [_session, served, _flatten_schema, _query, _loaded_rel_paths, _expression_based] attrs들 삭제해줘야, model obj 다시 메서드 호출시 동일 동작
+               by self.close_model_obj() - 실행함수 session을 처리하는 self.close()를 포함하여 attr들 삭제
             ----
             c = Category.get(2)
-            c.to_dict2()
-            => {'add_date': '2023-02-15 20:18', 'pub_date': '2023-02-20 14:01', 'id': 2, 'name': '337', 'icon': '12'}
-            ----
+            c.to_dict2(exclude=['add_date', 'pub_date'])
+            => {'id': 2, 'name': '337', 'icon': '12'}
+            *nested=True로 관계객체도 불러오기 + *공통exclude 추가하기
             c.to_dict2(nested=True, exclude=['add_date', 'pub_date'])
-            => [{'id': 2, 'name': '337', 'icon': '12', 'posts': [{'id': 2, 'title': '444444444', 'desc': '444444444444444444444444', 'content': '<p>4444444</p>', 'has_type': 2, 'category_id': 2}]}, {'id': 6, 'name': 'aaa', 'icon': '12', 'posts': []},
-            {'id': 8, 'name': 'ccc', 'icon': '3', 'posts': []},
-            {'id': 9, 'name': 'ddd', 'icon': '3', 'posts': []},
-            {'id': 10, 'name': 'sadf', 'icon': '3', 'posts': []},
-            {'id': 11, 'name': '123', 'icon': None, 'posts': []},
-            {'id': 12, 'name': '12333', 'icon': No
-ne, 'posts': []}]
-
-
+            => {'id': 2, 'name': '337', 'icon': '12',
+                'posts': [{'id': 2, 'title': '444444444', 'desc': '444444444444444444444444', 'content': '<p>4444444</p>', 'has_type': 2, 'category_id': 2}]
+                }
 
         2) filter_by 등으로 session obj상태이나, 아직 조회안된 상황 -> _session + not _expression_based
             ex> User.filter_by() -> (X) 몇개 나오는지 모름
             => 가진 session으로 all()하여 model_obj 복수로 가진 뒤, closed된 session을 재활용하여 외부session공급하여 개별model obj를 1)을 반복수행 dict list 반환
             => else(hasattr(self, '_session')) + if self._expression_based == False로 확인
+            ----
+            *filter_by()로 to_dict2()시 list로 반환됨.
+            *relation필드도 exclude에 넣어서 필요한 관계객체만 만들기
+            User.filter_by(id__lt=3).to_dict2(nested=True, exclude=['password_hash', 'add_date', 'pub_date', 'inviters', 'invitees', 'role'])
+            => [
+                {'id': 1, 'username': 'admin', 'email': 'tingstyle1@gmail.com', 'last_seen': '2023-03-02 05:10', 'is_active': True, 'avatar': None, 'sex': 0, 'address': None, 'phone': None, 'role_id': 6,
+                    'employee': [{'id': 1, 'user_id': 1, 'name': '관리자', 'sub_name': 'Administrator', 'birth': '9910101918111', 'join_date': '2023-02-15', 'job_status': 1, 'resign_date': None, 'leave_date': None, 'reference': '관리자 계정'}]
+                },
+                {'id': 2, 'username': 'asdf15251', 'email': 'as5df1231@asdf.com', 'last_seen': '2023-02-19 06:56', 'is_active': True, 'avatar': 'avatar/74858fcc7bfe48c38faf8d304a24345b', 'sex': 2, 'address': '전남 나주시', 'phone': '01046003333', 'role_id': 4,
+                    'employee': [{'id': 4, 'user_id': 2, 'name': 'Cho Ara', 'sub_name': 'ara', 'birth': '8712821918511', 'join_date': '2023-02-21', 'job_status': 1, 'resign_date': None, 'leave_date': None, 'reference': '[하위부서2]부서 취임(2023-02-21)'}]
+                }
+               ]
 
         3) session obj상태이나 execute예정으로 relation는 없이, selcets칼럼들만 rows가 나오는 상태 -> _session + _expression_based
-            ex> Usef.group_by('id') -> (O) rows로 정해짐.
-            => relation접근이 없으므로 session필요없어 .execute()후 row들을 dict처리
+            ex> Usef.group_by('id') -> selects칼럼 or query삽입으로  rows로 정해짐.
+            => relation접근이 없으므로 session필요없어 .execute()-자동sessio처리- > row들을 dict처리
             => else(hasattr(self, '_session')) + if self._expression_based == True로 확인
+            ----
+            Tag.group_by('id', selects=['name', 'posts___id__count', 'posts___id__sum']).to_dict2()
+            => [{'name': '태그1', 'id_count': 1, 'id_sum': 2}, {'name': 'asdf', 'id_count': 0, 'id_sum': 0}]
 
-        1) 이미 mode_obj로 조회되어 session없는 순수model객체 상태(not session obj) -> has not _session
-            ex> u = User.get(1) -> (O) no session 객체 1개
-        2) session obj상태이나 execute예정으로 1개만 나오는 상태 -> _session + _expression_based
-            ex> User.group_by('id') -> (O) rows로 정해짐.
-        3) filter_by 등으로 session obj상태이나, 아직 조회안된 상황 -> _session + not _expression_based -> 배제
-            ex> User.filter_by() -> (O) obj N개 -> list로 반환
-             Category.filter_by(id__lt=10).to_dict2(nested=True, exclude=['password_hash', 'add_date', 'pub_date'])
-                [{'id': 2, 'name': '337', 'icon': '12', 'posts': [{'id': 2, 'title': '444444444', 'desc': '444444444444444444444444', 'content': '<p>4444444</p>', 'has_type': 2, 'category_id': 2}]}, {'id': 6, 'name': 'aaa', 'icon': '12', 'posts': []}, {'id':
-                8, 'name': 'ccc', 'icon': '3', 'posts': []}, {'id': 9, 'name': 'ddd', 'icon': '3', 'posts': []}]
-        1. expression_based 상태로 수행 ( hasattr(self, '_expression_based) and self._expression_based == True)
-            Tag.group_by('id', selects=['name', 'posts___id__count', 'posts___id__sum', ]).to_dict2()
-            => [
-                {'name': '태그1', 'id_count': 1, 'id_sum': 2},
-                {'name': 'asdf', 'id_count': 0, 'id_sum': 0}
-            ]
-        1-2. 배제칼럼 추가
-            Tag.group_by('id', selects=['name', 'posts___id__count', 'posts___id__sum', ]).to_dict2(exclude='name')
-            [{'id_count': 1, 'id_sum': 2}, {'id_count': 0, 'id_sum': 0}]
-
-        2. model obj에서 수행할 때(self._expression_based == False)
-            - select(cls)로 query가 구성. hybrid/relation(nest)처리 등
-                User.filter_by(id=1).to_dict2()
-                => Exception: Just after get model object, .to_dict() for seirialize.
-
-
-        3. 순수model 상태에서 수행할 때(hasattr(self, '_expression_based) == False)
-            => 이미 조회되어 session이 끝난 상태라
-            => 외부/내부생성session으로 init_obj를 한 상태에서,
-               session에 담긴상태면, sql-eagerload없이 relation에 접근할 수 있으므로
-               해당session에 add(self)한 상태로 재귀를 돌면서, to_dict를 수행한다.
-            u = User.get(1)
-            u.to_dict2()
-
-            {'add_date': '2023-02-15 01:53', 'pub_date': '2023-03-02 05:10', 'id': 1, 'username': 'admin', 'password_hash': 'pbkdf2:sha256:260000$B8emxNA8yt49c1aB$4db1b71a6b0dadea35ad2586af3f5bf7b01fbbfa2c7fbbf404f57e542b864c50', 'email': 'tingstyle1@gmai
-            l.com', 'last_seen': '2023-03-02 05:10', 'is_active': True, 'avatar': None, 'sex': 0, 'address': None, 'phone': None, 'role_id': 6}
+             Tag.group_by('id', selects=['name', 'posts___id__count', 'posts___id__sum']).to_dict2(exclude='id_sum')
+            => [{'name': '태그1', 'id_count': 1}, {'name': 'asdf', 'id_count': 0}]
         """
         # 배제할 것이 list가 아니더라도 list로 처리
         if exclude and not isinstance(exclude, (list, tuple, set)):
             exclude = [exclude]
 
-        #### 1. model obj 1개 -> init 후, session에 add하여, relation 조회가능한 상태
+        #### 1. model obj 1개
+        # -> init_obj 후, session에 add하여, relation 조회가능한 상태 -> close_model_obj
         if not hasattr(self, '_session'):
             self.init_obj(session=session)
             self._session.add(self)
@@ -1044,17 +1025,15 @@ ne, 'posts': []}]
 
             # session없는 model_obj라도 예외처리.됨
             # nested 하려면, relations이 load되어있어야한다.
-            self.close_obj()
+            self.close_model_obj()
 
             return result
 
 
-        #### 2. execute용 query (selects or query삽입 -> self._expression_based == True)의 경우
-        #       실행 후 -> Row객체를 dict화 한다.
-        # => obj를 안 만든 순수 obj상태도 select(cls)  self._expression_based==False처럼 아래서 작동하도록
-        #    속성이 없으면 바로 아래로 내려가 select(cls) 상태를 수행하게 한다.
         else:
-            #### 2. session+query obj -> 실행해야 obj N개
+            #### 2.filter_by 등으로 session obj상태이나, 아직 조회안된 상황 -> _session + not _expression_based
+            #    => 가진 session으로 all()하여 model_obj 복수로 가진 뒤, closed된 session을 재활용하여 외부session공급하여
+            #    -> 순회하며 개별model obj를 1)을 반복수행 dict list 반환
             if not self._expression_based:
                 # 1) 실행메서드.all()을 하면 sesion이 닫히고, 객체들이 빠져나간 close()가 호출되는데, 각 객체들은 순수model obj(1번상황)
                 # => 모두 add한 다음, to_dict를 개별객체마다 진행한다.?!
@@ -1071,13 +1050,11 @@ ne, 'posts': []}]
 
                 return dict_list
 
-                # raise Exception(f'Just after get model object, .to_dict() for seirialize. ')
-
-            #### 3. execute 상황
+            #### 3. session obj상태이나 execute예정으로 relation는 없이, selcets칼럼들만 rows가 나오는 상태
+            #   => relation접근이 없으므로 session필요없어 .execute()-자동sessio처리- > row들을 dict처리
             # if not self._expression_based:
             else:
                 rows = self.execute()
-
                 self.close()
 
                 # 1개 row의 개별 값들은 인덱싱으로 접근 가능하여, row index + 칼럼명을 동시에 받아 처리?!
@@ -1100,30 +1077,6 @@ ne, 'posts': []}]
 
                     result.append(row_dict)
                 return result
-
-        #### 2. select(cls)의 경우(self._expression_based == False) or 순수model obj(hasattr(self, '_expression_based')==False)
-        #       => 객체에서 값을 뽑고 변환하고, 관계/hybrid처리
-        # relation포함(nested) / hybrid포함여부 / 그외 배제할 칼럼을 처리하고 dict화 한다
-        # 0) session은 쓰지 않고, filter_by or u = User.get()으로 얻은 기본 user객체의 데이터만 뽑아서 쓰므로
-        #    subquery처럼, session은 내부생성이든 외부것이든 닫아준다.
-        #    => 순수model_obj는 session정보를 안가지고 있을 것이니, 내부에 로직을 추가해준다.
-
-        # 2-1. obj가 초기화된 상태에서, filter_by vs model_obj를 구분하여
-        # -> filter_by면 first()로 데이터를 찾고, model_obj는 찾을 필요가 없지만, relations=True시
-        #    eager로드를 해야하기 때문에 처리를 해준다.
-        # filter_by로 접근은 없다고 가정하고, 항상 객체를 찾은 상태에서 처리하도록 해보자.
-        # => nested = True라면, 해당 model을 eagerload해줘야한다.
-        #    이미 query작성은 포기. 실행된 상태로 해당 relation에 접근만 해주면 되는데?
-        #    전역session이 아니므로, 초기화된 세션에 나를 올려놓으면 접근할 수 있게 된다.
-        # 0. 순수 model obj의 접근이 있을 수 있으니 relation 등에 접근하기 위해, init부터 해준다.
-        #  ex> filter_by로 찾은 상태 X ,u = User.get(1)
-
-        # else:
-        # filter_by 상태면, session을 가진 상태지만, firts()로 사라질 것이다.?!
-        # + unique한 1obj 상태여야한다?!
-        # 배제하기 -> filter_by가 all일지/first일지 모르기 때문에 추가처리해줘야한다.
-        # raise Exception(f'Just after get model object, .to_dict() for seirialize. ')
-
     # for to_dict
     def get_attr_names_except_exclude(self, exclude, attr_names):
         if exclude is None:
@@ -1133,19 +1086,9 @@ ne, 'posts': []}]
         return view_attrs
 
     # for to_dict + for update/delete 모든 Model_obj에서 init하여 실행되는 함수들
-    def close_obj(self):
+    def close_model_obj(self):
         self.close()
-        if hasattr(self, '_session'):
-            delattr(self, '_session')
-        if hasattr(self, 'served'):
-            delattr(self, 'served')
-        if hasattr(self, '_flatten_schema'):
-            delattr(self, '_flatten_schema')
-        if hasattr(self, '_query'):
-            delattr(self, '_query')
-        if hasattr(self, '_loaded_rel_paths'):
-            delattr(self, '_loaded_rel_paths')
-        if hasattr(self, '_alias_map'):
-            delattr(self, '_alias_map')
-        if hasattr(self, '_expression_based'):
-            delattr(self, '_expression_based')
+
+        for attr in self.ADDITIONAL_ATTRS:
+            if hasattr(self, attr):
+                delattr(self, attr)

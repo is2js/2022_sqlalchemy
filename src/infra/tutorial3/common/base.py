@@ -80,7 +80,7 @@ class BaseModel(Base, ReprMixin, ExpressionMixin):  # ExpressionMixin 작업시 
 
 
 #### 내부세션 제조기 투입
-BaseModel.set_inner_session(db.get_session)
+BaseModel.set_session_generator(db.get_session)
 
 
 class InviteBaseModel(Base):
