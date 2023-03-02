@@ -182,21 +182,24 @@ class ExpressionMixin(CRUDMixin):  # 작업시만 BaseQuery + ObjectMixin을 달
         return obj.scalar()
 
     # for count_until + for count_per_date_unit_subquery
+    # + for chartwrapper -> count_pie에서 count_attr을 받음.
     @classmethod
     def create_count_column_expr(cls, count_attr):
+        count_attr = cls.process_count_attr_name(count_attr)
+        #    만약, distinct가 필요했다면, 칼럼명__count_distinct까지 입력했을 것.
+        count_column_expr = cls.create_column_expr(cls, count_attr, cls.SELECT, label='count')
+        return count_column_expr
+
+    @classmethod
+    def process_count_attr_name(cls, count_attr):
         # 1) 칼럼지정안하면, pk 첫번째로 카운트
         if not count_attr:
-            count_column_expr = cls.create_column_expr(cls,
-                                                       cls.first_primary_key_name + cls.OPERATOR_OR_AGG_SPLITTER + cls.COUNT,
-                                                       cls.SELECT, label='count')
+            count_attr = cls.first_primary_key_name + cls.OPERATOR_OR_AGG_SPLITTER + cls.COUNT
         # 2) 칼럼 지정했으면, __count안달렸으면 달아주고 표현식 만들기
-        #    만약, distinct가 필요했다면, 칼럼명__count_distinct까지 입력했을 것.
         else:
             if cls.COUNT not in count_attr:
                 count_attr += cls.OPERATOR_OR_AGG_SPLITTER + cls.COUNT
-            count_column_expr = cls.create_column_expr(cls, count_attr, cls.SELECT, label='count')
-        return count_column_expr
-
+        return count_attr
 
     # #######################
     # # count_for_interval  # series에 비해 구멍있는, group_by로 인해 가진 날짜마다의 count 나열 (series에 outerjoin예정

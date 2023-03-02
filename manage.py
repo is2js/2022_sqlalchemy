@@ -9,7 +9,7 @@ from sqlalchemy.orm import aliased
 from src.infra.config.connection import db
 from src.infra.tutorial3 import *
 from src.infra.tutorial3.mixins.base_query import BaseQuery
-from src.infra.tutorial3.wrapper.pyechartswrapper import Chart
+from src.infra.tutorial3.wrapper.chartwrapper import Chart
 from src.main.config import create_app
 
 
