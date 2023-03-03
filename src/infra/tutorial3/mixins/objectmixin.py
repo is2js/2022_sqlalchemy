@@ -338,11 +338,12 @@ class ObjectMixin(Base, BaseQuery):
                 return False
 
     def set_query(self, query=None, eagerload=None, filter_by=None, order_by=None, options=None, outerjoin=None,
-                  group_by=None, having=None, limit=None):
+                  group_by=None, having=None, limit=None, offset=None):
         def _is_chaining():
             return not (
                     eagerload is None and filter_by is None and order_by is None and options is None
                     and outerjoin is None and group_by is None and having is None and limit is None
+                    and offset is None
             )
 
         # 1. 외부X -> return False로 초기화 (set실패) -> 초기화시 select(self.__class__)로 초기화
@@ -419,6 +420,12 @@ class ObjectMixin(Base, BaseQuery):
                 self._query = (
                     self._query
                     .limit(limit)
+                )
+
+            if offset:
+                self._query = (
+                    self._query
+                    .offset(offset)
                 )
 
         # 체이닝이 아닌 query가 들어올 경우, 최초 init시 들어온 query=로서 할당 초기화

@@ -229,6 +229,29 @@ class CRUDMixin(Base, ObjectMixin):
 
         return self
 
+    #### limit없이 offset만 박으면 limit으로 작동하는 버그
+    # + offset은 limit없이 전체 데이터를 스캔하므로 성능 문제가 발생할 수 있다.
+    # @class_or_instancemethod
+    # def offset(cls, offset, session: Session = None):
+    #     """
+    #     Category.offset(2).all()
+    #     """
+    #     obj = cls.create_obj(session=session)
+    #     obj.set_query(offset=offset)
+    #
+    #     return obj
+
+    @limit.instancemethod
+    def offset(self, offset):
+        """
+        Category.filter_by(id__ne=None).offset(2).all()
+        Category.limit(10).offset(2).all()
+        # offset은 limit과 함께 사용한다. 그렇지 않으면 전체데이터 베이스 스캔 성능 저하 우려.
+        """
+        self.set_query(offset=offset)
+
+        return self
+
     ###################
     # Read - get      #
     ###################
