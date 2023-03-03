@@ -915,16 +915,20 @@ class ObjectMixin(Base, BaseQuery):
 
         return obj.count()
 
+    # def count(self):
     @count.instancemethod
     def count(self):
         self._set_unloaded_eager_exprs()
 
-        count_stmt = select([func.count()]).select_from(self._query)
-
-        result = self._session.scalar(count_stmt)
+        result = self._session.scalar(self.create_count_query())
         self.close()
 
         return result
+
+    # for count + for paginate 의 중간 count문장만.(실행메서드를 갖다쓰면 session close)
+    def create_count_query(self):
+        count_stmt = select([func.count()]).select_from(self._query)
+        return count_stmt
 
     def exists(self):
         self._set_unloaded_eager_exprs()
