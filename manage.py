@@ -6,7 +6,7 @@ from dateutil.relativedelta import relativedelta
 from sqlalchemy import select, inspect, func, text
 from sqlalchemy.orm import aliased
 
-from src.infra.config.connection import db
+from src.infra.config.connection import db, DBConnectionHandler
 from src.infra.tutorial3 import *
 from src.infra.tutorial3.mixins.base_query import BaseQuery
 from src.infra.tutorial3.wrapper.chartwrapper import Chart
@@ -30,5 +30,6 @@ def make_shell_context():
                 Chart=Chart,
                 today=datetime.date.today(),
                 relativedelta=relativedelta,
-                pyecharts=pyecharts
+                pyecharts=pyecharts,
+                DBConnectionHandler=DBConnectionHandler,
                 )

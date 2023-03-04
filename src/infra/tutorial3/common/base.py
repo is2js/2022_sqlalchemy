@@ -79,8 +79,11 @@ class BaseModel(Base, ReprMixin, ExpressionMixin):  # ExpressionMixin 작업시 
         return [m.to_dict() for m in l]
 
 
-#### 내부세션 제조기 투입
+#### 내부세션 generator(새로 호출시마다 자동close후 새 session 반환) 투입
 BaseModel.set_session_generator(db.get_session)
+# BaseModel.set_session_class(db.get_scoped_session())
+BaseModel.set_scoped_session(db.get_scoped_session())
+# BaseModel.set_engine(db.get_engine())
 
 
 class InviteBaseModel(Base):

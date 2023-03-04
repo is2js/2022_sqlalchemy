@@ -223,6 +223,7 @@ class Chart:
           ----
           => result: [('미정', 3), ('여자', 5)]
           => [] -> result: [('데이터 없음', 0)]
+
         2. id, unique제외하고, 중복가능칼럼을 distinct하고 싶다면, count_attr='칼럼명__count_distinct'를 입력
           chart.count_pie_per_category(User, 'sex', count_attr='address__count_distinct',
                                                           filter_by=dict(is_administrator=False),

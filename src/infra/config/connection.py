@@ -2,7 +2,7 @@ import os
 
 from sqlalchemy import event
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, scoped_session
 from src.config import db_config
 
 
@@ -45,15 +45,24 @@ class DBConnectionHandler:
         try:
             db_session = Session()
             yield db_session
+        except:
+            db_session.rollback()
+            raise
         finally:
+            # yield 아래쪽은, 다음 next()로 1번씩 호출할 때, 다시 작동된 뒤, 새로 시작하는데
+            # => close()를 하고 새 session이 나오게 한다.
+            print('자동 close  >> ')
+
             db_session.close()
-        # return Session()
 
     #### property로 만들어야, 함수생성 -> 추가로직을 동시에 바깥에서 ()한번으로 할 수 있다.
     @property
     def get_session(self):
-        # return next(self.__get_db_session())
         return self.__get_db_session().__next__
+        # return self.get_scoped_session()
+
+    def get_scoped_session(self):
+        return scoped_session(sessionmaker(bind=self.__engine, autocommit=False, autoflush=False))
 
     def __enter__(self):
         Session = sessionmaker(bind=self.__engine)

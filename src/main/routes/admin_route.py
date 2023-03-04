@@ -207,7 +207,6 @@ admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 @role_required(allowed_roles=[Roles.STAFF])
 def index():
     with DBConnectionHandler() as db:
-
         session = db.session
 
         post_count = Post.count(session=session)
@@ -667,6 +666,13 @@ def index():
 @login_required
 @role_required(allowed_roles=[Roles.EXECUTIVE])
 def category():
+    # s = next(Category.get_session2())
+    # print('s  >> ', s)
+    # c2 = Category.get(2, session=s)
+    # print('c2  >> ', c2)
+    # s2 = next(Category.get_session2())
+    # print('s2.scalars(select(Category)).first()  >> ', s2.scalars(select(Category)).first())
+
     # with DBConnectionHandler() as db:
     # admin- table에는 id역순으로 제공해줘야 최신순으로 보인다.
     # category_list = db.session.scalars((
@@ -677,10 +683,13 @@ def category():
     # querystring의 page에서 page값 받고, int변환하되, 기본값 1
     page = request.args.get('page', 1, type=int)
 
-    # 직접 추출대신 pagination으로 처리하기 (id역순으로 전체조회)
-    stmt = select(Category).order_by(Category.id.desc())
-    # pagination = paginate(stmt, 1, per_page=1)
-    pagination = paginate(stmt, page=page, per_page=10)
+    # # 직접 추출대신 pagination으로 처리하기 (id역순으로 전체조회)
+    # stmt = select(Category).order_by(Category.id.desc())
+    # # pagination = paginate(stmt, 1, per_page=1)
+    # pagination = paginate(stmt, page=page, per_page=10)
+
+    # after
+    pagination = Category.order_by('-id').paginate(page, per_page=10)
 
     category_list = pagination.items
 
@@ -694,16 +703,53 @@ def category():
 def category_add():
     form = CategoryForm()
     if form.validate_on_submit():
-        category = Category(name=form.name.data, icon=form.icon.data)
-        with DBConnectionHandler() as db:
-            db.session.add(category)
-            db.session.commit()
-        flash(f'{form.name.data} Category 생성 성공!')
+        # category = Category(name=form.name.data, icon=form.icon.data)
+        # with DBConnectionHandler() as db:
+        #     db.session.add(category)
+        #     db.session.commit()
+        result, msg = Category.create(name=form.name.data, icon=form.icon.data)
+
+        flash(f'{result.name} Category 생성 성공!')
         return redirect(url_for('admin.category'))
 
     errors = [{'field': key, 'messages': form.errors[key]} for key in form.errors.keys()] if form.errors else []
 
     return render_template('admin/category_form.html', form=form, errors=errors)
+
+
+# @admin_bp.route('/category/edit/<int:id>', methods=['GET', 'POST'])
+# @login_required
+# @role_required(allowed_roles=[Roles.EXECUTIVE])
+# def category_edit(id):
+#     # 1) url을 통해 id를 받고 객체를 먼저 찾는다.
+#     with DBConnectionHandler() as db:
+#         category = db.session.get(Category, id)
+#
+#     # 2) 찾은 객체의 데이터를 바탕으로 form을 만들어서 GET 화면에 뿌려준다.
+#     # => 이 때, form에 id= 키워드를 주면, edit용 form으로 인식해서 validate를 나를 제외하고 하도록 한다
+#     # form = CategoryForm(name=category.name, icon=category.icon, id=category.id)
+#     form = CategoryForm(category)
+#     # return render_template('admin/category_form.html', form=form, errors=errors)
+#
+#     # 3) form에서 달라진 데이터로 POST가 들어오면, 수정하고 커밋한다.
+#     if form.validate_on_submit():
+#         with DBConnectionHandler() as db:
+#             category = db.session.get(Category, id)
+#             # print("category>>>", category.__dict__)
+#
+#             category.name = form.name.data
+#             category.icon = form.icon.data if len(form.icon.data) > 0 else None  # 수정form화면에서 암것도 없으면 ''이 올 것이기 때무네
+#
+#             db.session.add(category)
+#             # print("category>>>", category.__dict__)
+#             db.session.commit()
+#         flash(f'{form.name.data} Category 수정 완료.')
+#         return redirect(url_for('admin.category'))
+#
+#     # 4) 검증이 들어간 form에 대한 erros는 if form.validate_on_submit()보다 아래에 둔다.
+#     errors = [{'field': key, 'messages': form.errors[key]} for key in form.errors.keys()] if form.errors else []
+#
+#     return render_template('admin/category_form.html', form=form, errors=errors)
 
 
 @admin_bp.route('/category/edit/<int:id>', methods=['GET', 'POST'])
@@ -711,29 +757,34 @@ def category_add():
 @role_required(allowed_roles=[Roles.EXECUTIVE])
 def category_edit(id):
     # 1) url을 통해 id를 받고 객체를 먼저 찾는다.
-    with DBConnectionHandler() as db:
-        category = db.session.get(Category, id)
-
-    # 2) 찾은 객체의 데이터를 바탕으로 form을 만들어서 GET 화면에 뿌려준다.
-    # => 이 때, form에 id= 키워드를 주면, edit용 form으로 인식해서 validate를 나를 제외하고 하도록 한다
-    # form = CategoryForm(name=category.name, icon=category.icon, id=category.id)
+    # with DBConnectionHandler() as db:
+    #     session = db.session
+    # category = db.session.get(Category, id)
+    category: Category = Category.get(id)
     form = CategoryForm(category)
-    # return render_template('admin/category_form.html', form=form, errors=errors)
 
-    # 3) form에서 달라진 데이터로 POST가 들어오면, 수정하고 커밋한다.
     if form.validate_on_submit():
-        with DBConnectionHandler() as db:
-            category = db.session.get(Category, id)
-            # print("category>>>", category.__dict__)
 
-            category.name = form.name.data
-            category.icon = form.icon.data if len(form.icon.data) > 0 else None  # 수정form화면에서 암것도 없으면 ''이 올 것이기 때무네
+        target_name = form.name.data
+        target_icon = form.icon.data if len(form.icon.data) > 0 else None  # 수정form화면에서 암것도 없으면 ''이 올 것이기 때무네
 
-            db.session.add(category)
-            # print("category>>>", category.__dict__)
-            db.session.commit()
-        flash(f'{form.name.data} Category 수정 완료.')
-        return redirect(url_for('admin.category'))
+        # get/update시 각각 개별 session으로
+        category: Category = Category.get(id)
+        result, msg = category.update(name=target_name, icon=target_icon, auto_commit=True)
+        # with DBConnectionHandler() as db:
+        #     session = db.session
+        #
+        #     category: Category = Category.get(id, session=session)
+        #     result, msg = category.update(name=target_name, icon=target_icon,
+        #                                   session=session) # commit하면,
+
+        if result:
+            success_msg = f'{result.name} {msg}'
+            flash(success_msg)
+            return redirect(url_for('admin.category'))
+
+        fail_msg = f'{category.name} {msg}'
+        flash(fail_msg)
 
     # 4) 검증이 들어간 form에 대한 erros는 if form.validate_on_submit()보다 아래에 둔다.
     errors = [{'field': key, 'messages': form.errors[key]} for key in form.errors.keys()] if form.errors else []
@@ -741,25 +792,39 @@ def category_edit(id):
     return render_template('admin/category_form.html', form=form, errors=errors)
 
 
+# @admin_bp.route('/category/delete/<int:id>')
+# @login_required
+# @role_required(allowed_roles=[Roles.EXECUTIVE])
+# def category_delete(id):
+#     # 1) url을 통해 id를 받고 객체를 먼저 찾는다.
+#     with DBConnectionHandler() as db:
+#         category = db.session.get(Category, id)
+#         if category:
+#
+#             # post cascading 되기 전에, content에서 이미지 소스 가져와 삭제하기
+#             if category.posts:
+#                 for post in category.posts:
+#                     delete_files_in_img_tag(post.content)
+#
+#             db.session.delete(category)
+#             db.session.commit()
+#             flash(f'{category.name} Category 삭제 완료.')
+#             return redirect(url_for('admin.category'))
+
+
 @admin_bp.route('/category/delete/<int:id>')
 @login_required
 @role_required(allowed_roles=[Roles.EXECUTIVE])
 def category_delete(id):
     # 1) url을 통해 id를 받고 객체를 먼저 찾는다.
-    with DBConnectionHandler() as db:
-        category = db.session.get(Category, id)
-        if category:
-
-            # post cascading 되기 전에, content에서 이미지 소스 가져와 삭제하기
-            if category.posts:
-                for post in category.posts:
-                    delete_files_in_img_tag(post.content)
-
-            db.session.delete(category)
-            db.session.commit()
-            flash(f'{category.name} Category 삭제 완료.')
-            return redirect(url_for('admin.category'))
-
+    category = Category.load({'posts':'subquery'}).filter_by(id=id).first()
+    # post cascading 되기 전에, content에서 이미지 소스 가져와 삭제하기
+    if category.posts:
+        for post in category.posts:
+            delete_files_in_img_tag(post.content)
+    result, msg = category.delete()
+    flash(f'{result.name} Category 삭제 완료.')
+    return redirect(url_for('admin.category'))
 
 # @admin_bp.route('/category/delete2/<int:id>')
 # @login_required

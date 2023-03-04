@@ -46,8 +46,8 @@ class CRUDMixin(Base, ObjectMixin):
         obj.fill(**kwargs)  # 검증을 위해 fill을 사용한다.
 
         # 1. 만들어진 [미등록 obj]내 unique=True인 칼럼의 값을 가져와, 존재하는지 검사한다.
-        if obj.exists_self():
-            return False, 'create fail'
+        # if obj.exists_self():
+        #     return False, 'create fail'
 
         return obj.save(auto_commit=auto_commit), 'create success'
 
@@ -468,27 +468,39 @@ class CRUDMixin(Base, ObjectMixin):
         c.update(name='카테고리1') # (False, '값의 변화가 없어서 업데이트 실패)
         c.update(name='카테고리111') # (<Category>, '업데이트 성공')
 
+        ***업데이트후 조회 등을 하려면 반드시 auto_commit=False
+        c2 = Category.get(2, session=s)
+        c2.update(name='122333b', session=s, auto_commit=False) => auto_commit=True로 커밋되면 뒤에서 확인못한다.
+        c2.to_dict(session=s)
+        s.commit()
+        ----
+        return self, '업데이트 성공'
+        False, '업데이트 실패'
         """
         # create: cls(**kwargs).init_obj()
         try:
             is_updated = self.fill(**kwargs)
 
             if is_updated:
-                self.init_obj(session=session) \
-                    .save(auto_commit=auto_commit)
+                updated_obj = self.init_obj(session=session).save(auto_commit=auto_commit)
 
-                # model_obj를 직접 변환시, 재호출을 위해 초기화 취소
-                self.close_model_obj()
-                return self, '업데이트 성공'
+                # model_obj를 직접 변환시, 재호출을 위해 초기화 취소 -> 재호출해도 다 다시 초기화되며,  session 등을 지우면, 외부session이 날아가버리는 부작용으로 취소
+                # self.close_model_obj()
+                # print('updated_obj.name  >> ', updated_obj.name)
+
+                return updated_obj, '업데이트 성공'
             else:
+                # self.close_model_obj()
                 return False, '값의 변화가 없어서 업데이트 실패'
 
-        except:
-            return False, '업데이트 실패'
+        except Exception as e:
+            print(e)
+            # self.close_model_obj()
+            return False, '알수 없는 이유로 업데이트 실패'
 
     ###################
     # Delete          # -> only self method => create_obj없이 model_obj에서 [최초호출].init_obj()로 초기화
-    ################### 
+    ###################
     def delete(self, session: Session = None, auto_commit: bool = True):
         """
         c1 = Category.first()
@@ -503,11 +515,11 @@ class CRUDMixin(Base, ObjectMixin):
             if auto_commit:
                 self._session.commit()
 
-            self.close_model_obj()
+            # self.close_model_obj()
             return self, '삭제 성공'
 
         except:
-            self.close_model_obj()
+            # self.close_model_obj()
             return False, '삭제 실패'
 
     ###################

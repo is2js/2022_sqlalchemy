@@ -6,7 +6,7 @@ from collections.abc import Iterable
 from sqlalchemy import MetaData, select, func, text, exists
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import InstrumentedAttribute, aliased, contains_eager, Session, RelationshipProperty
+from sqlalchemy.orm import InstrumentedAttribute, aliased, contains_eager, Session, RelationshipProperty, sessionmaker
 
 from src.infra.config.connection import db
 from src.infra.tutorial3.mixins.base_query import BaseQuery
@@ -88,17 +88,6 @@ def format_date(value, fmt='%Y-%m-%d'):
     return formatted
 
 
-Base = declarative_base()
-naming_convention = {
-    "ix": 'ix_%(column_0_label)s',
-    "uq": "uq_%(table_name)s_%(column_0_name)s",
-    "ck": "ck_%(table_name)s_%(column_0_name)s",
-    "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
-    "pk": "pk_%(table_name)s"
-}
-Base.metadata = MetaData(naming_convention=naming_convention)
-
-
 def transform_int_enum_in_row(row, column_names, to_name=False):
     """
     row 변환한 것을 list append없이 한번에 모으기 위해, return 모은 것(X)
@@ -115,6 +104,32 @@ def transform_int_enum_in_row(row, column_names, to_name=False):
             yield _value
 
 
+def create_session_generator(session_cls):
+    db_session = None
+    try:
+        db_session = session_cls()
+        yield db_session
+    except:
+        db_session.rollback()
+        raise
+    finally:
+        # print('자동 close >> ')
+        # db_session.close()
+        print('자동 remove >> ')
+        db_session.close()
+
+
+Base = declarative_base()
+naming_convention = {
+    "ix": 'ix_%(column_0_label)s',
+    "uq": "uq_%(table_name)s_%(column_0_name)s",
+    "ck": "ck_%(table_name)s_%(column_0_name)s",
+    "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+    "pk": "pk_%(table_name)s"
+}
+Base.metadata = MetaData(naming_convention=naming_convention)
+
+
 class ObjectMixin(Base, BaseQuery):
     __abstract__ = True
 
@@ -128,11 +143,85 @@ class ObjectMixin(Base, BaseQuery):
         self._expression_base = None
 
     #### session generator를 class변수 + clsmethod setter 가지고 있어야, BaseModel에서 주입받을 수 있다.
-    _session_generator = None
+    session_generator = None
+    session_cls = None
+    scoped_session = None
 
     @classmethod
     def set_session_generator(cls, generator):
-        cls._session_generator = generator
+        cls.session_generator = generator
+
+    @classmethod
+    def set_scoped_session(cls, scoped_session):
+        cls.scoped_session = scoped_session
+
+
+    @classmethod
+    def set_engine(cls, engine):
+        cls._engine = engine
+
+    @classmethod
+    def get_session(cls):
+        return next(cls.session_generator)
+
+    #### 최하단 next()를 호출하는 get_session 메서드는 일단 내부 generator의 생성이 미리 컴파일 되지 않도록, clsmethod, selfmethod가 아닌
+    # 1) @property or @class_property로 정의해야하며
+    # 2) 내부에서 제네레이터를 생성과 동시에 next()로 호출해서 매번 새로 생성하지만
+    # 3) 직전 제네레이터가 yield 아래를 기억하고 있어서,
+    # @classmethod
+    # @class_property
+    # def get_session2(cls):
+        #### fastAPI Depends() 용으로는 generator 호출전 함수객체로 property + 비호출 generator반환
+        # -> 내부에서 contextmanager로 작동되며, finally가 마지막에 작동되도록 자동설저오딤. 여기선 안됨.
+        # return cls.create_session_generator
+
+    @classmethod
+    def get_session2(cls):
+        #### flask용
+        # sess = next(cls.create_session_generator(), None)
+        # print('sess 방출  >> ', sess )
+        # if sess is None:
+        #     sess = next(cls.create_session_generator())
+        # yield sess
+        # print('sess yield 아래 자동 clsoe  >> ', sess)
+        # sess.close()
+        return next(cls.create_session_generator())
+
+        #### 하지만, 일반용으로는 try / finally가 한번에 작동되므로 매번 1개방출짜리 제네레이터 생성 -> 새 session
+        # => next()꺼낸 뒤, 다시 한번 yield + sessoin.close
+        # sess = next(cls.create_session_generator())
+        # print('sess  >> ', sess, type(sess))
+        #
+        # return  sess
+        # print('자동 sess.close()  >> ', sess.close())
+
+    @classmethod
+    def create_session_generator(cls):
+        db_session = None
+        try:
+            db_session = cls.scoped_session()
+            print('db_session  >> ', db_session)
+            yield db_session
+        except :
+            db_session.rollback()
+        finally:
+            print(f'자동 close in {db_session}>> ')
+            db_session.close()
+
+
+    @classmethod
+    def create_session_generator_by_engine(cls):
+        Session = sessionmaker(bind=cls._engine)
+        db_session = None
+        try:
+            db_session = Session()
+            yield db_session
+        except:
+            db_session.rollback()
+            raise
+        finally:
+            print('자동 close >> ')
+            db_session.close()
 
     ADDITIONAL_ATTRS = ['_session', 'served', '_flatten_schema', '_query', '_loaded_rel_paths', '_alias_map',
                         '_expression_based']
@@ -159,12 +248,16 @@ class ObjectMixin(Base, BaseQuery):
 
         if not session:
             # session, cls.served = db.get_session(), False
-            session, cls.served = cls._session_generator(), False
+            session, cls.served = cls.session_generator(), False
             return session
 
         # 외부에서 받은 session을 받았으면 served로 확인한다.
         cls.served = True
         return session
+
+    @classmethod
+    def create_session(cls):
+        return cls.session_generator()
 
     # for create_query_obj ->filter_by/create   OR  for  model_obj(update/delete) to session_obj
     # 실행메서드 결과로 나온 순수 model obj 객체들(filter_by안한)의 session 보급
@@ -329,7 +422,8 @@ class ObjectMixin(Base, BaseQuery):
 
             # 4) 초기화가 보장되었다면, 기존 것을 확인한 뒤 없으면 내부생성 초기화.(not return False 초기화)
             if self._session is None:
-                self._session = db.get_session()
+                # self._session = db.get_session()
+                self._session = self.scoped_session # sqlite에서는 1개의 scpoed_session을 사용시 스레드 다른 곳에서 사용하는 에러
                 self.served = False
 
                 return self._session
@@ -1078,7 +1172,7 @@ class ObjectMixin(Base, BaseQuery):
 
             # session없는 model_obj라도 예외처리.됨
             # nested 하려면, relations이 load되어있어야한다.
-            self.close_model_obj()
+            # self.close_model_obj() # session 등을 지우면, 외부session이 날아가버리는 부작용으로 취소
 
             return result
 
@@ -1140,9 +1234,28 @@ class ObjectMixin(Base, BaseQuery):
         return view_attrs
 
     # for to_dict + for update/delete 모든 Model_obj에서 init하여 실행되는 함수들
-    def close_model_obj(self):
-        self.close()
+    # => 재호출해도 다 다시 초기화되며,  session 등을 지우면, 외부session이 날아가버리는 부작용으로 취
+    # def close_model_obj(self):
+    #     self.close()
+    #
+    #     for attr in self.ADDITIONAL_ATTRS:
+    #         if hasattr(self, attr):
+    #             delattr(self, attr)
 
-        for attr in self.ADDITIONAL_ATTRS:
-            if hasattr(self, attr):
-                delattr(self, attr)
+    def __get_db_session(self):
+        Session = sessionmaker(bind=self.__engine)
+        db_session = None
+        try:
+            db_session = Session()
+            yield db_session
+        except:
+            db_session.rollback()
+            raise
+        finally:
+            print('자동 close  >> ')
+
+            db_session.close()
+
+    @property
+    def get_session(self):
+        return self.__get_db_session().__next__
