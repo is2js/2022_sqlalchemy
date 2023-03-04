@@ -206,202 +206,197 @@ admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 @login_required
 @role_required(allowed_roles=[Roles.STAFF])
 def index():
-    with DBConnectionHandler() as db:
-        session = db.session
+    post_count = Post.count()
+    post_count_diff, post_count_diff_rate = Post.count_and_rate_between('add_date', date.today(), interval=7,
+                                                                        unit='day', filter_by=None)
+    category_count = Category.count()
+    category_count_diff, category_count_diff_rate = Post.count_and_rate_between('add_date', date.today(),
+                                                                                interval=7,
+                                                                                unit='day',
+                                                                                filter_by=None)
+    banner_count = Banner.count()
+    banner_count_diff, banner_count_diff_rate = Banner.count_and_rate_between('add_date', date.today(), interval=7,
+                                                                              unit='day',
+                                                                              filter_by=None)
 
-        post_count = Post.count(session=session)
-        post_count_diff, post_count_diff_rate = Post.count_and_rate_between('add_date', date.today(), interval=7,
-                                                                            unit='day', session=session, filter_by=None)
-        category_count = Category.count(session=session)
-        category_count_diff, category_count_diff_rate = Post.count_and_rate_between('add_date', date.today(),
-                                                                                    interval=7,
-                                                                                    unit='day', session=session,
-                                                                                    filter_by=None)
-        banner_count = Banner.count(session=session)
-        banner_count_diff, banner_count_diff_rate = Banner.count_and_rate_between('add_date', date.today(), interval=7,
-                                                                                  unit='day', session=session,
-                                                                                  filter_by=None)
+    user_count = User.filter_by(is_staff__eq=False).count()
+    user_count_diff, user_count_diff_rate = User.count_and_rate_between('add_date', date.today(), interval=7,
+                                                                        unit='day',
+                                                                        filter_by=dict(is_staff__eq=False))
+    employee_count = Employee.filter_by(and_=dict(
+        or_=dict(is_active__eq=True, is_leaved__eq=True),
+        user___is_administrator__eq=False
+    )).count()
+    employee_count_diff, employee_count_diff_rate = Employee.count_and_rate_between(
+        'add_date', date.today(),
+        interval=7,
+        unit='day',
+        filter_by=dict(
+            and_=dict(
+                or_=dict(
+                    is_active__eq=True,
+                    is_leaved__eq=True),
+                user___is_administrator__eq=False
+            )),
+    )
 
-        user_count = User.filter_by(session=session, is_staff__eq=False).count()
-        user_count_diff, user_count_diff_rate = User.count_and_rate_between('add_date', date.today(), interval=7,
-                                                                            unit='day', session=session,
-                                                                            filter_by=dict(is_staff__eq=False))
-        employee_count = Employee.filter_by(session=session, and_=dict(
-            or_=dict(is_active__eq=True, is_leaved__eq=True),
-            user___is_administrator__eq=False
-        )).count()
-        employee_count_diff, employee_count_diff_rate = Employee.count_and_rate_between('add_date', date.today(),
-                                                                                        interval=7,
-                                                                                        unit='day',
-                                                                                        filter_by=dict(
-                                                                                            and_=dict(
-                                                                                                or_=dict(
-                                                                                                    is_active__eq=True,
-                                                                                                    is_leaved__eq=True),
-                                                                                                user___is_administrator__eq=False
-                                                                                            )),
-                                                                                        session=session
-                                                                                        )
+    # before
+    # post_count = db.session.scalar(select(func.count(Post.id)))
+    # post_count_diff, post_count_diff_rate = get_diff_for(db, Post, interval='day', period=7)
+    # category_count = db.session.scalar(select(func.count(Category.id)))
+    # category_count_diff, category_count_diff_rate = get_diff_for(db, Category, interval='day', period=7)
+    # banner_count = db.session.scalar(select(func.count(Banner.id)))
+    # banner_count_diff, banner_count_diff_rate = get_diff_for(db, Banner, interval='day', period=7)
 
-        # before
-        # post_count = db.session.scalar(select(func.count(Post.id)))
-        # post_count_diff, post_count_diff_rate = get_diff_for(db, Post, interval='day', period=7)
-        # category_count = db.session.scalar(select(func.count(Category.id)))
-        # category_count_diff, category_count_diff_rate = get_diff_for(db, Category, interval='day', period=7)
-        # banner_count = db.session.scalar(select(func.count(Banner.id)))
-        # banner_count_diff, banner_count_diff_rate = get_diff_for(db, Banner, interval='day', period=7)
+    # user_count = db.session.scalar(select(func.count(User.id)).where(~User.is_staff))
+    # user_count_diff, user_count_diff_rate = get_diff_for(db, User, interval='day', period=7,
+    #                                                      conditions=[('is_staff', 'eq', False)]
+    #                                                      )
 
-        # user_count = db.session.scalar(select(func.count(User.id)).where(~User.is_staff))
-        # user_count_diff, user_count_diff_rate = get_diff_for(db, User, interval='day', period=7,
-        #                                                      conditions=[('is_staff', 'eq', False)]
-        #                                                      )
+    # # 직원 중에 재직+휴직(퇴사만 아니면) 카운터에 포함시킨다. + 관리자는 제외한다.
+    # employee_count = db.session.scalar(
+    #     select(func.count(Employee.id))
+    #     .where(or_(Employee.is_active, Employee.is_leaved))
+    #     .where(not Employee.is_administrator)  # hybrid expression을 조건문에 걸땐, ~ 이 아닌 not으로 걸자.
+    # )
+    # # => 관리자 제외시킬 건데, is_admin==관리자이상 => and_()로 연결해서 필수제외조건으로 추가한다
+    # employee_count_diff, employee_count_diff_rate = get_diff_for(db, Employee, interval='day', period=7,
+    #                                                              conditions=[('is_administrator', 'eq', False)],
+    #                                                              )
 
-        # # 직원 중에 재직+휴직(퇴사만 아니면) 카운터에 포함시킨다. + 관리자는 제외한다.
-        # employee_count = db.session.scalar(
-        #     select(func.count(Employee.id))
-        #     .where(or_(Employee.is_active, Employee.is_leaved))
-        #     .where(not Employee.is_administrator)  # hybrid expression을 조건문에 걸땐, ~ 이 아닌 not으로 걸자.
-        # )
-        # # => 관리자 제외시킬 건데, is_admin==관리자이상 => and_()로 연결해서 필수제외조건으로 추가한다
-        # employee_count_diff, employee_count_diff_rate = get_diff_for(db, Employee, interval='day', period=7,
-        #                                                              conditions=[('is_administrator', 'eq', False)],
-        #                                                              )
+    # 연결되어있는 것도  sql문으로하려면, 직접 where에 연결해줘야한다(꽁join 아니면)
+    ## none을 0개로 셀땐 func.coalesce(values.c.cnt, 0)
+    # stmt = select(Category.name, func.count(Post.id).label('count')) \
+    #     .where(Post.category_id == Category.id) \
+    #     .group_by(Post.category_id)
 
-        # 연결되어있는 것도  sql문으로하려면, 직접 where에 연결해줘야한다(꽁join 아니면)
-        ## none을 0개로 셀땐 func.coalesce(values.c.cnt, 0)
-        # stmt = select(Category.name, func.count(Post.id).label('count')) \
-        #     .where(Post.category_id == Category.id) \
-        #     .group_by(Post.category_id)
+    ## post 갯수0짜리도 찍히게 하려면,[사실상 one별 many의 집계] => many에서 fk별 집계한 뒤, one에 fk==id로 붙인다.
+    ##  (1) Post에서 subquery로 미리 카테고리id별 count를 subquery로 계산
+    ##  (2) Category에 category별 count를 left outer join
+    ## => main_06_subquery_cte_기본.py 참고
+    #### < 1-1 category별 post 갯수>
+    # subq = select(Post.category_id, func.coalesce(func.count(Post.id), 0).label('count')) \
+    #     .group_by(Post.category_id) \
+    #     .subquery()
+    # stmt = select(Category.name, subq.c.count) \
+    #     .join_from(Category, subq, isouter=True) \
+    #     .order_by(subq.c.count.desc())
+    # post_count_by_category = db.session.execute(stmt)
 
-        ## post 갯수0짜리도 찍히게 하려면,[사실상 one별 many의 집계] => many에서 fk별 집계한 뒤, one에 fk==id로 붙인다.
-        ##  (1) Post에서 subquery로 미리 카테고리id별 count를 subquery로 계산
-        ##  (2) Category에 category별 count를 left outer join
-        ## => main_06_subquery_cte_기본.py 참고
-        #### < 1-1 category별 post 갯수>
-        # subq = select(Post.category_id, func.coalesce(func.count(Post.id), 0).label('count')) \
-        #     .group_by(Post.category_id) \
-        #     .subquery()
-        # stmt = select(Category.name, subq.c.count) \
-        #     .join_from(Category, subq, isouter=True) \
-        #     .order_by(subq.c.count.desc())
-        # post_count_by_category = db.session.execute(stmt)
+    # [('분류1', 5), ('22', 2)]
+    post_count_by_category = Category.group_by('id', selects=['name', 'posts___id__count']).execute()
 
-        # [('분류1', 5), ('22', 2)]
-        post_count_by_category = Category.group_by('id', selects=['name', 'posts___id__count'],
-                                                   session=session).execute()
+    post_by_category_x_datas = []
+    post_by_category_y_datas = []
+    for category, post_cnt_by_category in post_count_by_category:
+        post_by_category_x_datas.append(category)
+        post_by_category_y_datas.append(post_cnt_by_category)
 
-        post_by_category_x_datas = []
-        post_by_category_y_datas = []
-        for category, post_cnt_by_category in post_count_by_category:
-            post_by_category_x_datas.append(category)
-            post_by_category_y_datas.append(post_cnt_by_category)
+    #### < 1-2 post가 가장 많이 걸린 tag> -> Tag별 post갯수세기 -> 중간테이블이라서 바로 집계되지만, name을 얻으려면 left join
+    #### => left.right관계명으로 assoc table무시하고, outerjoin을 건다(내부에서 assoc 와 right(Post)를 일반join한 뒤 outerjoin한다)
+    # stmt = select(Tag.name, func.coalesce(Post.id, 0).label('count'), func.coalesce(cast(Post.has_type, Integer), 0).label('sum')) \
+    # stmt = select(Tag.name, func.coalesce(func.count(Post.id), 0).label('count'),
+    #               func.sum(cast(Post.has_type, Integer)).label('sum')) \
+    #     .join(Tag.posts, isouter=True) \
+    #     .group_by(Tag.id) \
+    #     .order_by(literal_column('count').desc()) \
+    #     .limit(3)
 
-        #### < 1-2 post가 가장 많이 걸린 tag> -> Tag별 post갯수세기 -> 중간테이블이라서 바로 집계되지만, name을 얻으려면 left join
-        #### => left.right관계명으로 assoc table무시하고, outerjoin을 건다(내부에서 assoc 와 right(Post)를 일반join한 뒤 outerjoin한다)
-        # stmt = select(Tag.name, func.coalesce(Post.id, 0).label('count'), func.coalesce(cast(Post.has_type, Integer), 0).label('sum')) \
-        # stmt = select(Tag.name, func.coalesce(func.count(Post.id), 0).label('count'),
-        #               func.sum(cast(Post.has_type, Integer)).label('sum')) \
-        #     .join(Tag.posts, isouter=True) \
-        #     .group_by(Tag.id) \
-        #     .order_by(literal_column('count').desc()) \
-        #     .limit(3)
+    #### 기존 => 아직해소 되지 않은 [ rows ] => jinja에서만 사용가능해짐 row.name / row.count 등
+    # tag_with_post_count  >>  [('태그1', 1, 2)]
+    # => but jinja에서 내부가 실행되나. tag_with_post_count -> for tag -> tag.name  tag.count tag.sum
+    # => db컨넥션을 풀기 위해 enum치환하여 dict로 풀어서 -> jinja에선 tag['name'], tag['count']. tag['sum']으로 변경하기
+    # tag_with_post_count = db.session.execute(stmt).all()
 
-        #### 기존 => 아직해소 되지 않은 [ rows ] => jinja에서만 사용가능해짐 row.name / row.count 등
-        # tag_with_post_count  >>  [('태그1', 1, 2)]
-        # => but jinja에서 내부가 실행되나. tag_with_post_count -> for tag -> tag.name  tag.count tag.sum
-        # => db컨넥션을 풀기 위해 enum치환하여 dict로 풀어서 -> jinja에선 tag['name'], tag['count']. tag['sum']으로 변경하기
-        # tag_with_post_count = db.session.execute(stmt).all()
+    #### 업뎃 => enum처리한 dict list로 반환하며, jinja에서 dict list -> dict['name'] 를 사용하도록 변경
+    # tag_with_post_count = StaticsQuery.agg_with_relationship(Tag, 'name', 'posts',
+    #                                                          rel_agg_dict={'id': 'count', 'has_type': 'sum'},
+    #                                                          )
+    # print('tag_with_post_count [before]  >> ', tag_with_post_count)
+    # [{'name': '태그1', 'count': 1, 'sum': 2}, {'name': 'asdf', 'count': 0, 'sum': 0}]
 
-        #### 업뎃 => enum처리한 dict list로 반환하며, jinja에서 dict list -> dict['name'] 를 사용하도록 변경
-        # tag_with_post_count = StaticsQuery.agg_with_relationship(Tag, 'name', 'posts',
-        #                                                          rel_agg_dict={'id': 'count', 'has_type': 'sum'},
-        #                                                          )
-        # print('tag_with_post_count [before]  >> ', tag_with_post_count)
-        # [{'name': '태그1', 'count': 1, 'sum': 2}, {'name': 'asdf', 'count': 0, 'sum': 0}]
+    # 칼럼명_집계로 자동label을 잡으니, 템플릿에서 맞게 수정해준다.
+    tag_with_post_count = Tag.group_by('id', selects=['name', 'posts___id__count', 'posts___id__sum']).to_dict2()
+    # print('tag_with_post_count [after]  >> ', tag_with_post_count)
+    # [{'name': '태그1', 'id_count': 1, 'id_sum': 2}, {'name': 'asdf', 'id_count': 0, 'id_sum': 0}]
 
-        # 칼럼명_집계로 자동label을 잡으니, 템플릿에서 맞게 수정해준다.
-        tag_with_post_count = Tag.group_by('id', selects=['name', 'posts___id__count', 'posts___id__sum'],
-                                           session=session).to_dict2()
-        # print('tag_with_post_count [after]  >> ', tag_with_post_count)
-        # [{'name': '태그1', 'id_count': 1, 'id_sum': 2}, {'name': 'asdf', 'id_count': 0, 'id_sum': 0}]
+    #### < 2-1 일주일 user 수>
+    #### before
+    # user_chart = get_user_chart(db, conditions=[('is_administrator', 'eq', False)])
+    #### before 2
+    # prev_chart = PrevChart()
+    # user_chart = prev_chart.create_count_bar(User, 'add_date', date.today(),
+    #                                     interval_unit='day', interval_value=7,
+    #                                     # filters={'and': [('is_administrator', '==', False)]}
+    #                                     filters={'is_administrator': False}
+    #                                     )
+    # print('user_chart._xaxis_data  >> ', user_chart._xaxis_data)
+    #  ['24일', '25일', '26일', '27일', '28일', '1일', '2일']
 
-        #### < 2-1 일주일 user 수>
-        #### before
-        # user_chart = get_user_chart(db, conditions=[('is_administrator', 'eq', False)])
-        #### before 2
-        # prev_chart = PrevChart()
-        # user_chart = prev_chart.create_count_bar(User, 'add_date', date.today(),
-        #                                     interval_unit='day', interval_value=7,
-        #                                     # filters={'and': [('is_administrator', '==', False)]}
-        #                                     filters={'is_administrator': False}
-        #                                     )
-        # print('user_chart._xaxis_data  >> ', user_chart._xaxis_data)
-        #  ['24일', '25일', '26일', '27일', '28일', '1일', '2일']
+    chart = Chart(pyecharts)
+    user_chart = chart.count_bar_for_interval(User, 'add_date', 7, 'day', filter_by=dict(is_administrator=False),
+                                              )
+    # print('user_chart._xaxis_data  >> ', user_chart._xaxis_data)
+    #  ['24일', '25일', '26일', '27일', '28일', '1일', '2일']
 
-        chart = Chart(pyecharts)
-        user_chart = chart.count_bar_for_interval(User, 'add_date', 7, 'day', filter_by=dict(is_administrator=False),
-                                                  session=session)
-        # print('user_chart._xaxis_data  >> ', user_chart._xaxis_data)
-        #  ['24일', '25일', '26일', '27일', '28일', '1일', '2일']
+    # print("user_chart", user_chart)
+    # <2-2-2 user 성별 piechart > 아직 성별칼럼이 없으니 직원수 vs 일반 유저로 비교해보자.
+    # user_sex_pie_chart = get_pie_chart(db, User, 'sex', conditions=[('sex', 'ne', SexType.미정.value)])
+    #### before
+    # user_sex_pie_chart = get_pie_chart(db, User, 'sex', conditions=[('is_administrator', 'eq', False)])
+    #### before 2
+    # user_sex_pie_chart = prev_chart.create_pie(User, 'sex', agg='count',
+    #                                            # filters={'and': [('is_administrator', '==', False)]}
+    #                                            filters={'is_administrator': False}
+    #                                            )
+    #### after
+    user_sex_pie_chart = chart.count_pie_per_category(User, 'sex', filter_by=dict(is_administrator=False),
 
-        # print("user_chart", user_chart)
-        # <2-2-2 user 성별 piechart > 아직 성별칼럼이 없으니 직원수 vs 일반 유저로 비교해보자.
-        # user_sex_pie_chart = get_pie_chart(db, User, 'sex', conditions=[('sex', 'ne', SexType.미정.value)])
-        #### before
-        # user_sex_pie_chart = get_pie_chart(db, User, 'sex', conditions=[('is_administrator', 'eq', False)])
-        #### before 2
-        # user_sex_pie_chart = prev_chart.create_pie(User, 'sex', agg='count',
-        #                                            # filters={'and': [('is_administrator', '==', False)]}
-        #                                            filters={'is_administrator': False}
-        #                                            )
-        #### after
-        user_sex_pie_chart = chart.count_pie_per_category(User, 'sex', filter_by=dict(is_administrator=False),
-                                                          session=session
-                                                          )
+                                                      )
 
-        ### 만약, df로 만들거라면 row별로 dict()를 치면 row1당 column:value의 dict list가 된다.
-        # print([dict(r) for r in db.session.execute(stmt)])
+    ### 만약, df로 만들거라면 row별로 dict()를 치면 row1당 column:value의 dict list가 된다.
+    # print([dict(r) for r in db.session.execute(stmt)])
 
-        #### < 월별 연간 통계 by pyerchart>
-        # year_x_datas, year_post_y_datas = get_datas_count_by_date(db, Post, 'add_date', interval='month', period=12)
-        # _, year_user_y_datas = get_datas_count_by_date(db, User, 'add_date', interval='month', period=12,
-        #                                                # conditions=[('is_administrator', 'eq', False)],
-        #                                                filters={'is_administrator': False}
-        #                                                )
-        # _, year_category_y_datas = get_datas_count_by_date(db, Category, 'add_date', interval='month', period=12)
-        # _, year_banner_y_datas = get_datas_count_by_date(db, Banner, 'add_date', interval='month', period=12)
-        # _, year_tag_y_datas = get_datas_count_by_date(db, Tag, 'add_date', interval='month', period=12)
-        # year_chart = (
-        #     Bar()
-        #     .add_xaxis(year_x_datas)
-        #     .add_yaxis('유저 수', year_user_y_datas)  # y축은 name먼저
-        #     .add_yaxis('포스트 수', year_post_y_datas)
-        #     .add_yaxis('카테고리 수', year_category_y_datas)
-        #     .add_yaxis('배너 수', year_banner_y_datas)
-        #     .add_yaxis('태그 수', year_tag_y_datas)
-        # )
-        #
-        # year_chart = prev_chart.create_count_bars([User, Employee, Post, Category, Banner, Tag], 'add_date',
-        #                                           date.today(),
-        #                                           interval_unit='month', interval_value=12,
-        #                                           filters_with_model={
-        #                                               User: {'is_administrator': False},
-        #                                               Employee: {'name__ne': '관리자'},
-        #                                           })
+    #### < 월별 연간 통계 by pyerchart>
+    # year_x_datas, year_post_y_datas = get_datas_count_by_date(db, Post, 'add_date', interval='month', period=12)
+    # _, year_user_y_datas = get_datas_count_by_date(db, User, 'add_date', interval='month', period=12,
+    #                                                # conditions=[('is_administrator', 'eq', False)],
+    #                                                filters={'is_administrator': False}
+    #                                                )
+    # _, year_category_y_datas = get_datas_count_by_date(db, Category, 'add_date', interval='month', period=12)
+    # _, year_banner_y_datas = get_datas_count_by_date(db, Banner, 'add_date', interval='month', period=12)
+    # _, year_tag_y_datas = get_datas_count_by_date(db, Tag, 'add_date', interval='month', period=12)
+    # year_chart = (
+    #     Bar()
+    #     .add_xaxis(year_x_datas)
+    #     .add_yaxis('유저 수', year_user_y_datas)  # y축은 name먼저
+    #     .add_yaxis('포스트 수', year_post_y_datas)
+    #     .add_yaxis('카테고리 수', year_category_y_datas)
+    #     .add_yaxis('배너 수', year_banner_y_datas)
+    #     .add_yaxis('태그 수', year_tag_y_datas)
+    # )
+    #
+    # year_chart = prev_chart.create_count_bars([User, Employee, Post, Category, Banner, Tag], 'add_date',
+    #                                           date.today(),
+    #                                           interval_unit='month', interval_value=12,
+    #                                           filters_with_model={
+    #                                               User: {'is_administrator': False},
+    #                                               Employee: {'name__ne': '관리자'},
+    #                                           })
 
-        year_chart = chart.count_bars_for_interval([User, Employee, Post, Category, Banner, Tag], 'add_date', 12,
-                                                   'month',
-                                                   session=session,
-                                                   filter_by_per_model={
-                                                       User: dict(is_administrator=False),
-                                                       Employee: dict(
-                                                           and_=dict(
-                                                               or_=dict(
-                                                                   is_active__eq=True,
-                                                                   is_leaved__eq=True),
-                                                               user___is_administrator__eq=False
-                                                           ))
-                                                   })
+    year_chart = chart.count_bars_for_interval([User, Employee, Post, Category, Banner, Tag], 'add_date', 12,
+                                               'month',
+
+                                               filter_by_per_model={
+                                                   User: dict(is_administrator=False),
+                                                   Employee: dict(
+                                                       and_=dict(
+                                                           or_=dict(
+                                                               is_active__eq=True,
+                                                               is_leaved__eq=True),
+                                                           user___is_administrator__eq=False
+                                                       ))
+                                               })
 
     return render_template('admin/index.html',
                            post_count=(post_count, post_count_diff_rate),
@@ -817,7 +812,7 @@ def category_edit(id):
 @role_required(allowed_roles=[Roles.EXECUTIVE])
 def category_delete(id):
     # 1) url을 통해 id를 받고 객체를 먼저 찾는다.
-    category = Category.load({'posts':'subquery'}).filter_by(id=id).first()
+    category = Category.load({'posts': 'subquery'}).filter_by(id=id).first()
     # post cascading 되기 전에, content에서 이미지 소스 가져와 삭제하기
     if category.posts:
         for post in category.posts:
@@ -825,6 +820,7 @@ def category_delete(id):
     result, msg = category.delete()
     flash(f'{result.name} Category 삭제 완료.')
     return redirect(url_for('admin.category'))
+
 
 # @admin_bp.route('/category/delete2/<int:id>')
 # @login_required
