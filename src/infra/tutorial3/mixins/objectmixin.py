@@ -142,89 +142,40 @@ class ObjectMixin(Base, BaseQuery):
         self._alias_map = None
         self._expression_base = None
 
-    #### session generator를 class변수 + clsmethod setter 가지고 있어야, BaseModel에서 주입받을 수 있다.
-    session_generator = None
-    session_cls = None
+    # inner 공유 session 용
     scoped_session = None
-
-    @classmethod
-    def set_session_generator(cls, generator):
-        cls.session_generator = generator
 
     @classmethod
     def set_scoped_session(cls, scoped_session):
         cls.scoped_session = scoped_session
 
-
-    @classmethod
-    def set_engine(cls, engine):
-        cls._engine = engine
-
-    @classmethod
+    #### FastAPI - DependsOn( model.get_session ) => generator 생성 메서드를 호출하지 않고 입력
+    # 1) @property or @class_property로 정의해서 DependsOn내부 contextmanger에서 호출
+    # 2) 알아서 () 호출후, next()까지 호출하는 듯.
+    # 3) 일반 호출은 finally도 동시에 호출되지만, DependsOn 내부에서는 yield끝나고 호출됨.
+    #    일반 사용하고 싶다면, next(model.get_session())로 생성하고 꺼내쓰기?
+    # => fastapi 예시: https://kkminseok.github.io/posts/fastapiAlchemy03/
+    @class_property
     def get_session(cls):
-        return next(cls.session_generator)
+        return cls.create_session_generator
 
-    #### 최하단 next()를 호출하는 get_session 메서드는 일단 내부 generator의 생성이 미리 컴파일 되지 않도록, clsmethod, selfmethod가 아닌
-    # 1) @property or @class_property로 정의해야하며
-    # 2) 내부에서 제네레이터를 생성과 동시에 next()로 호출해서 매번 새로 생성하지만
-    # 3) 직전 제네레이터가 yield 아래를 기억하고 있어서,
-    # @classmethod
-    # @class_property
-    # def get_session2(cls):
-        #### fastAPI Depends() 용으로는 generator 호출전 함수객체로 property + 비호출 generator반환
-        # -> 내부에서 contextmanager로 작동되며, finally가 마지막에 작동되도록 자동설저오딤. 여기선 안됨.
-        # return cls.create_session_generator
-
-    @classmethod
-    def get_session2(cls):
-        #### flask용
-        # sess = next(cls.create_session_generator(), None)
-        # print('sess 방출  >> ', sess )
-        # if sess is None:
-        #     sess = next(cls.create_session_generator())
-        # yield sess
-        # print('sess yield 아래 자동 clsoe  >> ', sess)
-        # sess.close()
-        return next(cls.create_session_generator())
-
-        #### 하지만, 일반용으로는 try / finally가 한번에 작동되므로 매번 1개방출짜리 제네레이터 생성 -> 새 session
-        # => next()꺼낸 뒤, 다시 한번 yield + sessoin.close
-        # sess = next(cls.create_session_generator())
-        # print('sess  >> ', sess, type(sess))
-        #
-        # return  sess
-        # print('자동 sess.close()  >> ', sess.close())
-
+    # contextmanager에서만 yield끝난 뒤 filnally가 시작되어 -> fastAPI의 Depends( model.get_session () ) 용
     @classmethod
     def create_session_generator(cls):
         db_session = None
         try:
             db_session = cls.scoped_session()
-            print('db_session  >> ', db_session)
             yield db_session
         except :
             db_session.rollback()
         finally:
-            print(f'자동 close in {db_session}>> ')
+            print('자동 close')
             db_session.close()
+    ####  FastAPI ###############
 
-
-    @classmethod
-    def create_session_generator_by_engine(cls):
-        Session = sessionmaker(bind=cls._engine)
-        db_session = None
-        try:
-            db_session = Session()
-            yield db_session
-        except:
-            db_session.rollback()
-            raise
-        finally:
-            print('자동 close >> ')
-            db_session.close()
-
-    ADDITIONAL_ATTRS = ['_session', 'served', '_flatten_schema', '_query', '_loaded_rel_paths', '_alias_map',
-                        '_expression_based']
+    #
+    # ADDITIONAL_ATTRS = ['_session', 'served', '_flatten_schema', '_query', '_loaded_rel_paths', '_alias_map',
+    #                     '_expression_based']
 
     #### session을 들고 있는 객체 상태에서 그 dialect뽑아내기
     @property
@@ -1241,21 +1192,3 @@ class ObjectMixin(Base, BaseQuery):
     #     for attr in self.ADDITIONAL_ATTRS:
     #         if hasattr(self, attr):
     #             delattr(self, attr)
-
-    def __get_db_session(self):
-        Session = sessionmaker(bind=self.__engine)
-        db_session = None
-        try:
-            db_session = Session()
-            yield db_session
-        except:
-            db_session.rollback()
-            raise
-        finally:
-            print('자동 close  >> ')
-
-            db_session.close()
-
-    @property
-    def get_session(self):
-        return self.__get_db_session().__next__
