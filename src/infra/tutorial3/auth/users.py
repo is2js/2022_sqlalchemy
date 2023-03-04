@@ -118,7 +118,8 @@ class User(BaseModel):
             with DBConnectionHandler() as db:
                 self.role = db.session.scalars(select(Role).where(condition)).first()
 
-    @property
+    # @property
+    @hybrid_property
     def password(self):
         raise AttributeError('비밀번호는 읽을 수 없습니다.')
 
@@ -506,8 +507,9 @@ class Role(BaseModel):
         return self.permissions < role.permissions
 
     @is_under.expression
-    def is_under(cls, role):
-        return cls.permissions < role.permissions
+    def is_under(cls, role, mapper=None):
+        mapper = mapper or cls
+        return mapper.permissions < role.permissions
 
     @classmethod
     def get_by_id(cls, id):
@@ -524,15 +526,19 @@ class Role(BaseModel):
             ).first()
             return role
 
-    @hybrid_method
-    def is_(self, role_enum):
-        role_perm = role_enum.value[-1]
-        return self.permissions >= role_perm
+    # @hybrid_method
+    # def is_(self, role_enum):
+    #     role_perm = role_enum.value[-1]
+    #     return self.permissions >= role_perm
 
-    @is_.expression
-    def is_(cls, role_enum):
+    # @is_.expression
+    @hybrid_method
+    def is_(self, role_enum, mapper=None):
         role_perm = role_enum.value[-1]
-        return cls.permissions >= role_perm
+
+        mapper = mapper or self
+
+        return mapper.permissions >= role_perm
 
     def __repr__(self):
         return '<Role %r>' % self.name

@@ -285,7 +285,7 @@ class ObjectMixin(Base, BaseQuery):
         is_updated = False
 
         for column_name, new_value in kwargs.items():
-            #### form객체.data(dict)로 항상 들어오는 'csrf_toekn'은 에러내지말고 pass
+            # flask form.data(dict)로 항상 들어오는 'csrf_toekn'와  form으로 들어오는 hidden태그는 무시
             #    + hidden 태그도 혹시 들어오면 에러내지말고 pass
             if column_name == 'csrf_token' or column_name.startswith('hidden_'):
                 continue
@@ -294,7 +294,12 @@ class ObjectMixin(Base, BaseQuery):
                 raise KeyError(f"Invalid column name: {column_name}")
 
             # 같은 값은 업데이트 안하고 넘김
-            if getattr(self, column_name) == new_value:
+            # => hybrid_property는 읽는 것을 생략하자. property는 get을 거부할 수 있다.
+            # if getattr(self, column_name) == new_value:
+            # if getattr(self, column_name) == new_value:
+            # if column_name not in self.hybrid_property_names and getattr(self, column_name) == new_value:
+            # => settable(하이브리드proeperty + method) 은 통과했지만, 값비교시 꺼내는 것은 순수 column만 꺼내서 비교하기
+            if column_name in self.column_names and getattr(self, column_name) == new_value:
                 continue
 
             setattr(self, column_name, new_value)
@@ -809,9 +814,6 @@ class ObjectMixin(Base, BaseQuery):
             rel_path: value for rel_path, value in self._flatten_schema.items()
             if rel_path not in self._loaded_rel_paths
         }
-        print('self._loaded_rel_paths  >> ', self._loaded_rel_paths)
-
-        print('unloaded_flatten_schema  >> ', unloaded_flatten_schema)
 
         # 이것도 없으면 끝낸다.
         if not unloaded_flatten_schema:
@@ -1005,6 +1007,9 @@ class ObjectMixin(Base, BaseQuery):
         """
         메서드 내부에서 self_.query.subquery()를 반환함. 이 때, 내부생성 session이라면 삭제해주자.
         """
+        #### 추가. subquery로 만들더라도, filter에 적힌 selectin/subquery에 대한 eagerload옵션은 들어가야할 것 같다.
+        self._set_unloaded_eager_exprs()
+
         # print('self._query.subquery()  >> ', self._query.subquery())
         #### 실행메서드같지만, session안받아 session 내부생성되어있으므로, close처리
         self._session.close()
@@ -1012,7 +1017,6 @@ class ObjectMixin(Base, BaseQuery):
         return self._query.subquery()
 
     # for route에서 row별 table 데이터(json) 전달
-
     def to_dict2(self, nested=False, hybrid_atts=False, exclude=None, session: Session = None):
         """
         1) 이미 mode_obj로 조회되어 session없는 순수model객체 상태(not session obj) -> has not _session
@@ -1138,6 +1142,11 @@ class ObjectMixin(Base, BaseQuery):
             #    => 가진 session으로 all()하여 model_obj 복수로 가진 뒤, closed된 session을 재활용하여 외부session공급하여
             #    -> 순회하며 개별model obj를 1)을 반복수행 dict list 반환
             if not self._expression_based:
+                #### 추가) execute용 _expression_based가 아니라면, filter_by후에 eagerload까지?!
+                # self._set_unloaded_eager_exprs()
+                # => relation을 입력시, 1depth에 한해서 to_dict2()를 처리하므로 eagerload와는 관련없다?
+                # => session안에서 relation에 접근해서 괜찮다.
+
                 # 1) 실행메서드.all()을 하면 sesion이 닫히고, 객체들이 빠져나간 close()가 호출되는데, 각 객체들은 순수model obj(1번상황)
                 # => 모두 add한 다음, to_dict를 개별객체마다 진행한다.?!
                 results = self.all()
@@ -1197,3 +1206,8 @@ class ObjectMixin(Base, BaseQuery):
     #     for attr in self.ADDITIONAL_ATTRS:
     #         if hasattr(self, attr):
     #             delattr(self, attr)
+
+
+    #### select(cls) == not expression_based 실행메서드를 추가한다면
+    # => session안에서 relation에 접근할 경우(to_dict)가 아니라면,
+    #    self._set_unloaded_eager_exprs()를 추가한 뒤 실행시키자.
