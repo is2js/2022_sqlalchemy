@@ -285,6 +285,11 @@ class ObjectMixin(Base, BaseQuery):
         is_updated = False
 
         for column_name, new_value in kwargs.items():
+            #### form객체.data(dict)로 항상 들어오는 'csrf_toekn'은 에러내지말고 pass
+            #    + hidden 태그도 혹시 들어오면 에러내지말고 pass
+            if column_name == 'csrf_token' or column_name.startswith('hidden_'):
+                continue
+
             if column_name not in self.settable_column_names:
                 raise KeyError(f"Invalid column name: {column_name}")
 
