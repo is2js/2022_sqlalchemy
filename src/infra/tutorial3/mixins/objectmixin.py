@@ -287,7 +287,7 @@ class ObjectMixin(Base, BaseQuery):
         for column_name, new_value in kwargs.items():
             # flask form.data(dict)로 항상 들어오는 'csrf_toekn'와  form으로 들어오는 hidden태그는 무시
             #    + hidden 태그도 혹시 들어오면 에러내지말고 pass
-            if column_name == 'csrf_token' or column_name.startswith('hidden_'):
+            if column_name in ['csrf_token', 'submit'] or column_name.startswith('hidden_'):
                 continue
 
             if column_name not in self.settable_column_names:
@@ -1133,7 +1133,8 @@ class ObjectMixin(Base, BaseQuery):
             # session없는 model_obj라도 예외처리.됨
             # nested 하려면, relations이 load되어있어야한다.
             # self.close_model_obj() # session 등을 지우면, 외부session이 날아가버리는 부작용으로 취소
-
+            #### session close만
+            self.close()
             return result
 
 
