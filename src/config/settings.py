@@ -86,6 +86,8 @@ class DBDevConfig(DB):
 
     else:
         DATABASE_URL = 'sqlite:///' + os.path.join(BASE_FOLDER, f'{os.getenv("DB_NAME") or "data"}-dev.db')
+        # CUD <-> 같은 내부 session을 g.user에 사용할 경우 same thread 에러
+        # DATABASE_URL += '?check_same_thread=False'
 
 
 class DBTestingConfig(DB):

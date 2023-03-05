@@ -80,7 +80,9 @@ class BaseModel(Base, ReprMixin, ExpressionMixin):  # ExpressionMixin 작업시 
 
 
 #### 내부 thread(모듈)마다 사용할, inner session을 위한 scoped_session 삽입
-BaseModel.set_scoped_session(db.get_scoped_session())
+# BaseModel.set_scoped_session(db.get_session()) # 일반세션을 주입하면, CUD시 same thread에러가 확정적으로 발생한다.
+BaseModel.set_scoped_session(db.get_scoped_session()) # scoped session을 주입하면, CUD시 same thread에러가 발생하지만 무시된다.
+# BaseModel.set_engine(db.get_engine())
 
 
 class InviteBaseModel(Base):

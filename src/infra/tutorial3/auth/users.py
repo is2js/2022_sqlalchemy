@@ -13,12 +13,13 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 from src.config import project_config
 from src.infra.config.base import Base
-from src.infra.config.connection import DBConnectionHandler
+from src.infra.config.connection import DBConnectionHandler, db
 from src.main.templates.filters import format_date
 from .departments import EmployeeDepartment, Department, DepartmentType
 from src.infra.tutorial3.common.base import BaseModel, InviteBaseModel
 from src.infra.tutorial3.common.int_enum import IntEnum
 from ..common.grouped import grouped
+from ..mixins.crudmixin import CRUDMixin
 
 
 class SexType(enum.IntEnum):
@@ -79,7 +80,7 @@ class User(BaseModel):
     # role = relationship('Role', backref=backref('users', lazy='dynamic'), lazy='subquery')
     # => eager options 적용을 위해 lazy='dynamic' 옵션 제거 => jinja에서 갖다쓰는거 해결하고 처리해야함.
     # role = relationship('Role', backref=backref('users'), lazy='subquery')
-    role = relationship('Role', backref=backref('users'), lazy='subquery')
+    role = relationship('Role', backref=backref('users')) # eagerload와 lazy=subquery를 동시에 주면 sqlite multitrhead 에러난다.
     #### .join()에 관계칼럼을 사용하려면, lazy='subquery'를 주면 안된다.
     # role = relationship('Role', backref=backref('users'))
 
@@ -92,11 +93,21 @@ class User(BaseModel):
     ## invite에 user_id 2개 추가에 대한 2개의 one으로서 relationship
     # -> 같은 테이블 2개에 대한 relaionship은 brackref만 다르게 주지말고,
     # -> foreign_keys를  ManyEntity.필드_id를 각각 다른 필드로서 명시해줘야한다
-    inviters = relationship('EmployeeInvite', backref=backref('inviter', lazy='subquery'), lazy='dynamic',
-                            foreign_keys='EmployeeInvite.inviter_id'
+    # inviters = relationship('EmployeeInvite', backref=backref('inviter', lazy='subquery'), lazy='dynamic',
+    #                         foreign_keys='EmployeeInvite.inviter_id'
+    #                         )
+    # invitees = relationship('EmployeeInvite', backref=backref('invitee', lazy='subquery'), lazy='dynamic',
+    #                         foreign_keys='EmployeeInvite.invitee_id'
+    #                         )
+    # backref 삭제->
+    # 1) one to many : lazy='dynamic' + fk 2개이상시, foreign_keys(string:테이블명.fk명)으로 각각 지정
+    # 2) many to one : lazy옵션 제거, uselist=False  + fk 2개이상시, foreign_keys( [fk칼럼]) 각각 지정
+    # 3) 서로 relationship지정시 : 각각의 relationship을 string으로 back_populates=에 걸어주기
+    inviters = relationship('EmployeeInvite', lazy='dynamic', foreign_keys='EmployeeInvite.inviter_id',
+                            back_populates='inviter', # 관계컬럼을 서로 정의할 경우, id copy시 자동으로 채우도록 지정
                             )
-    invitees = relationship('EmployeeInvite', backref=backref('invitee', lazy='subquery'), lazy='dynamic',
-                            foreign_keys='EmployeeInvite.invitee_id'
+    invitees = relationship('EmployeeInvite', lazy='dynamic', foreign_keys='EmployeeInvite.invitee_id',
+                            back_populates='invitee', # 관계컬럼을 서로 정의할 경우, id copy시 자동으로 채우도록 지정
                             )
 
     ## 추가2-2 user생성시, role=관계객체를 입력하지 않은 경우, default인 User Role객체를 가져와 add해서 생성되도록 한다
@@ -245,6 +256,8 @@ class User(BaseModel):
 
             db.session.execute(stmt)
             db.session.commit()
+
+
             # current_user = db.session.get(cls, user_id)
             # current_user.last_seen = datetime.datetime.now()
             # db.session.add(current_user)
@@ -256,7 +269,7 @@ class User(BaseModel):
             user = db.session.get(cls, id)
             return user
 
-    def update(self, info_dict=None, **kwargs):
+    def update2(self, info_dict=None, **kwargs):
         if info_dict:
             for k, v in info_dict.items():
                 setattr(self, k, v)
@@ -533,16 +546,12 @@ class Role(BaseModel):
 
     # @is_.expression
     @hybrid_method
-    def is_(self, role_enum, mapper=None):
+    def is_(cls, role_enum, mapper=None):
         role_perm = role_enum.value[-1]
 
-        mapper = mapper or self
+        mapper = mapper or cls
 
         return mapper.permissions >= role_perm
-
-    def __repr__(self):
-        return '<Role %r>' % self.name
-
 
 class JobStatusType(enum.IntEnum):
     대기 = 0
@@ -863,7 +872,7 @@ class Employee(BaseModel):
             del d['id']
         return d
 
-    def update(self, info_dict, **kwargs):
+    def update2(self, info_dict, **kwargs):
         if info_dict:
             for k, v in info_dict.items():
                 setattr(self, k, v)
@@ -1240,7 +1249,7 @@ class Employee(BaseModel):
         else:
             self.reference = text + '</br>' + self.reference
 
-    def update(self, info_dict=None, **kwargs):
+    def update2(self, info_dict=None, **kwargs):
         if info_dict:
             for k, v in info_dict.items():
                 setattr(self, k, v)
@@ -1602,7 +1611,7 @@ class Employee(BaseModel):
 #         return [(choice.value, choice.name) for choice in cls if choice.value]
 
 
-class EmployeeInvite(InviteBaseModel):
+class EmployeeInvite(InviteBaseModel, CRUDMixin):
     ko_NAME = '직원초대'
 
     __tablename__ = 'employee_invites'
@@ -1611,12 +1620,53 @@ class EmployeeInvite(InviteBaseModel):
     # user -> inviter / invitee
     inviter_id = Column(Integer, ForeignKey('users.id'))
     invitee_id = Column(Integer, ForeignKey('users.id'))
+    # Many to Many에서 dynamic(필터까지 적용하여 실제query실행직전에 collection load)을 적용한
+    # relationship을 *정의된 fk칼럼를 직접 지정하여 relationship 생성
+    # 1) one to many : lazy='dynamic' + fk 2개이상시, foreign_keys(string:테이블명.fk명)으로 각각 지정
+    # 2) many to one : lazy옵션 제거, uselist=False  + fk 2개이상시, foreign_keys( [fk칼럼]) 각각 지정
+    # 3) 서로 relationship지정시 : 각각의 relationship을 string으로 back_populates=에 걸어주기
+    inviter = relationship('User', foreign_keys=[inviter_id], uselist=False,
+                           back_populates='inviters',  # 관계컬럼을 서로 정의할 경우, id copy시 자동으로 채우도록 지정
+                           )
+    invitee = relationship('User', foreign_keys=[invitee_id], uselist=False,
+                           back_populates='invitees',  # 관계컬럼을 서로 정의할 경우, id copy시 자동으로 채우도록 지정
+                           )
 
     # 직원초대에서는, 초대마다 바뀔 수 있는 role정보를 가져 따로 엔터티를 만들었다.
     role_id = Column(Integer, ForeignKey('roles.id'), nullable=False)
 
     def __repr__(self):
         return '<EmployeeInvite %r=>%r >' % (self.inviter_id, self.invitee_id)
+
+    @hybrid_method
+    def is_sented_by(cls, user, mapper=None):
+        """
+        print(EmployeeInvite.is_sented_by( User.get(1)))
+        ----
+        EXISTS (SELECT 1
+        FROM users, employee_invites
+        WHERE users.id = employee_invites.inviter_id AND users.id = :id_1)
+        """
+        # 표현식은 aliased인 경우, filter_by에서 expression 작성시
+        # method(value, mapper=mapper)로 작성된다.
+        mapper = mapper or cls
+        # has/any에 들어갈 User model class 는 import하지말고,
+        # mapper.관계칼럼을 이용해서 꺼낸다.
+        Inviter = mapper.inviter.property.mapper.class_ # User
+        return mapper.inviter.has(Inviter.id == user.id)
+
+    @hybrid_method
+    def is_received_by(cls, user, mapper=None):
+        """
+        print(EmployeeInvite.is_sented_by( User.get(1)))
+        ----
+        EXISTS (SELECT 1
+        FROM users, employee_invites
+        WHERE users.id = employee_invites.invitee_id AND users.id = :id_1)
+        """
+        mapper = mapper or cls
+        Invitee = mapper.invitee.property.mapper.class_ # User
+        return mapper.invitee.has(Invitee.id == user.id)
 
     @classmethod
     def get_by_invitee(cls, user):
@@ -1637,8 +1687,12 @@ class EmployeeInvite(InviteBaseModel):
             invite_list = db.session.scalars(stmt).all()
         return invite_list
 
+# BaseModel을 상속안하므로, 똑같이 session 삽입(임시)
+# temp
+EmployeeInvite.set_scoped_session(db.get_scoped_session())
+# EmployeeInvite.set_engine(db.get_engine())
 
-class EmployeeLeaveHistory(BaseModel):
+class EmployeeLeaveHistory(BaseModel, CRUDMixin):
     ko_NAME = '휴/복직기록'
     __tablename__ = 'employee_leave_histories'
 
@@ -1667,3 +1721,9 @@ class EmployeeLeaveHistory(BaseModel):
                     f"[직원id={self.employee_id!r}," \
                     f" 휴직={self.leave_date!r} ~ 복직={self.reinstatement_date!r}]"
         return info
+
+
+# BaseModel을 상속안하므로, 똑같이 session 삽입(임시)
+# temp
+EmployeeLeaveHistory.set_scoped_session(db.get_scoped_session())
+# EmployeeLeaveHistory.set_engine(db.get_engine())

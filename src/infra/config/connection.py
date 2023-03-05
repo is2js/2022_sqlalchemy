@@ -1,3 +1,4 @@
+import _thread
 import os
 
 from sqlalchemy import event
@@ -17,7 +18,7 @@ class DBConnectionHandler:
 
     def __create_database_engine(self, echo):
         # engine = create_engine(self.__connection_string)
-        echo = True if os.getenv('APP_CONFIG') != 'production' else False
+        # echo = True if os.getenv('APP_CONFIG') != 'production' else False
         engine = create_engine(self.__connection_string, echo=echo)
 
         #### sqlite 인 경우, qeuery 날릴 때마다, 아래 문장을 execute해야, cascade가 정상작동한다
@@ -58,8 +59,9 @@ class DBConnectionHandler:
     #### property로 만들어야, 함수생성 -> 추가로직을 동시에 바깥에서 ()한번으로 할 수 있다.
     @property
     def get_session(self):
-        return self.__get_db_session().__next__
-        # return self.get_scoped_session()
+        # return self.__get_db_session().__next__
+        return self.get_scoped_session()
+
 
     def get_scoped_session(self):
         return scoped_session(sessionmaker(bind=self.__engine, autocommit=False, autoflush=False))

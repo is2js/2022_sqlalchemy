@@ -93,13 +93,8 @@ def create_app(config_name='default'):
 
 
 def inject_category_and_settings():
-    with DBConnectionHandler() as db:
-        categories = db.session.scalars(
-            select(Category)
-            .order_by(Category.id.asc())
-        ).all()
-
-        settings = Setting.to_dict()
+    categories = Category.order_by('id').all()
+    settings = Setting.convert_to_dict()
 
     return dict(
         categories=categories,

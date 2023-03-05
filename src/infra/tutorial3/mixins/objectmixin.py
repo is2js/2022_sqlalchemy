@@ -1,3 +1,4 @@
+import _thread
 import datetime
 import enum
 from collections import OrderedDict, defaultdict, abc
@@ -6,7 +7,8 @@ from collections.abc import Iterable
 from sqlalchemy import MetaData, select, func, text, exists
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import InstrumentedAttribute, aliased, contains_eager, Session, RelationshipProperty, sessionmaker
+from sqlalchemy.orm import InstrumentedAttribute, aliased, contains_eager, Session, RelationshipProperty, sessionmaker, \
+    scoped_session
 
 from src.infra.config.connection import db
 from src.infra.tutorial3.mixins.base_query import BaseQuery
@@ -133,7 +135,11 @@ Base.metadata = MetaData(naming_convention=naming_convention)
 class ObjectMixin(Base, BaseQuery):
     __abstract__ = True
 
+    # 호출되진 않지만 명시만 -> 실제 초기화는 .init_obj에서
     def __init__(self):
+        # thread별 scoped session 생성할 때마다 저장
+        self._sessions = {}
+
         self.served = None
         self._session = None
         self._query = None
@@ -142,13 +148,38 @@ class ObjectMixin(Base, BaseQuery):
         self._alias_map = None
         self._expression_base = None
 
-    # inner 공유 session 용
+    # 1. only API 사용을 위한 경우, 공유할 session 1개만 받는다.
     scoped_session = None
 
     @classmethod
     def set_scoped_session(cls, scoped_session):
         cls.scoped_session = scoped_session
 
+    # 2. flask-jinja를 사용하여
+    # 1) app.context_processor(inject_category_and_settings)처럼
+    #    route login외 서로 다른 곳 session이 호출될 우려가 있는 경우
+    _engine = None
+
+    @classmethod
+    def set_engine(cls, engine):
+        cls._engine = engine
+
+    def get_scoped_session(self):
+        # for template engine + sqlite (1thread only 1session)
+        if self._engine:
+            thread_id = _thread.get_ident()  # get thread id
+            if thread_id in self._sessions:
+                return self._sessions[thread_id]
+
+            Session = scoped_session(sessionmaker(bind=self._engine))
+            self._sessions[thread_id] = Session()
+            return self._sessions[thread_id]
+
+        elif self.scoped_session:
+            return self.scoped_session
+
+        else:
+            raise Exception(f'engine or scoped session을 삽입해주세요.')
     #### FastAPI - DependsOn( model.get_session ) => generator 생성 메서드를 호출하지 않고 입력
     # 1) @property or @class_property로 정의해서 DependsOn내부 contextmanger에서 호출
     # 2) 알아서 () 호출후, next()까지 호출하는 듯.
@@ -166,11 +197,12 @@ class ObjectMixin(Base, BaseQuery):
         try:
             db_session = cls.scoped_session()
             yield db_session
-        except :
+        except:
             db_session.rollback()
         finally:
             print('자동 close')
             db_session.close()
+
     ####  FastAPI ###############
 
     #
@@ -282,7 +314,7 @@ class ObjectMixin(Base, BaseQuery):
     ###################
     # for Update + for Create + for create_obj
     def fill(self, **kwargs):
-        is_updated = False
+        # is_updated = False
 
         for column_name, new_value in kwargs.items():
             # flask form.data(dict)로 항상 들어오는 'csrf_toekn'와  form으로 들어오는 hidden태그는 무시
@@ -304,10 +336,10 @@ class ObjectMixin(Base, BaseQuery):
 
             setattr(self, column_name, new_value)
             # 1개라도 업뎃 되면 flag 1번만 표시
-            if not is_updated:
-                is_updated = True
+            # if not is_updated:
+            #     is_updated = True
 
-        return is_updated  # 한번 이라도 업뎃되면 True/ 아니면 False 반환
+        return self  # 한번 이라도 업뎃되면 True/ 아니면 False 반환
 
     # for exists_self + for update - fill - settable column snames
     @class_property
@@ -354,6 +386,7 @@ class ObjectMixin(Base, BaseQuery):
                 if isinstance(prop, hybrid_property)]
 
     def init_obj(self, session: Session = None, query=None, schema=None):
+        self._sessions = {}
 
         self.served = None  # set_session_and_check_served에서 T/F 초기화
         self._session = self.set_session_and_check_served(session)  # 내부에서 어떻게든 None 아닌 것으로 초기화
@@ -375,22 +408,28 @@ class ObjectMixin(Base, BaseQuery):
             self._session = session
             self.served = True
             return self._session
-        # 2) 외부session이 없는 경우 -> 기존 session 확인후 존재하지 않을 때만 session 새로 생성
+        # 2) 외부session이 없는 경우 -> 기존 session 확인후 존재하지 않을 때만 ~~session 새로 생성~~ => scoped_session 배정으로 변경
+        #    외부X 내부O시 그것을 그대로 활용
         else:
             # 3) 기존 session확인하기 전에, 있는지 초기화여부부터 확인해야한다.?!
             if not hasattr(self, '_session'):
                 self._session = None
 
             # 4) 초기화가 보장되었다면, 기존 것을 확인한 뒤 없으면 내부생성 초기화.(not return False 초기화)
+            # => 내부 생성대신 scoped_session 박힌 것을 재활용
             if self._session is None:
-                # self._session = db.get_session()
-                self._session = self.scoped_session # sqlite에서는 1개의 scpoed_session을 사용시 스레드 다른 곳에서 사용하는 에러
+                # self._session = self.scoped_session # sqlite에서는 1개의 scpoed_session을 사용시 스레드 다른 곳에서 사용하는 에러
+                self._session = self.get_scoped_session()
                 self.served = False
 
                 return self._session
-            # 3) 외부x, 내부o라면 새로운 session을 set 실패
+            # 3) 외부x, 내부o라면, scoped_session 사용 중 => 새로운 session set실패했다고 return False하면 안됨.
+            #    중간에 생성시 False 초기화 되어버림
+            #    => 그것을 그대로 반환하여, 초기화의 일환으로 취급
             else:
-                return False
+                # return False
+                # print('self._session  >> ', self._session)
+                return self._session
 
     def set_query(self, query=None, eagerload=None, filter_by=None, order_by=None, options=None, outerjoin=None,
                   group_by=None, having=None, limit=None, offset=None):
@@ -1207,7 +1246,6 @@ class ObjectMixin(Base, BaseQuery):
     #     for attr in self.ADDITIONAL_ATTRS:
     #         if hasattr(self, attr):
     #             delattr(self, attr)
-
 
     #### select(cls) == not expression_based 실행메서드를 추가한다면
     # => session안에서 relation에 접근할 경우(to_dict)가 아니라면,
