@@ -1,6 +1,7 @@
 import datetime
 import re
 
+from flask import g
 from flask_wtf import FlaskForm
 from flask_wtf.file import FileField, FileAllowed, FileSize, FileRequired
 from sqlalchemy import select, exists, and_
@@ -234,10 +235,6 @@ class EmployeeForm(UserInfoForm):
                           filters=(convert_to_date,) # 필수! 수정시 v-model에 string을 value에 채운체로 rendering되면 에러난다.
                           )
 
-
-
-
-
     # resign_date는 입력x
 
     #### role을 여기서 정한다(user add에선 삭제?)
@@ -252,13 +249,14 @@ class EmployeeForm(UserInfoForm):
 
     # def __init__(self, current_user, employee=None, *args, **kwargs):
     def __init__(self, user,
-                 employer=None, role=None, # 직원전환시 상사객체 OR 직원초대시, role객체 =>  role을 선택할 수 있거나 role을 미리 채운다
+                 role=None, # 직원전환시 상사객체 OR 직원초대시, role객체 =>  role을 선택할 수 있거나 role을 미리 채운다
                  employee=None, # 수정을 위한 미리생성된 user의 employee객체
                  *args, **kwargs):
 
         self.employee = employee
-        self.employer = employer
+        self.employer = g.user
         self.role = role
+        #### 수정인 경우
         if self.employee:
             # super().__init__(user, **self.employee.__dict__) => error
             ## 1) employee를 **kwargs로 보내주면, employee내부 user필드가 또 있어서, 겹치게 된다.
@@ -268,7 +266,9 @@ class EmployeeForm(UserInfoForm):
             # {'add_date': datetime.datetime(2022, 12, 21, 21, 50, 11, 114650), 'pub_date': datetime.datetime(2022, 12, 21, 21, 50, 11, 114650), 'id': 12, 'user_id': 37, 'name': '투자자', 'sub_name': '투자자', 'birth': '2010233349192', 'join_date': datetime.da
             # te(2022, 12, 21), 'job_status': <JobStatusType.재직: 1>, 'resign_date': None, 'user': User[id=37]}
             # print(self.employee.serialize())
-            super().__init__(user, **self.employee.to_dict(without_id=True))
+
+            # super().__init__(user, **self.employee.to_dict(without_id=True))
+            super().__init__(user, **self.employee.to_dict2(exclude=['add_date', 'pub_date', 'id']))
         else:
             # super().__init__(*args, **kwargs)
             ## 상속한 부모 form UserInfoForm는 무조건 수정상태로 쓰니, user를 넣어준다.
