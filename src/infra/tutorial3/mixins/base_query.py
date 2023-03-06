@@ -823,7 +823,7 @@ class BaseQuery:
             # 2-2) 입력한 필터 옵션이 연산자처리인 경우
             # 2-2-1) filter expr는 if __가 있다면, [1]op 'id__eq' [2] op(eq)이 생략된 집계 'id__count' OR  [3] op명시 집계 'id__count__eq'
             # 'id'  'id__eq'   'id__count' 'id__count__eq' -> select/order와 다르게,
-            print('1. attr  >> ', attr)
+            # print('1. attr  >> ', attr)
             if cls.OPERATOR_OR_AGG_SPLITTER in attr:
                 # attr_name, op_name = attr.rsplit(cls.OPERATOR_OR_AGG_SPLITTER, 1)
                 # 2-2-1-1) __가 있다면, 3 중 1   'id__eq' or 'id__count' or 'id__count__eq'
@@ -831,7 +831,7 @@ class BaseQuery:
                 # => 좌측 자르기 'id' + 'eq' VS 'id' + 'count  or  'id' + 'count__op'
                 # => 집계 VS 비집계를 나누려면, 좌측자르기 한 뒤, 확인해야한다?!
                 attr_name, op_or_agg_name = attr.split(cls.OPERATOR_OR_AGG_SPLITTER, 1)
-                print('2. attr_name, op_or_agg_name  >> ', attr_name, op_or_agg_name)
+                # print('2. attr_name, op_or_agg_name  >> ', attr_name, op_or_agg_name)
                 # 2-2-1-1-1) 집계인 경우(count or count__eq) => attr_name + agg_name을 create_column으로 보내서 만든다.?!
                 # 'id' + 'count' or 'id' + 'count__eq'
                 #  => 다시 한번 __여부를 확인하여 없으면 eq생략, 있으면 해당연산자다
@@ -841,11 +841,11 @@ class BaseQuery:
                         # => 연산자만 떼어내고, 다시 집계랑 합쳐서 column식을 만든다.
                         agg_name, op_name = op_or_agg_name.split(cls.OPERATOR_OR_AGG_SPLITTER, 1)
                         cls.check_op_name(attr, op_name)
-                        print('3. agg_name, op_name  >> ', agg_name, op_name)
+                        # print('3. agg_name, op_name  >> ', agg_name, op_name)
 
                         op = _operators[op_name]
                         attr_name = attr_name + cls.OPERATOR_OR_AGG_SPLITTER + agg_name
-                        print('4. attr_name  >> ', attr_name)
+                        # print('4. attr_name  >> ', attr_name)
                         column_expr = cls.create_column_expr(mapper, attr_name, type=cls.FILTER_BY)
                         # column = cls.create_column(mapper, attr_name)
 
@@ -853,9 +853,9 @@ class BaseQuery:
                         # 'id + 'count'
                         op = operators.eq
                         agg_name = op_or_agg_name
-                        print('3. agg_name(no op_name)  >> ', agg_name)
+                        # print('3. agg_name(no op_name)  >> ', agg_name)
                         attr_name = attr_name + cls.OPERATOR_OR_AGG_SPLITTER + agg_name
-                        print('4. attr_name  >> ', attr_name)
+                        # print('4. attr_name  >> ', attr_name)
                         column_expr = cls.create_column_expr(mapper, attr_name, type=cls.FILTER_BY)
                         # column = cls.create_column(mapper, attr_name)
 
@@ -919,6 +919,8 @@ class BaseQuery:
                 model, attr_name = alias_map[rel_column_and_attr_name[0]][0], rel_column_and_attr_name[1]
             else:
                 attr_name = key
+                #### 관계___보다 뒤에오는 no 관계 필드에는 model에 다시 cls를 투입해줘야한다
+                model = cls
 
             # 2) filter입력key에 ___가 입력된 model이 entity / 없으면 attr이다
             yield from cls.create_conditional_exprs(model, {attr_name: value})
