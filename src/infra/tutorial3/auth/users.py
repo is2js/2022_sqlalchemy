@@ -169,15 +169,28 @@ class User(BaseModel):
     # => 그 이상으로 가능하도록 처리해야한다.
     # => role_name에 해당하는 Role객체 -> permissions를 구하고
     #   현재유저의 permissions가 크거나 같으면 허용해야한다...
+    # def is_(self, role_enum):
+    #     # with DBConnectionHandler() as db:
+    #     #     role_perm = db.session.execute(select(Role.permissions).where(Role.name == role_name)).scalar()
+    #     #### db로 조회하는 대신, roles dict로 최고권한을 조회한다
+    #     # role_perm = roles[role_name][-1]
+    #     #### dict-> enum으로 바뀌었을때 최고권한
+    #     role_perm = role_enum.value[-1]
+    #     # print(self.role.permissions, role_perm)
+    #     return self.role.permissions >= role_perm
+
+    @hybrid_method
     def is_(self, role_enum):
-        # with DBConnectionHandler() as db:
-        #     role_perm = db.session.execute(select(Role.permissions).where(Role.name == role_name)).scalar()
-        #### db로 조회하는 대신, roles dict로 최고권한을 조회한다
-        # role_perm = roles[role_name][-1]
-        #### dict-> enum으로 바뀌었을때 최고권한
-        role_perm = role_enum.value[-1]
-        # print(self.role.permissions, role_perm)
-        return self.role.permissions >= role_perm
+        #### mysql에서는 enum(Permission).value를 안하면 비교가 안된다.
+        return self.role.permissions >= role_enum.max_permission
+
+    @is_.expression
+    def is_(cls, role_enum, mapper=None):
+
+        mapper = mapper or cls
+        Role_ = mapper.role.property.mapper.class_
+        #### mysql에서는 enum(Permission).value를 안하면 비교가 안된다.
+        return cls.role.has(Role_.permissions >= role_enum.max_permission)
 
     #### permissions 비교는 항상  >=로 하니까
     ####  직원 >= STAFF 를 만들어서 -> 그것의 not으로 User를 골라낸다.
@@ -188,46 +201,7 @@ class User(BaseModel):
     #### where에 들어갈 sql식으로서 True/False를 만드려면 case문을 써야한다?
     @is_staff.expression
     def is_staff(cls):
-        #### 방법1
-        # cls(== User) 를 sub를 사용할 주체entity의 1row씩 들어온다 생각하고
-        # => SQL에서 관계 필드의 대소비교-> True/False는
-        #    (1) subq key 연결조건 +  추가조건으로 대소비교를 걸고 ->
-        #        - cls는 외부 주체entity의 각 row라 생각하자.
-        #        - 추가조건에 관계entity.필드의 조건을 걸어서 대소비교를 한다.
-        #    (2) select 대신 해당 관계데이터가 exists되느냐/ 없느냐로 T/F판단이전에 먼저 판단한다 ->
-        #        - select( Role ) 대신 exists()로 절을 만든다.
-        #    (3) where절에 2entity가 들어갔을 때, 주체entity의 subquery용으로서
-        #       관계entity만 select절에 잡히도록 명시하려면  .correlate(cls)를 붙인다.
-        #       - 일반적으로 join용 데이터는 .subquery()로 만들고 subq.c.칼럼으로 엮서 쓰지만
-        #       - 조건확인을 위한 subquery는 exists() + .correlate( 외부 주체entity ==cls )를 명시해준다.)
-        # subq = (
-        #     exists(1)
-        #     .where(Role.id == cls.role_id)
-        #     .where(Role.permissions >= Roles.STAFF.value[-1])
-        # ).correlate(cls)
-        #### join용 .subquery()가 아니라 where에 쓸 조건문용 subq는 .subquery()달지 않고, .correlcate( 주체entity )를 달아줘서 연결하여 사용될 subq임을 명시한다
-        #### => 안하면 join아닌 from 카다시안으로join된 데이터가 형성 -> from에 2개table이 잡혀버린다.
-
-        # (4) 존재하면 True/존재안하면 False로 => case로 변환해서 주체entity의 where절에 들어갈 수 있게 한다
-        # return select([case([(subq, True)], else_=False)]).label("label")
-        # return select([case([(subq, True)], else_=False)])
-        # WHERE CASE WHEN (EXISTS (SELECT 1
-        # return case([(subq, True)], else_=False)
-
-        # (5) exists문은 case로 T/F없이 바로 필터링 expression으로 작동된다.
-        # WHERE EXISTS (SELECT 1
-        # return subq
-
-        #### 방법2
-        # (1) where에 걸릴 expression으로서,
-        #    - 주체entity.확인할관계entity.any()는 ->기본조건(데이터연결)만 where에 들어간 exists()문이 완성되고
-        #    - 주체entity.확인할관계entity.any( 관계entity로 추가조건 )는 -> 연걸 + 관계entity필드로 추가조건된 exists()문이 완성된다.
-        # (2) any()속에 [추가조건 걸 관계Entity 필드 대소비교]를 넣어주고,
-        #    - 주체가 Many(User)이므로 .has()로 걸어준다.
-
-        # return cls.role.any(Role.permissions >= Roles.STAFF.value[-1])
-        # sqlalchemy.exc.InvalidRequestError: 'any()' not implemented for scalar attributes. Use has().
-        return cls.role.has(Role.permissions >= Roles.STAFF.value[-1])
+        return cls.role.has(Role.permissions >= Roles.STAFF.max_permission)
 
     @hybrid_property
     def is_chiefstaff(self):
@@ -235,7 +209,7 @@ class User(BaseModel):
 
     @is_chiefstaff.expression
     def is_chiefstaff(cls):
-        return cls.role.has(Role.permissions >= Roles.CHIEFSTAFF.value[-1])
+        return cls.role.has(Role.permissions >= Roles.CHIEFSTAFF.max_permission)
 
     @hybrid_property
     def is_executive(self):
@@ -243,7 +217,7 @@ class User(BaseModel):
 
     @is_executive.expression
     def is_executive(cls):
-        return cls.role.has(Role.permissions >= Roles.EXECUTIVE.value[-1])
+        return cls.role.has(Role.permissions >= Roles.EXECUTIVE.max_permission)
 
     @hybrid_property
     def is_administrator(self):
@@ -251,7 +225,7 @@ class User(BaseModel):
 
     @is_administrator.expression
     def is_administrator(cls):
-        return cls.role.has(Role.permissions >= Roles.ADMINISTRATOR.value[-1])
+        return cls.role.has(Role.permissions >= Roles.ADMINISTRATOR.max_permission)
 
     def ping(self):
         self.last_seen = datetime.datetime.now()
@@ -411,6 +385,10 @@ class Roles(enum.Enum):
     ADMINISTRATOR: list = list(EXECUTIVE) + [
         Permission.ADMIN
     ]
+
+    @property
+    def max_permission(self):
+        return self.value[-1].value
 
 
 roles = {
