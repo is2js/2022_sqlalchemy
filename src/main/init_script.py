@@ -1,21 +1,16 @@
 #  flask createsuperuser
-
+import datetime
 
 import click
 from flask import Flask
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-
+from create_database import create_database, Role, Menu, User, Employee, JobStatusType, Department, DepartmentType
 from src.config import project_config
 from src.infra.config.connection import DBConnectionHandler
 
-from create_database import *
-
-
-# from src.infra.tutorial3 import User, Role
-
-
 # app객체를 받아 초기화해주는 메서드
+
 def init_script(app: Flask):
     # app -> terminal용 flask adminuser생성 command를 method형태로 추가
     #     -> terminal용 [flask 메서드명]으로 사용하기 때문에 소문자이어서 지정
@@ -44,7 +39,9 @@ def init_script(app: Flask):
         except IntegrityError:
             # 이미 생성할때 존재하면 생성안하도록 순회해서 걸릴 일은 없을 것 이다.
             click.echo(f'Warning) 이미 Role 데이터가 존재합니다.')
-        except:
+        except Exception as e:
+            print('e  >> ', e)
+
             click.echo(f'Warning) 알수없는 이유로 Role 데이터 생성에 실패했습니다.')
 
 
@@ -53,24 +50,31 @@ def init_script(app: Flask):
     @click.option("--password", prompt=True, hide_input=True, confirmation_prompt=True, help="사용할 password를 입력!")
     def create_admin_user(username, password):
         click.echo('관리자 계정을 생성합니다.')
-        with DBConnectionHandler() as db:
+
+        # with DBConnectionHandler() as db:
             # user = User(username=username, password=generate_password_hash(password), is_super_user=True)
             # user = User(username=username, password=password, is_super_user=True)
+        with DBConnectionHandler() as db:
+            session = db.session
             try:
-                role_admin = db.session.scalars(select(Role).where(Role.name == 'ADMINISTRATOR')).first()
+                # role_admin = db.session.scalars(select(Role).where(Role.name == 'ADMINISTRATOR')).first()
+                # user_admin = User(username=username, password=password, email=project_config.ADMIN_EMAIL,
+                #                   role=role_admin)
 
-                user_admin = User(username=username, password=password, email=project_config.ADMIN_EMAIL,
-                                  role=role_admin)
-                db.session.add(user_admin)
+                admin_role = Role.filter_by(name='ADMINISTRATOR', session=session).first()
+                #### @property대신 @hybrid_property를 사용하는 경우, User(password=)는 작동안되고, User().fill() -> setattr() -> @hybrid의 .setter가 작동되게 한다
+                created_user, _ = User.create(username=username, password=password, email=project_config.ADMIN_EMAIL,
+                                 role=admin_role, session=session)
+                # db.session.add(user_admin)
 
                 #### 관리자도 직원정보를 가져야하므로 생성
                 # print(user_admin.id)  # add만 해도 id가 부여된다.? => 안된다.
-                db.session.flush()
+                # db.session.flush()
                 #### commit()을 하든 flush()를 하던 한번 갔다와야지 id부여된다.
 
-                employee_admin = Employee(user_id=user_admin.id, name='관리자', sub_name='Administrator',
+                employee_admin = Employee(user_id=created_user.id, name='관리자', sub_name='Administrator',
                                           birth='9910101918111',
-                                          join_date=datetime.date.today(), job_status=JobStatusType.재직.value,
+                                          join_date=datetime.datetime.today().date(), job_status=JobStatusType.재직.value,
                                           reference='관리자 계정')
 
                 db.session.add(employee_admin)
@@ -85,8 +89,8 @@ def init_script(app: Flask):
                     f'Warning) Username[{username}]  or Email[{project_config.ADMIN_EMAIL}]이 생성에 실패했습니다.(이미 존재 하는 정보)')
 
             except Exception as e:
-                print(e)
                 db.session.rollback()
+                raise e
 
                 click.echo(f'Warning) 알 수 없는 이유로 관리자계정 생성에 실패하였습니다.')
 
