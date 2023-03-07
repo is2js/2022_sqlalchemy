@@ -14,6 +14,8 @@ from src.infra.tutorial3 import Category, Setting, Permission, Roles
 
 ## Path.cwd()는 실행파일(root의 run.py)의 위치가 찍힌다 -> root부터 경로잡기
 # -> path는 joinpath시 끝이 디렉토리라면 / 까지 넣어줘야한다.
+from src.main.init_script import init_script
+from src.main.utils.format_date import format_date, format_datetime, format_timedelta
 
 template_dir = str(Path.cwd().joinpath('src/main/templates/'))
 static_dir = str(Path.cwd().joinpath('src/main/static/'))
@@ -45,8 +47,7 @@ def create_app(config_name='default'):
     CORS(app)
 
     ## 필터 추가
-    from src.main.templates.filters import feed_datetime, join_phone, join_birth, format_date, format_datetime, \
-        format_timedelta
+    from src.main.templates.filters import feed_datetime, join_phone, join_birth
     app.jinja_env.filters["feed_datetime"] = feed_datetime
     app.jinja_env.filters["join_phone"] = join_phone
     app.jinja_env.filters["join_birth"] = join_birth
@@ -82,7 +83,6 @@ def create_app(config_name='default'):
     app.context_processor(inject_permission)
 
     ## [flask xxxx] 명령어 추가
-    from src.main.utils import init_script
     init_script(app)
 
     ## 오류페이지 등록

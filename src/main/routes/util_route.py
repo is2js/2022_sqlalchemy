@@ -1,7 +1,6 @@
 from flask import request, url_for, Blueprint
 
-from src.main.config import app
-from src.main.utils.decorators import login_required
+from src.main.decorators.decorators import login_required
 from src.main.utils import upload_file_path
 
 util_bp = Blueprint("util", __name__, url_prefix='/util')

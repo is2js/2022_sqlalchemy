@@ -6,11 +6,11 @@ from sqlalchemy.orm import contains_eager
 
 from src.infra.config.connection import DBConnectionHandler
 from src.infra.tutorial3 import User, EmployeeInvite, Role, Employee
+from src.main.decorators.decorators import login_required
 from src.main.forms.auth import LoginForm, RegisterForm, UserInfoForm
 from src.main.forms.auth.forms import EmployeeForm, EmployeeInfoForm
-from src.main.templates.filters import format_date
 from src.main.utils import upload_file_path, delete_uploaded_file, redirect_url
-from src.main.utils.decorators import login_required
+from src.main.utils.format_date import format_date
 
 auth_bp = Blueprint("auth", __name__, url_prefix='/auth')
 
@@ -32,15 +32,31 @@ def load_logged_in_user():
     if not user_id:
         g.user = None
     else:
-        with DBConnectionHandler() as db:
-            g.user = db.session.get(User, user_id)
+        # with DBConnectionHandler() as db:
+        #     g.user = db.session.scalars(
+        #         select(User)
+        #         .select_from(User) # eagerload시 select_from 필수
+        #         .options(selectinload('role'))
+        #         .filter_by(id=user_id)
+        #     ).first()
+
+
+        #### g.user는 기본 one to one role을 이용하므로, load해서 불러온다.
+        # 순서 중요. eagerload한 것을 넣어주고, update하면 eagerload안된 것이 반영됨.
+        user = User.load({'role': 'selectin'}).filter_by(id=user_id).first()
+        g.user = user
+        # 별개로 진행. eagerload된 user객체 <-> update에서 쓰면 안됨.
+        User.ping_by_id(user_id)
+
+        # with DBConnectionHandler() as db:
+        #     g.user = db.session.get(User, user_id)
             # 1) 내부 db 세션으로 ping하고 -> 여기 db 세션으로 user를 배정하면 -> 세션 중복
             # 2) 여기 db 세션으로 g.user 배정 후, 해당 객체를 update한다고 접근하면 -> subquery 1회 이미 사용된 것으로 에러
             #  => g.user가 g.user가 g.user.role 등을 required를 처리할 때 db를 조회해야한다
             #  => last_seen업뎃은 g.user와 별개로 따로 해줘야한다.
 
         # g.user와 별개세션으로 로그인된 유저의 ping() -> last_seen 업뎃
-        User.ping_by_id(user_id)
+        # User.ping_by_id(user_id)
 
         #
         # # 5) [권한처리2]: 로그인된 유저들 중에서 [권한필드 -> 권한확인후 동적으로 .has_perm필드에 동적으로 권한부여]한다.
@@ -536,7 +552,7 @@ def employee_invite_accept(id):
                     leave_date=None,
                 )
 
-                prev_employee.update_reference(f'재입사({format_date(form.join_date.data)})')
+                prev_employee.fill_reference(f'재입사({format_date(form.join_date.data)})')
 
                 db.session.add(prev_employee)
                 # db.session.commit()

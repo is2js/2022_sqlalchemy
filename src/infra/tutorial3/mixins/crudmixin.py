@@ -40,6 +40,10 @@ class CRUDMixin(Base, ObjectMixin):
     def create(cls, session: Session = None, auto_commit: bool = True, **kwargs):
         """
         Category.create(name='123')
+
+        다대다로서 fk가 없는 경우, Many객체들을 변환후 fill되도록 변환하여 relation(list)에 입력
+        data['tags'] = [Tag.get(tag_id) for tag_id in data.get('tags', [])]
+        result, msg = Post.create(**data)
         """
         # obj = cls.create_obj(session=session, **kwargs)
         obj = cls.create_obj(session=session)
@@ -123,14 +127,23 @@ class CRUDMixin(Base, ObjectMixin):
     # for create + for update  ## 실행메서드 ##
     def save(self, auto_commit: bool = True):
         #### try/catch는 외부세션을 넣어주는데서 할 것이다?
+        print('self  >> ', self.__dict__)
+
         self._session.add(self)
+        print('adddd  >> ')
+
         # 1. add후 id, 등 반영하기 위해 [자체생성/외부받은 session 상관없이] flush를 때려준다.
         self._session.flush()
+        print('flush  >> ')
         # 2. 외부session인 경우, 외부의 마지막 옵션으로 더이상 사용안한다면 밖에서 auto_commit=True로 -> commit()을 때려 close시킨다.
         # => self.close()는 외부session을 flush()만 시키는데, 외부session이 CUD하는 경우, 자체적으로 commit()해야한다.
         # => 외부에서 더 쓴다면, 외부에서 sessino=sesion만 넣고 auto_commit 안하면 된다.
+
+        print('auto_commit  >> ', auto_commit)
+
         if auto_commit:
             self._session.commit()
+            print('commit  >> ')
 
         return self
 
@@ -140,6 +153,27 @@ class CRUDMixin(Base, ObjectMixin):
     @class_or_instancemethod
     def load(cls, schema: dict, session: Session = None):
         """
+        *ManyToOne: subquery or selectin
+        *OneToMany: joined를 추천한다.
+
+        *전제조건:보통 oneToMany라서, relationship을 lazy='dynmaic'(=접근시만 불러오기 eagerload(X))을 줘서
+                one.many에 접근 후 순회해서 처리하지만, eagerload와는 정반대 개념으로서,
+        #       load는 lazy='dynamic'이 없는 relationship에 대해서만 작동하므로.
+        #       many에 대한 relationship에 lazy='dynamic'을 주면 안된다.
+        * mixin의 객체1개 조회 개념이 .first()/.all()시 이미 one을 detached한 상태에서 조회만 하기 때문에
+         =>, one.many를 부르기 전 one이 session에 detached된 상태로 dynamic을 이용한 연계가 안된다.
+        ex1> employee_departments = relationship('EmployeeDepartment', lazy='dynamic')
+            => Employee.load({'employee_departments':'selectin'}).filter_by(id=1).first()
+              'Employee.employee_departments' does not support object population - eager loading cannot be applied.
+            => emp = Employee.get(2) / [emp_dept for emp_dept in emp.employee_departments]
+               SAWarning: Instance <Employee at 0x1d41dbc44a8> is detached, dynamic relationship cannot return a correct result.   This warning will become a DetachedInstanceError in a future release.
+
+        ex2> employee_departments = relationship('EmployeeDepartment')
+             emp = Employee.load({'employee_departments':'selectin'}).filter_by(id=1).first()
+             emp.employee_departments
+            => []
+
+
         filter_by /order_by/ havaing의 attrs로 입력하지 않고 바로 eagerload를 수행하도록 schema를 입력함.
         - dict형식으로 입력하되, 하위entity는 ('상위entity-load type', { '하위entity': '하위entity load type'} )로 value에 tuple을 활용
         - tuple 생략시 joined로 load됨.
@@ -287,6 +321,10 @@ class CRUDMixin(Base, ObjectMixin):
             pk_for_search = cls.first_primary_key_name
 
             if len(args) == 1:
+                # None 입력 추가처리
+                if not args:
+                    return None
+
                 # obj = cls.create_obj(session=session, filter_by={pk_for_search: args[0]})
                 #### id 1개만 입력할 경우, session.get()으로 찾도록 변경
                 obj = cls.create_obj(session=session)
@@ -468,30 +506,30 @@ class CRUDMixin(Base, ObjectMixin):
         c.update(name='카테고리1') # (False, '값의 변화가 없어서 업데이트 실패)
         c.update(name='카테고리111') # (<Category>, '업데이트 성공')
 
-        ***업데이트후 조회 등을 하려면 반드시 auto_commit=False
-        c2 = Category.get(2, session=s)
-        c2.update(name='122333b', session=s, auto_commit=False) => auto_commit=True로 커밋되면 뒤에서 확인못한다.
-        c2.to_dict(session=s)
-        s.commit()
+        다대다로서 fk가 없는 경우, Many객체들을 변환후 fill되도록 변환하여 relation(list)에 입력
+        data['tags'] = [Tag.get(tag_id) for tag_id in data.get('tags', [])]
+        result, msg = post.update(**data)
         ----
         return self, '업데이트 성공'
         False, '업데이트 실패'
         """
         # create: cls(**kwargs).init_obj()
         try:
-            is_updated = self.fill(**kwargs)
+            # is_updated = self.fill(**kwargs)
+            #
+            # if is_updated:
 
-            if is_updated:
-                updated_obj = self.init_obj(session=session).save(auto_commit=auto_commit)
+            self.fill(**kwargs)
+            updated_obj = self.init_obj(session=session).save(auto_commit=auto_commit)
 
-                # model_obj를 직접 변환시, 재호출을 위해 초기화 취소 -> 재호출해도 다 다시 초기화되며,  session 등을 지우면, 외부session이 날아가버리는 부작용으로 취소
-                # self.close_model_obj()
-                # print('updated_obj.name  >> ', updated_obj.name)
+            # model_obj를 직접 변환시, 재호출을 위해 초기화 취소 -> 재호출해도 다 다시 초기화되며,  session 등을 지우면, 외부session이 날아가버리는 부작용으로 취소
+            # self.close_model_obj()
+            # print('updated_obj.name  >> ', updated_obj.name)
 
-                return updated_obj, '업데이트 성공'
-            else:
-                # self.close_model_obj()
-                return False, '값의 변화가 없어서 업데이트 실패'
+            return updated_obj, '업데이트 성공'
+            # else:
+            #     # self.close_model_obj()
+            #     return False, '값의 변화가 없어서 업데이트 실패'
 
         except Exception as e:
             print(e)
@@ -505,6 +543,18 @@ class CRUDMixin(Base, ObjectMixin):
         """
         c1 = Category.first()
         c1.delete()
+        ----
+        관계객체들의 추가처리가 필요한 경우 -> load로 해당 객체들을 eagerload후 처리
+
+        category = Category.load({'posts':'subquery'}).filter_by(id=id).first()
+
+        # post cascading 되기 전에, content에서 이미지 소스 가져와 삭제하기
+        if category.posts:
+            for post in category.posts:
+                delete_files_in_img_tag(post.content)
+
+        result, msg = category.delete()
+
         """
         self.init_obj(session=session)
 

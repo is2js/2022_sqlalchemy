@@ -1,28 +1,19 @@
 from datetime import date, datetime
-
 import pyecharts
-from dateutil.relativedelta import relativedelta
+from flask import Blueprint, render_template, request, flash, redirect, url_for, g, make_response, session
 
-from flask import Blueprint, render_template, request, flash, redirect, url_for, g, make_response
-from pyecharts import options as opts
-from pyecharts.charts import Bar, Pie
-from sqlalchemy import select, func, text, literal_column, column, and_, cast, \
-    Integer, exists, or_
-from sqlalchemy.dialects import postgresql, mysql, sqlite
-
-from src.infra.commons import paginate
 from src.infra.config.connection import DBConnectionHandler
 from src.infra.tutorial3.wrapper.chartwrapper import Chart
-from src.infra.utils.pyechart_wrapper import Chart as PrevChart
 from src.infra.tutorial3 import Category, Post, Tag, User, Banner, Setting, Department
-from src.infra.tutorial3.auth.users import SexType, Roles, Role, EmployeeInvite, JobStatusType, Employee
-from src.infra.tutorial3.mixins.base_query import StaticsQuery
+from src.infra.tutorial3.auth.users import SexType, Roles, Role, EmployeeInvite, JobStatusType, Employee, \
+    EmployeeLeaveHistory
+from src.main.decorators.decorators import login_required, role_required
 from src.main.forms import CategoryForm
 from src.main.forms.admin.forms import PostForm, TagForm, CreateUserForm, BannerForm, SettingForm
 from src.main.forms.auth.forms import EmployeeForm
-from src.main.utils import login_required, role_required, redirect_url
+from src.main.utils import redirect_url
 from src.main.utils import upload_file_path, delete_uploaded_file, delete_files_in_img_tag
-from src.main.utils.to_string import to_string_date
+from src.main.utils.format_date import format_date
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 
@@ -759,13 +750,16 @@ def category_edit(id):
     form = CategoryForm(category)
 
     if form.validate_on_submit():
+        # print('form.data  >> ', form.data)
+        # {'name': 'fgasdd', 'icon': '', 'csrf_token': 'IjY2ZDkwMzcyMDg2NDcxY2M5YjEyNmQ4OThhZDhiZTg2ZjU4MmUzODQi.ZANJ-Q.iGlbT3hIDHydBI9MfvUxwysyrcY'}
 
-        target_name = form.name.data
-        target_icon = form.icon.data if len(form.icon.data) > 0 else None  # 수정form화면에서 암것도 없으면 ''이 올 것이기 때무네
+        data = form.data
+        if not len(data['icon']):
+            data['icon'] = None
 
         # get/update시 각각 개별 session으로
         category: Category = Category.get(id)
-        result, msg = category.update(name=target_name, icon=target_icon, auto_commit=True)
+        result, msg = category.update(**data)
         # with DBConnectionHandler() as db:
         #     session = db.session
         #
@@ -774,7 +768,7 @@ def category_edit(id):
         #                                   session=session) # commit하면,
 
         if result:
-            success_msg = f'{result.name} {msg}'
+            success_msg = f'{category.name} {msg}'
             flash(success_msg)
             return redirect(url_for('admin.category'))
 
@@ -817,8 +811,12 @@ def category_delete(id):
     if category.posts:
         for post in category.posts:
             delete_files_in_img_tag(post.content)
+
     result, msg = category.delete()
-    flash(f'{result.name} Category 삭제 완료.')
+    if result:
+        flash(f'{result.name} Category 삭제 완료.')
+    else:
+        flash(f'{msg}')
     return redirect(url_for('admin.category'))
 
 
@@ -844,38 +842,66 @@ def category_delete(id):
 def article():
     page = request.args.get('page', 1, type=int)
 
-    stmt = select(Post).order_by(Post.add_date.desc())
-    pagination = paginate(stmt, page=page, per_page=10)
+    pagination = Post.order_by('-add_date').paginate(page, per_page=10)
+    # stmt = select(Post).order_by(Post.add_date.desc())
+    # pagination = paginate(stmt, page=page, per_page=10)
     post_list = pagination.items
 
     return render_template('admin/article.html',
                            post_list=post_list, pagination=pagination)
 
 
+# @admin_bp.route('/article/add', methods=['GET', 'POST'])
+# @login_required
+# @role_required(allowed_roles=[Roles.STAFF])
+# def article_add():
+#     form = PostForm()
+#
+#     if form.validate_on_submit():
+#         post = Post(
+#             title=form.title.data,
+#             desc=form.desc.data,
+#             content=form.content.data,
+#             # form에서 올라온 value는 coerce=int에 의해 int value가 올라오고 -> 그대로 집어넣으면, 알아서 enum필드객체로 변환된다.
+#             has_type=form.has_type.data,
+#             category_id=form.category_id.data,
+#         )
+#
+#         with DBConnectionHandler() as db:
+#             # 2) 다대다에 해당하는 tags를 한꺼번에 추가해줘야한다. 개별객체, append보다는 객체 list를 만들어서, 넣어주자.
+#             # -> form에서 오는 data는, 숫자list가 될 것이다?
+#             post.tags = [db.session.get(Tag, tag_id) for tag_id in form.tags.data]
+#             db.session.add(post)
+#             db.session.commit()
+#         flash(f'{form.title.data} Post 생성 성공!')
+#         return redirect(url_for('admin.article'))
+#
+#     errors = [{'field': key, 'messages': form.errors[key]} for key in form.errors.keys()] if form.errors else []
+#
+#     return render_template('admin/article_form.html',
+#                            form=form, errors=errors)
 @admin_bp.route('/article/add', methods=['GET', 'POST'])
 @login_required
 @role_required(allowed_roles=[Roles.STAFF])
 def article_add():
     form = PostForm()
+    # print('form.data  >> ', form.data)
+    # form.data  >>  {'title': None, 'desc': None, 'content': None, 'has_type': 2, 'category_id': None, 'tags': None, 'csrf_token': None}
+    #### => form객체로 넘어오는 데이터는, .data가 dict로 뽑아내진다
+    #####   cf) form객체 없는 post의 경우, 1) HTML FORM request.form 2) AXIOS 등 request.get_json()
 
     if form.validate_on_submit():
-        post = Post(
-            title=form.title.data,
-            desc=form.desc.data,
-            content=form.content.data,
-            # form에서 올라온 value는 coerce=int에 의해 int value가 올라오고 -> 그대로 집어넣으면, 알아서 enum필드객체로 변환된다.
-            has_type=form.has_type.data,
-            category_id=form.category_id.data,
-        )
+        # 1. form에서 올라온 value는 coerce=int에 의해 int value가 올라오고 -> 그대로 집어넣으면, 알아서 enum필드객체로 변환된다.
+        # 2. 다대다 중간테이블 -> fk 필드를 안가지고 있는데, tags에 id(int)값들이 올라왔다면 creat->field에서 말고 따로 처리를 해줘야한다.
+        #   먼저 Many쪽 객체들을 다 찾은 다음, 객체.관계 ( list)에 할당해줘야한다.
+        data = form.data  # 따로 안빼놓으면 수정 안됨.
+        data['tags'] = [Tag.get(tag_id) for tag_id in data.get('tags', [])]
+        result, msg = Post.create(**data)
+        if result:
+            flash(f'{result.title} Post 생성 성공!')
+            return redirect(url_for('admin.article'))
 
-        with DBConnectionHandler() as db:
-            # 2) 다대다에 해당하는 tags를 한꺼번에 추가해줘야한다. 개별객체, append보다는 객체 list를 만들어서, 넣어주자.
-            # -> form에서 오는 data는, 숫자list가 될 것이다?
-            post.tags = [db.session.get(Tag, tag_id) for tag_id in form.tags.data]
-            db.session.add(post)
-            db.session.commit()
-        flash(f'{form.title.data} Post 생성 성공!')
-        return redirect(url_for('admin.article'))
+        flash(f'{msg}')
 
     errors = [{'field': key, 'messages': form.errors[key]} for key in form.errors.keys()] if form.errors else []
 
@@ -887,31 +913,20 @@ def article_add():
 @login_required
 @role_required(allowed_roles=[Roles.STAFF])
 def article_edit(id):
-    with DBConnectionHandler() as db:
-        post = db.session.get(Post, id)
-
+    post = Post.get(id)
     form = PostForm(post)
 
     if form.validate_on_submit():
-        with DBConnectionHandler() as db:
-            post = db.session.get(Post, id)
+        data = form.data
+        data['tags'] = [Tag.get(tag_id) for tag_id in data.get('tags', [])]
+        result, msg = post.update(**data)
 
-            post.title = form.title.data
-            post.desc = form.desc.data
-            post.content = form.content.data
-            # 2) form에서 올라온 value는 coerce=int에 의해 int value가 올라오고
-            #   -> 그대로 집어넣으면, 알아서 enum필드객체로 변환된다.
-            post.has_type = form.has_type.data
-            post.category_id = form.category_id.data
-
-            post.tags = [db.session.get(Tag, tag_id) for tag_id in form.tags.data]
-
-            db.session.add(post)
-            db.session.commit()
-
-            flash(f'{form.title.data} Post 수정 완료.')
+        if result:
+            flash(f'{result.title} Post 수정 완료.')
             return redirect(url_for('admin.article'))
-    #
+
+        flash(msg)
+
     errors = [{'field': key, 'messages': form.errors[key]} for key in form.errors.keys()] if form.errors else []
 
     return render_template('admin/article_form.html', form=form, errors=errors)
@@ -921,17 +936,18 @@ def article_edit(id):
 @login_required
 @role_required(allowed_roles=[Roles.STAFF])
 def article_delete(id):
-    with DBConnectionHandler() as db:
-        post = db.session.get(Post, id)
+    post = Post.get(id)
 
-        # img태그 속 src를 찾아, 해당 파일 경로를 추적하여 삭제
-        delete_files_in_img_tag(post.content)
+    # img태그 속 src를 찾아, 해당 파일 경로를 추적하여 삭제
+    delete_files_in_img_tag(post.content)
 
-        if post:
-            db.session.delete(post)
-            db.session.commit()
-            flash(f'{post.title} Post 삭제 완료.')
-            return redirect(url_for('admin.article'))
+    result, msg = post.delete()
+    if result:
+        flash(f'{post.title} Post 삭제 완료.')
+    else:
+        flash(msg)
+
+    return redirect(url_for('admin.article'))
 
 
 @admin_bp.route('/tag')
@@ -939,8 +955,10 @@ def article_delete(id):
 def tag():
     page = request.args.get('page', 1, type=int)
 
-    stmt = select(Tag).order_by(Tag.add_date.desc())
-    pagination = paginate(stmt, page=page, per_page=10)
+    # stmt = select(Tag).order_by(Tag.add_date.desc())
+    # pagination = paginate(stmt, page=page, per_page=10)
+    pagination = Tag.order_by('-add_date').paginate(page, per_page=10)
+
     tag_list = pagination.items
 
     return render_template('admin/tag.html',
@@ -954,12 +972,12 @@ def tag_add():
     form = TagForm()
 
     if form.validate_on_submit():
-        tag = Tag(name=form.name.data)
-        with DBConnectionHandler() as db:
-            db.session.add(tag)
-            db.session.commit()
-        flash(f'{form.name.data} Tag 생성 성공!')
-        return redirect(url_for('admin.tag'))
+        result, msg = Tag.create(**form.data)
+        if result:
+            flash(f'{form.name.data} Tag 생성 성공!')
+            return redirect(url_for('admin.tag'))
+
+        flash(msg)
 
     errors = [{'field': key, 'messages': form.errors[key]} for key in form.errors.keys()] if form.errors else []
 
@@ -970,19 +988,16 @@ def tag_add():
 @login_required
 @role_required(allowed_roles=[Roles.STAFF])
 def tag_edit(id):
-    with DBConnectionHandler() as db:
-        tag = db.session.get(Tag, id)
+    tag = Tag.get(id)
 
     form = TagForm(tag)
-
     if form.validate_on_submit():
-        prev_name = tag.name  # 변경 전 이름을 가져다 놓기 cf) 로그인 기록처럼 log table을 만들어도 될듯?
-        tag.name = form.name.data
-        db.session.add(tag)
-        db.session.commit()
+        result, msg = tag.update(**form.data)
 
-        flash(f'{prev_name}->{form.name.data} Tag 수정 완료.')
-        return redirect(url_for('admin.tag'))
+        if result:
+            flash(f'{tag} {msg}')
+            return redirect(url_for('admin.tag'))
+        flash(msg)
 
     errors = [{'field': key, 'messages': form.errors[key]} for key in form.errors.keys()] if form.errors else []
 
@@ -993,14 +1008,13 @@ def tag_edit(id):
 @login_required
 @role_required(allowed_roles=[Roles.STAFF])
 def tag_delete(id):
-    with DBConnectionHandler() as db:
-        tag = db.session.get(Tag, id)
-
-        if tag:
-            db.session.delete(tag)
-            db.session.commit()
-            flash(f'{tag.name} Tag 삭제 완료.')
-            return redirect(url_for('admin.tag'))
+    tag = Tag.get(id)
+    result, msg = tag.delete()
+    if result:
+        flash(f'{tag} {msg}')
+    else:
+        flash(msg)
+    return redirect(url_for('admin.tag'))
 
 
 @admin_bp.route('/user')
@@ -1010,24 +1024,29 @@ def user():
 
     # stmt = select(User).order_by(User.add_date.desc())
     # ~User.is_staff => only user
-    stmt = select(User) \
-        .where(~User.is_staff) \
-        .order_by(User.add_date.desc())
+    # stmt = select(User) \
+    #     .where(~User.is_staff) \
+    #     .order_by(User.add_date.desc())
 
-    # print(stmt)
+    pagination = User.load({'role': 'selectin'}).filter_by(is_staff=False).order_by('-add_date').paginate(page,
+                                                                                                          per_page=10)
 
-    pagination = paginate(stmt, page=page, per_page=10)
+    # pagination = paginate(stmt, page=page, per_page=10)
     user_list = pagination.items
+    print('user_list  >> ', user_list)
+
 
     #### 직원초대시 modal에 띄울 role_list를 건네주기
-    with DBConnectionHandler() as db:
-        role_list = db.session.scalars(
-            select(Role)
-            .where(Role.is_(Roles.STAFF))  # 상수 STAFF이상이면서
-            .where(Role.is_under(g.user.role))  # Role객체의 permissions가 현재 직원의 Roles보다는 적게
-        ).all()
-
+    # with DBConnectionHandler() as db:
+    #     role_list = db.session.scalars(
+    #         select(Role)
+    #         .where(Role.is_(Roles.STAFF))  # 상수 STAFF이상이면서
+    #         .where(Role.is_under(g.user.role))  # Role객체의 permissions가 현재 직원의 Roles보다는 적게
+    #     ).all()
     # print(role_list) # [<Role 'STAFF'>, <Role 'DOCTOR'>, <Role 'CHIEFSTAFF'>, <Role 'EXECUTIVE'>]
+    role_list = Role.filter_by(is_=Roles.STAFF, is_under=g.user.role).all()
+    # print('role_list  >> ', role_list)
+    # role_list  >>  [<Role 'STAFF'>, <Role 'DOCTOR'>, <Role 'CHIEFSTAFF'>, <Role 'EXECUTIVE'>]
 
     return render_template('admin/user.html',
                            user_list=user_list, pagination=pagination,
@@ -1035,103 +1054,173 @@ def user():
                            )
 
 
+# @admin_bp.route('/user/add', methods=['GET', 'POST'])
+# @login_required
+# @role_required(allowed_roles=[Roles.CHIEFSTAFF])
+# def user_add():
+#     # form = CreateUserForm(g.user)
+#     form = CreateUserForm()
+#
+#     # with DBConnectionHandler() as db:
+#     #     roles = db.session.scalars(select(Role).where(Role.permissions < g.user.role.permissions)).all()
+#     # self.role_id.choices = [(role.id, role.name) for role in roles]
+#     # form.role_id.choices = [(role.id, role.name) for role in roles if role.name != Roles.ADMINISTRATOR.name]
+#
+#     if form.validate_on_submit():
+#         # print('form.data  >> ', form.data)
+#         # form.data  >>  {'username': 'user추가', 'password': '1234', 'email': '123123@123123.com', 'is_super_user': False, 'is_active': True, 'is_staff': False, 'avatar': None,
+#         # 'csrf_token': 'IjY2ZDkwMzcyMDg2NDcxY2M5YjEyNmQ4OThhZDhiZTg2ZjU4MmUzODQi.ZAN_2w.m7BcXt-rUEHVHKXd-5DqubEof40'}
+#
+#         # print("boolean은 체크되면 뭐로 넘어오나", form.is_super_user.data)
+#         # -> BooleanField는 value는 'y'로 차있지만, check되면 True로 넘어온다
+#         user = User(
+#             username=form.username.data,
+#             # 3) password는 hash로 만들어서 넣어야한다.
+#             # password=generate_password_hash(form.password.data),
+#             password=form.password.data,
+#             email=form.email.data,
+#             # 4) db에 저장한 update된 '개별폴더/filename'으로 한다.
+#             #  -> file이 없는 경우를 대비해서 setter형식으로 넣어주자.
+#             # avatar=f'avatar/{filename}',
+#             is_active=form.is_active.data,
+#             # is_super_user=form.is_super_user.data,
+#             # is_staff=form.is_staff.data,
+#             ### is_staff필드가가 hybrid_property랑 동일해서 결국 지우든지 바꿔야함.
+#         )
+#
+#         # 1) file 업로드 관련 유틸을 import한뒤,
+#         #   form에서 받은 file객체f 를 통해 -> 저장full경로 + filename만 반환받는다.
+#         f = form.avatar.data
+#         if f:
+#             avatar_path, filename = upload_file_path(directory_name='avatar', file=f)
+#             # print(f"avatar_path, filename >>> {avatar_path, filename}")
+#             # 2) f(file객체)를 .save( 저장경로 )로 저장한다.
+#             f.save(avatar_path)
+#             user.avatar = f'avatar/{filename}'
+#
+#         with DBConnectionHandler() as db:
+#             db.session.add(user)
+#             db.session.commit()
+#
+#         flash(f'{form.username.data} User 생성 성공!')
+#         return redirect(url_for('admin.user'))
+#
+#     errors = [{'field': key, 'messages': form.errors[key]} for key in form.errors.keys()] if form.errors else []
+#
+#     return render_template('admin/user_form.html', form=form, errors=errors)
+
+
 @admin_bp.route('/user/add', methods=['GET', 'POST'])
 @login_required
 @role_required(allowed_roles=[Roles.CHIEFSTAFF])
 def user_add():
-    # form = CreateUserForm(g.user)
     form = CreateUserForm()
 
-    # with DBConnectionHandler() as db:
-    #     roles = db.session.scalars(select(Role).where(Role.permissions < g.user.role.permissions)).all()
-    # self.role_id.choices = [(role.id, role.name) for role in roles]
-    # form.role_id.choices = [(role.id, role.name) for role in roles if role.name != Roles.ADMINISTRATOR.name]
-
     if form.validate_on_submit():
-        # print("boolean은 체크되면 뭐로 넘어오나", form.is_super_user.data)
-        # -> BooleanField는 value는 'y'로 차있지만, check되면 True로 넘어온다
-        user = User(
-            username=form.username.data,
-            # 3) password는 hash로 만들어서 넣어야한다.
-            # password=generate_password_hash(form.password.data),
-            password=form.password.data,
-            email=form.email.data,
-            # 4) db에 저장한 update된 '개별폴더/filename'으로 한다.
-            #  -> file이 없는 경우를 대비해서 setter형식으로 넣어주자.
-            # avatar=f'avatar/{filename}',
-            is_active=form.is_active.data,
-            # is_super_user=form.is_super_user.data,
-            # is_staff=form.is_staff.data,
-            ### is_staff필드가가 hybrid_property랑 동일해서 결국 지우든지 바꿔야함.
-        )
+        # print('form.data  >> ', form.data)
+        # form.data  >>  {'username': 'user추가', 'password': '1234', 'email': '123123@123123.com', 'is_super_user': False, 'is_active': True, 'is_staff': False, 'avatar': None,
+        # 'csrf_token': 'IjY2ZDkwMzcyMDg2NDcxY2M5YjEyNmQ4OThhZDhiZTg2ZjU4MmUzODQi.ZAN_2w.m7BcXt-rUEHVHKXd-5DqubEof40'}
+        data = form.data
+        data = {key: value for key, value in data.items() if
+                key in ['username', 'password', 'email', 'is_active', 'avatar']}
+        if data.get('avatar'):
+            avatar_file = data.get('avatar')
+            avatar_path, filename = upload_file_path(directory_name='avatar', file=avatar_file)
+            avatar_file.save(avatar_path)
+            data['avatar'] = f'avatar/{filename}'
 
-        # 1) file 업로드 관련 유틸을 import한뒤,
-        #   form에서 받은 file객체f 를 통해 -> 저장full경로 + filename만 반환받는다.
-        f = form.avatar.data
-        if f:
-            avatar_path, filename = upload_file_path(directory_name='avatar', file=f)
-            # print(f"avatar_path, filename >>> {avatar_path, filename}")
-            # 2) f(file객체)를 .save( 저장경로 )로 저장한다.
-            f.save(avatar_path)
-            user.avatar = f'avatar/{filename}'
+        result, msg = User.create(**data)
+        if result:
+            flash(f'{result.username} User 생성 성공!')
+            return redirect(url_for('admin.user'))
 
-        with DBConnectionHandler() as db:
-            db.session.add(user)
-            db.session.commit()
-
-        flash(f'{form.username.data} User 생성 성공!')
-        return redirect(url_for('admin.user'))
+        flash(msg)
 
     errors = [{'field': key, 'messages': form.errors[key]} for key in form.errors.keys()] if form.errors else []
 
     return render_template('admin/user_form.html', form=form, errors=errors)
 
 
+# @admin_bp.route('/user/edit/<int:id>', methods=['GET', 'POST'])
+# @login_required
+# @role_required(allowed_roles=[Roles.CHIEFSTAFF])
+# def user_edit(id):
+#     with DBConnectionHandler() as db:
+#         user = db.session.get(User, id)
+#
+#     # form = CreateUserForm(g.user, user=user)
+#     # 더이상 User관리에서 직접 역할 주기위한 직원g.user를 집어넣지 않는다.
+#     form = CreateUserForm(user=user)
+#
+#     if form.validate_on_submit():
+#         # username은 수정못하게 걸어놧으니 pasword부터 처리한다.
+#         # password는 데이터가 들어온 경우만 -> hash걸어서 저장한다.
+#         # print(f"form.password.data>>>{form.password.data}")
+#         if form.password.data:
+#             # user.password = generate_password_hash(form.password.data)
+#             user.password = form.password.data
+#         # avatar의 경우, 현재 db필드인 'avatar/파일명'이 data로 들어가있지만,
+#         # -> 파일명(기존 user.avatar값과 동일)이 아닌 file객체가data로 온 경우만, 새롭게 upload하는 처리를 해준다.
+#         f = form.avatar.data
+#         # print(f"f>>>{f}")
+#         if f != user.avatar:
+#             avatar_path, filename = upload_file_path(directory_name='avatar', file=f)
+#             f.save(avatar_path)
+#
+#             # user.avatar 덮어쓰기 전에, db에 저장된 경로를 바탕으로 -> upload폴더에서 기존 file삭제
+#             # -> 기존 user.avatar에 암것도 없어도 안에서 바로 종료되도록 예외처리
+#             delete_uploaded_file(directory_and_filename=user.avatar)
+#
+#             user.avatar = f'avatar/{filename}'
+#
+#         # 나머지 필드도 변경
+#         user.email = form.email.data
+#         user.role_id = form.role_id.data
+#         user.is_active = form.is_active.data
+#         # user.is_super_user = form.is_super_user.data
+#         # user.is_staff = form.is_staff.data
+#
+#         with DBConnectionHandler() as db:
+#             db.session.add(user)
+#             db.session.commit()
+#
+#         flash(f'{form.username.data} User 수정 완료.')
+#         return redirect(url_for('admin.user'))
+#
+#     errors = [{'field': key, 'messages': form.errors[key]} for key in form.errors.keys()] if form.errors else []
+#
+#     return render_template('admin/user_form.html', form=form, errors=errors)
+
 @admin_bp.route('/user/edit/<int:id>', methods=['GET', 'POST'])
 @login_required
 @role_required(allowed_roles=[Roles.CHIEFSTAFF])
 def user_edit(id):
-    with DBConnectionHandler() as db:
-        user = db.session.get(User, id)
-
-    # form = CreateUserForm(g.user, user=user)
-    # 더이상 User관리에서 직접 역할 주기위한 직원g.user를 집어넣지 않는다.
+    user = User.get(id)
     form = CreateUserForm(user=user)
 
     if form.validate_on_submit():
-        # username은 수정못하게 걸어놧으니 pasword부터 처리한다.
-        # password는 데이터가 들어온 경우만 -> hash걸어서 저장한다.
-        # print(f"form.password.data>>>{form.password.data}")
-        if form.password.data:
-            # user.password = generate_password_hash(form.password.data)
-            user.password = form.password.data
-        # avatar의 경우, 현재 db필드인 'avatar/파일명'이 data로 들어가있지만,
-        # -> 파일명(기존 user.avatar값과 동일)이 아닌 file객체가data로 온 경우만, 새롭게 upload하는 처리를 해준다.
-        f = form.avatar.data
-        # print(f"f>>>{f}")
-        if f != user.avatar:
-            avatar_path, filename = upload_file_path(directory_name='avatar', file=f)
-            f.save(avatar_path)
+        data = form.data
+        data = {key: value for key, value in data.items() if
+                key in ['password', 'email', 'is_active', 'avatar', 'role_id']}
+        if not data.get('password', None):
+            del data['password']
+        if data.get('avatar') and user.avatar != data.get('avatar'):
+            avatar_file = data.get('avatar')
+            avatar_path, filename = upload_file_path(directory_name='avatar', file=avatar_file)
+            avatar_file.save(avatar_path)
 
-            # user.avatar 덮어쓰기 전에, db에 저장된 경로를 바탕으로 -> upload폴더에서 기존 file삭제
-            # -> 기존 user.avatar에 암것도 없어도 안에서 바로 종료되도록 예외처리
             delete_uploaded_file(directory_and_filename=user.avatar)
 
-            user.avatar = f'avatar/{filename}'
+            data['avatar'] = f'avatar/{filename}'
+        print('data  >> ', data)
 
-        # 나머지 필드도 변경
-        user.email = form.email.data
-        user.role_id = form.role_id.data
-        user.is_active = form.is_active.data
-        # user.is_super_user = form.is_super_user.data
-        # user.is_staff = form.is_staff.data
+        result, msg = user.update(**data)
+        print('result  >> ', result.email)
 
-        with DBConnectionHandler() as db:
-            db.session.add(user)
-            db.session.commit()
-
-        flash(f'{form.username.data} User 수정 완료.')
-        return redirect(url_for('admin.user'))
+        if result:
+            flash(f'{result} User 수정 완료.')
+            return redirect(url_for('admin.user'))
+        flash(msg)
 
     errors = [{'field': key, 'messages': form.errors[key]} for key in form.errors.keys()] if form.errors else []
 
@@ -1142,16 +1231,14 @@ def user_edit(id):
 @login_required
 @role_required(allowed_roles=[Roles.CHIEFSTAFF])
 def user_delete(id):
-    with DBConnectionHandler() as db:
-        user = db.session.get(User, id)
-
-        if user:
-            # 필드에 file을 가지고 있는 entity는 file도 같이 삭제한다.
-            delete_uploaded_file(directory_and_filename=user.avatar)
-            db.session.delete(user)
-            db.session.commit()
-            flash(f'{user.username} User 삭제 완료.')
-            return redirect(url_for('admin.user'))
+    user = User.get(id)
+    delete_uploaded_file(directory_and_filename=user.avatar)
+    result, msg = user.delete()
+    if result:
+        flash(f'{result} {msg}')
+    else:
+        flash(msg)
+    return redirect(url_for('admin.user'))
 
 
 @admin_bp.route('/banner')
@@ -1160,8 +1247,7 @@ def user_delete(id):
 def banner():
     page = request.args.get('page', 1, type=int)
 
-    stmt = select(Banner).order_by(Banner.is_fixed.desc(), Banner.add_date.desc())
-    pagination = paginate(stmt, page=page, per_page=10)
+    pagination = Banner.order_by('-is_fixed', '-add_date').paginate(page=page, per_page=10)
     banner_list = pagination.items
 
     return render_template('admin/banner.html',
@@ -1175,29 +1261,21 @@ def banner_add():
     form = BannerForm()
 
     if form.validate_on_submit():
-        # 파일이 없을 수는 없지만, user처럼 이미지 없는 경우도 있을 수 있으므로 해당필드는 나중에 f가 있으면 채운다.
-        banner = Banner(
-            desc=form.desc.data,
-            url=form.url.data,
-            banner_type=form.banner_type.data,
-            is_fixed=form.is_fixed.data
-        )
+        data = form.data
+        data = {key: value for key, value in data.items() if
+                key in ['img', 'banner_type', 'is_fixed', 'desc', 'url']}
+        img_file = data.get('img')
+        if img_file:
+            banner_path, filename = upload_file_path(directory_name='banner', file=img_file)
+            img_file.save(banner_path)
+            data['img'] = f'banner/{filename}'
 
-        f = form.img.data
-        if f:
-            banner_path, filename = upload_file_path(directory_name='banner', file=f)
-            f.save(banner_path)
+        result, msg = Banner.create(**data)
+        if result:
+            flash(f'{result} {msg}')
+            return redirect(url_for('admin.banner'))
 
-            delete_uploaded_file(directory_and_filename=banner.img)
-
-            banner.img = f'banner/{filename}'
-
-        with DBConnectionHandler() as db:
-            db.session.add(banner)
-            db.session.commit()
-
-        flash(f'{form.desc.data} Banner 생성 성공!')
-        return redirect(url_for('admin.banner'))
+        flash(msg)
 
     return render_template('admin/banner_form.html', form=form)
 
@@ -1206,34 +1284,29 @@ def banner_add():
 @login_required
 @role_required(allowed_roles=[Roles.STAFF])
 def banner_edit(id):
-    with DBConnectionHandler() as db:
-        banner = db.session.get(Banner, id)
-
+    banner = Banner.get(id)
     form = BannerForm(banner)
 
     if form.validate_on_submit():
-        f = form.img.data
+        data = form.data
+        data = {key: value for key, value in data.items() if
+                key in ['img', 'banner_type', 'is_fixed', 'desc', 'url']}
+
         # 수정안되서 경로 그대로 오는지 vs 새 파일객체가 오는지 구분
-        if f != banner.img:
-            banner_path, filename = upload_file_path(directory_name='banner', file=f)
-            f.save(banner_path)
-
+        img_file = data.get('img')
+        if img_file and img_file != banner.img:
+            banner_path, filename = upload_file_path(directory_name='banner', file=img_file)
+            img_file.save(banner_path)
             delete_uploaded_file(directory_and_filename=banner.img)
-
-            banner.img = f'banner/{filename}'
+            data['img'] = f'banner/{filename}'
 
         # 나머지 필드도 변경
-        banner.banner_type = form.banner_type.data
-        banner.is_fixed = form.is_fixed.data
-        banner.desc = form.desc.data
-        banner.url = form.url.data
+        result, msg = banner.update(**data)
+        if result:
+            flash(f'{result} Banner 수정 완료.')
+            return redirect(url_for('admin.banner'))
 
-        with DBConnectionHandler() as db:
-            db.session.add(banner)
-            db.session.commit()
-
-        flash(f'{form.desc.data} Banner 수정 완료.')
-        return redirect(url_for('admin.banner'))
+        flash(msg)
 
     return render_template('admin/banner_form.html', form=form)
 
@@ -1242,23 +1315,22 @@ def banner_edit(id):
 @login_required
 @role_required(allowed_roles=[Roles.STAFF])
 def banner_delete(id):
-    with DBConnectionHandler() as db:
-        banner = db.session.get(Banner, id)
-
-        if banner:
-            # 필드에 file을 가지고 있는 entity는 file도 같이 삭제한다.
-            delete_uploaded_file(directory_and_filename=banner.img)
-            db.session.delete(banner)
-            db.session.commit()
-            flash(f'{banner.desc} Banner 삭제 완료.')
-            return redirect(url_for('admin.banner'))
+    banner = Banner.get(id)
+    # 필드에 file을 가지고 있는 entity는 file도 같이 삭제한다.
+    delete_uploaded_file(directory_and_filename=banner.img)
+    result, msg = banner.delete()
+    if result:
+        flash(f'{result} {msg}')
+    else:
+        flash(msg)
+        return redirect(url_for('admin.banner'))
 
 
 @admin_bp.route('/setting', methods=['GET'])
 @login_required
 @role_required(allowed_roles=[Roles.ADMINISTRATOR])
 def setting():
-    s_dict = Setting.to_dict()
+    s_dict = Setting.convert_to_dict()
 
     # db객체 list대신 dict를 건네준다.
     # return render_template('admin/setting.html', s_dict=s_dict, active_tab=1)
@@ -1269,61 +1341,60 @@ def setting():
 @login_required
 @role_required(allowed_roles=[Roles.ADMINISTRATOR])
 def setting_edit():
-    s_dict = Setting.to_dict()
+    s_dict = Setting.convert_to_dict()
     form = SettingForm(s_dict)
     # print(s_dict)
 
     if form.validate_on_submit():
-        with DBConnectionHandler() as db:
-            # 1) form의 to_dict메서드를 활용하여, form 모든 정보를 key, value로서 순회할 수 있게 한다
-            return_s_dict = form.to_dict()
+        # with DBConnectionHandler() as db:
+        # 1) form의 to_dict메서드를 활용하여, form 모든 정보를 key, value로서 순회할 수 있게 한다
+        return_s_dict = form.to_dict()
 
-            # print(return_s_dict)
-            # print(return_s_dict['start_date'], type(return_s_dict['start_date']))
-            # Thu Nov 03 2022 00:00:00 GMT+0900 (한국 표준시) <class 'str'>
+        # print(return_s_dict)
+        # print(return_s_dict['start_date'], type(return_s_dict['start_date']))
+        # Thu Nov 03 2022 00:00:00 GMT+0900 (한국 표준시) <class 'str'>
 
-            #### 파일업로드 처리 -> dict를 하나씩 보기 전에 처리, dict의 key에 할당
-            f = return_s_dict["logo"]
-            # 수정안되서 경로 그대로 오는지 vs 새 파일객체가 오는지 구분
-            # 최초 수정시에는  db에 logo key가 아예 없을 수 있기 때문에 s_dict는 get으로 얻어오기
-            if f != s_dict.get("logo", None):
-                logo_path, filename = upload_file_path(directory_name='logo', file=f)
-                f.save(logo_path)
+        #### 파일업로드 처리 -> dict를 하나씩 보기 전에 처리, dict의 key에 할당
+        f = return_s_dict["logo"]
+        # 수정안되서 경로 그대로 오는지 vs 새 파일객체가 오는지 구분
+        # 최초 수정시에는  db에 logo key가 아예 없을 수 있기 때문에 s_dict는 get으로 얻어오기
+        if f != s_dict.get("logo", None):
+            logo_path, filename = upload_file_path(directory_name='logo', file=f)
+            f.save(logo_path)
 
-                delete_uploaded_file(directory_and_filename=s_dict.get("logo", None))
+            delete_uploaded_file(directory_and_filename=s_dict.get("logo", None))
 
-                return_s_dict["logo"] = f'logo/{filename}'
+            return_s_dict["logo"] = f'logo/{filename}'
 
-            for key, value in return_s_dict.items():
+        for key, value in return_s_dict.items():
 
-                # 1) 각 key,value는 1row로서 Setting의 1개의 객체에 해당하므로
-                #    setting객체를 만들어 입력할텐데,
-                #    1-1) [이미 꺼냈떤 s_dict에서 이미 존재하는 key]이면 => 조회후 객체필드 변경(update)
-                #    1-2) 없던 key는 새객체만들어서 add를 나눠서 해준다.
-                if key in s_dict:
-                    print(key, "는 이미 존재인데")
-                    setting = Setting.get_by_key(key)
-                    # 1-1-2) 이미 존재해서 꺼냈을 때 값을 비교해서 다르면 업데이트
-                    if setting.setting_value == value:
-                        print(key, "같은 값이라서 continue")
-                        continue
-                    else:
-                        print(key, "값이 달라져서 update")
-                        setting.setting_value = value
-                        #### 객체 필드변경후 commit만 하면 자동반영X -> session이 달라서
-                        #### => 수정이든, 새로생성이든 아래에서 공통적으로 session.add()해야함.
-
+            # 1) 각 key,value는 1row로서 Setting의 1개의 객체에 해당하므로
+            #    setting객체를 만들어 입력할텐데,
+            #    1-1) [이미 꺼냈떤 s_dict에서 이미 존재하는 key]이면 => 조회후 객체필드 변경(update)
+            #    1-2) 없던 key는 새객체만들어서 add를 나눠서 해준다.
+            if key in s_dict:
+                # print(key, "는 이미 존재인데")
+                # setting = Setting.get_by_key(key)
+                setting = Setting.filter_by(setting_key=key).first()
+                # 1-1-2) 이미 존재해서 꺼냈을 때 값을 비교해서 다르면 업데이트
+                if setting.setting_value == value:
+                    # print(key, "같은 값이라서 continue")
+                    continue
                 else:
-                    print(key, "없어서  새로 생성 -> value가 None이도 None으로 넣을 것임.")
-                    setting = Setting(
-                        setting_key=key,
-                        setting_value=value
-                    )
+                    # print(key, "값이 달라져서 update")
+                    setting.setting_value = value
+                    #### 객체 필드변경후 commit만 하면 자동반영X -> session이 달라서
+                    #### => 수정이든, 새로생성이든 아래에서 공통적으로 session.add()해야함.
 
-                db.session.add(setting)
+            else:
+                # print(key, "없어서  새로 생성 -> value가 None이도 None으로 넣을 것임.")
+                # setting = Setting(
+                #     setting_key=key,
+                #     setting_value=value
+                # )
+                result, _ = Setting.create(setting_key=key, setting_value=value)
 
-            db.session.commit()
-            flash(f'세팅 수정 완료.')
+        flash(f'세팅 수정 완료.')
 
         return redirect(url_for('admin.setting'))
 
@@ -1341,11 +1412,11 @@ def employee():
     #     .order_by(User.add_date.desc())
     #### employee정보를 기준으로 직원관리를 표시하려면 User에서 골라내는게 아니라, Employee중에서 골라야한다.
     #### - Employee도 대기상태 or 퇴사상태 데이터가 있기 때문에, 필터링을 한번 해야한다
-    stmt = select(Employee) \
-        .order_by(Employee.join_date.desc())
+    # stmt = select(Employee) \
+    #     .order_by(Employee.join_date.desc())
     # .where(Employee.is_active) \
 
-    pagination = paginate(stmt, page=page, per_page=10)
+    pagination = Employee.order_by('-join_date').paginate(page, per_page=10)
     employee_list = pagination.items
 
     #### 재직상태변경 modal 속 select option 추가로 내려보내기
@@ -1363,59 +1434,103 @@ def employee():
                            )
 
 
+# @admin_bp.route('/employee/add/<int:user_id>', methods=['GET', 'POST'])
+# @login_required
+# @role_required(allowed_roles=[Roles.CHIEFSTAFF])
+# def employee_add(user_id):
+#     user = User.get_by_id(user_id)
+#     # form = EmployeeForm(user, employer=g.user) # 고용주인 현재유저를 form내부에서 g.user로 쓰고 인자에서 삭제
+#     form = EmployeeForm(user)
+#
+#     if form.validate_on_submit():
+#         # User정보와 Employee정보를 따로 분리해서 각각 처리한다.
+#
+#         #### user ####
+#         # - 직원으로 변환되면, user의 role부터 미리 선택된 것으로 바뀌어야한다.
+#         user_info = {
+#             'email': form.email.data,
+#             'sex': form.sex.data,
+#             'phone': form.phone.data,
+#             'address': form.address.data,
+#
+#             'role_id': form.role_id.data,
+#         }
+#         user.update2(user_info)
+#
+#         f = form.avatar.data
+#         if f != user.avatar:
+#             avatar_path, filename = upload_file_path(directory_name='avatar', file=f)
+#             f.save(avatar_path)
+#             delete_uploaded_file(directory_and_filename=user.avatar)
+#             user.avatar = f'avatar/{filename}'
+#
+#         #### employee ####
+#         # - role은 employee에  있진 않다. 부모격인 user객체에 들어가있음.
+#         employee = Employee(
+#             user=user,
+#             name=form.name.data,
+#             sub_name=form.sub_name.data,
+#             birth=form.birth.data,
+#             join_date=form.join_date.data,
+#             # job_status는 form에는 존재하지만, 생성시에는 view에 안뿌린다. 대신 default값이 들어가있으니, 그것으로 재직되게 한다?
+#             job_status=form.job_status.data,
+#             # resign_date는 deafult값없이 form필드에도 명시안한다
+#         )
+#
+#         flash("직원 전환 성공")
+#         with DBConnectionHandler() as db:
+#             db.session.add(user)
+#             db.session.add(employee)
+#             db.session.commit()
+#
+#         return redirect(url_for('admin.employee'))
+#
+#     return render_template('admin/employee_form.html',
+#                            form=form
+#                            )
 @admin_bp.route('/employee/add/<int:user_id>', methods=['GET', 'POST'])
 @login_required
 @role_required(allowed_roles=[Roles.CHIEFSTAFF])
 def employee_add(user_id):
-    user = User.get_by_id(user_id)
-    form = EmployeeForm(user, employer=g.user)
+    user = User.get(user_id)
+    # form = EmployeeForm(user, employer=g.user) # 고용주인 현재유저를 form내부에서 g.user로 쓰고 인자에서 삭제
+    form = EmployeeForm(user)
 
     if form.validate_on_submit():
         # User정보와 Employee정보를 따로 분리해서 각각 처리한다.
+        data = form.data
 
         #### user ####
-        # - 직원으로 변환되면, user의 role부터 미리 선택된 것으로 바뀌어야한다.
-        user_info = {
-            'email': form.email.data,
-            'sex': form.sex.data,
-            'phone': form.phone.data,
-            'address': form.address.data,
+        user_data = {key: value for key, value in data.items() if
+                     key in ['email', 'sex', 'phone', 'address', 'role_id', 'avatar']}
 
-            'role_id': form.role_id.data,
-        }
-        user.update(user_info)
-
-        f = form.avatar.data
-        if f != user.avatar:
-            avatar_path, filename = upload_file_path(directory_name='avatar', file=f)
-            f.save(avatar_path)
+        if user_data.get('avatar') and user.avatar != user_data.get('avatar'):
+            avatar_file = user_data.get('avatar')
+            avatar_path, filename = upload_file_path(directory_name='avatar', file=avatar_file)
+            avatar_file.save(avatar_path)
             delete_uploaded_file(directory_and_filename=user.avatar)
-            user.avatar = f'avatar/{filename}'
+            user_data['avatar'] = f'avatar/{filename}'
+
+        # - 직원으로 변환되면, user의 role부터 미리 선택된 것으로 바뀌어야한다.
+        user.fill(**user_data)
 
         #### employee ####
         # - role은 employee에  있진 않다. 부모격인 user객체에 들어가있음.
-        employee = Employee(
-            user=user,
-            name=form.name.data,
-            sub_name=form.sub_name.data,
-            birth=form.birth.data,
-            join_date=form.join_date.data,
-            # job_status는 form에는 존재하지만, 생성시에는 view에 안뿌린다. 대신 default값이 들어가있으니, 그것으로 재직되게 한다?
-            job_status=form.job_status.data,
-            # resign_date는 deafult값없이 form필드에도 명시안한다
-        )
+        # job_status는 form에는 존재하지만, 생성시에는 view에 안뿌린다. 대신 default값이 들어가있으니, 그것으로 재직되게 한다?
+        # resign_date는 default값 없이 form필드에도 명시안한다
+        employee_data = {key: value for key, value in data.items() if
+                         key in ['name', 'sub_name', 'birth', 'join_date', 'job_status']}
+        employee_data['user'] = user  # 수정된 user정보를 넣어서 수정해준다.
 
-        flash("직원 전환 성공")
-        with DBConnectionHandler() as db:
-            db.session.add(user)
-            db.session.add(employee)
-            db.session.commit()
+        result, msg = Employee.create(**employee_data)
+        if result:
+            flash(f'{result} {msg}')
+            return redirect(url_for('admin.employee'))
 
-        return redirect(url_for('admin.employee'))
+        flash(msg)
 
-    return render_template('admin/employee_form.html',
-                           form=form
-                           )
+    errors = [{'field': key, 'messages': form.errors[key]} for key in form.errors.keys()] if form.errors else []
+    return render_template('admin/employee_form.html', form=form, errors=errors)
 
 
 # @admin_bp.route('/invite/employee/<int:user_id>', methods=['GET', 'POST'])
@@ -1480,19 +1595,13 @@ def employee_add(user_id):
 #             flash(f"{invitee.username}에게 직원초대({role_staff.name})를 보냈습니다.", category='is-success')
 #
 #     return redirect(url_for('admin.user'))
+
 @admin_bp.route('/invite/employee/', methods=['POST'])
 @login_required
 @role_required(allowed_roles=[Roles.CHIEFSTAFF])
 def employee_invite():
-    # request.path /admin/invite/employee/
-    # request.referrer http://localhost:5000/admin/user
-    # => 요청을 보낸 곳의 url을 처리하고 난 뒤 -> redirect 해주기 위한 메서드 개발
-
-    # print(request.form)
-    # print(request.form.args.to_dict()) # post에선 못씀.
     role_id = request.form.get('role_id', type=int)
     user_id = request.form.get('user_id', default=None, type=int)
-    # print("post>>>", role_id, user_id)
 
     #### 초대 존재 여부는
     # 1) 현재 초대Type(상위 주제entity)에 대해서만 검색해야한다,(초대 Type이 다르면 또 보낼 수 있음)
@@ -1500,42 +1609,171 @@ def employee_invite():
     # 3) 검색시에는, 보내는사람과 받는사람을 필터링하면 된다. 관계테이블이므로, 관계객체.has()/any() - 데이터존재검사 + 추가조건을 건다
     # 4) 만료되지 않는 것에 대해서만 존재검사를 한다.
     # 5) *추후 answer안된 것들만 검사한다
-    with DBConnectionHandler() as db:
-        inviter = g.user
-        invitee = db.session.get(User, user_id)
+    inviter = g.user
+    invitee = User.get(user_id)
 
-        stmt = (
+    # eagerload할 필요가 없기 때문에, hybrid_method로 exsists를 만들어 relation 필터링한다.
+    # is_invite_exists = EmployeeInvite \
+    #     .filter_by(and_=dict(is_valid=True, inviter___id=inviter.id, invitee___id=invitee.id)) \
+    #     .exists()
+    is_invite_exists = EmployeeInvite \
+        .filter_by(is_sented_by=inviter, is_received_by=invitee, is_valid=True) \
+        .exists()
 
-            exists()
-            .select_from(EmployeeInvite)  # exists()조건들을 WHERE에 담을 주 entity(left)
-            .where(EmployeeInvite.inviter.has(User.id == inviter.id))
-            .where(EmployeeInvite.invitee.has(User.id == invitee.id))
-            # .where(EmployeeInvite.is_not_expired)
-            .where(EmployeeInvite.is_valid)
-            .select()
-        )
+    if is_invite_exists:
+        flash(f"{invitee.username}에게 이미 직원초대를 보냈습니다.", category="is-danger")
+    else:
+        role = Role.filter_by(id=role_id).first()
 
-        is_invite_exists = db.session.scalar(stmt)
-
-        if is_invite_exists:
-            flash(f"{invitee.username}에게 이미 직원초대를 보냈습니다.", category="is-danger")
-        else:
-            role = db.session.scalars(select(Role).where(Role.id == role_id)).first()
-
-            invite = EmployeeInvite(
-                inviter=inviter,
-                invitee=invitee,
-                role=role,
-            )
-
-            db.session.add(invite)
-            db.session.commit()
-
+        result, msg = EmployeeInvite.create(inviter=inviter, invitee=invitee, role=role, )
+        if result:
             flash(f"{invitee.username}에게 직원초대({role.name})를 보냈습니다.", category='is-success')
+        else:
+            flash(msg)
 
     # return redirect(url_for('admin.user'))
     return redirect(redirect_url())
 
+
+# @admin_bp.route('/employee/edit/<int:id>', methods=['GET', 'POST'])
+# @login_required
+# @role_required(allowed_roles=[Roles.CHIEFSTAFF])
+# def employee_edit(id):
+#     # 1) user기본정보는, employee 1:1 subquery로서 바로 찾을 수 있기 때문에 조회는 생략한다.
+#     # employee화면에서는, employee id를 보내주기 때문에 user_id와 별개로 id로 찾는다.
+#     with DBConnectionHandler() as db:
+#         employee = db.session.get(Employee, id)
+#     # 2) employeeForm이 수정form일땐, role선택여부를 위해 g.user가 고용주로 들어가며
+#     #   기본정보인 user정보를 채우기 위해, user도 들어간다.
+#
+#     #### 직원관련 수정 등은, role구성이 자신이하로만 구성되므로, 조건을 확인하여, 아니면 돌려보내보자
+#     if not employee.user.role.is_under(g.user.role):
+#         flash('자신보다 아래 직위의 직원만 수정할 수 있습니다.', category='is-danger')
+#         return redirect(redirect_url())
+#
+#     # 항상 수정form을 만드는 user / employform의 수정form인 employee= / role이 1개가 아니라, g.user이하의 role을 만드는 employer=
+#     form = EmployeeForm(employee.user, employee=employee)
+#
+#     # print("form.join_date.data >>>", form.join_date.data)
+#
+#     if form.validate_on_submit():
+#         #### user ####
+#         user_info = {
+#             'email': form.email.data,
+#             'sex': form.sex.data,
+#             'phone': form.phone.data,
+#             'address': form.address.data,
+#
+#             'role_id': form.role_id.data,
+#         }
+#         user = employee.user
+#         user.update2(user_info)
+#
+#         f = form.avatar.data
+#         if f != user.avatar:
+#             avatar_path, filename = upload_file_path(directory_name='avatar', file=f)
+#             f.save(avatar_path)
+#             delete_uploaded_file(directory_and_filename=user.avatar)
+#             user.avatar = f'avatar/{filename}'
+#
+#         #### employee ####
+#         employee_info = {
+#             'name': form.name.data,
+#             'sub_name': form.sub_name.data,
+#             'birth': form.birth.data,
+#             'join_date': form.join_date.data,
+#             'job_status': form.job_status.data,
+#             #### 수정된 user객체를 넣어준다
+#             'user': user,
+#             #### 생성시에 없었던, job_status와, resign_date를 넣어준다
+#             # 'job_status': form.job_status.data,
+#             # 'resign_date': form.resign_date.data,
+#         }
+#
+#         employee.update2(employee_info)
+#
+#         with DBConnectionHandler() as db:
+#             db.session.add(employee)
+#             db.session.commit()
+#             # print(employee.user.role_id)
+#             flash("직원 수정 성공", category='is-success')
+#             print('employee  >> ', employee.name)
+#
+#         return redirect(url_for('admin.employee'))
+#
+#     return render_template('admin/employee_form.html',
+#                            form=form
+#                            )
+
+# @admin_bp.route('/employee/edit/<int:id>', methods=['GET', 'POST'])
+# @login_required
+# @role_required(allowed_roles=[Roles.CHIEFSTAFF])
+# def employee_edit(id):
+#     # 1) user기본정보는, employee 1:1 subquery로서 바로 찾을 수 있기 때문에 조회는 생략한다.
+#     # employee화면에서는, employee id를 보내주기 때문에 user_id와 별개로 id로 찾는다.
+#     with DBConnectionHandler() as db:
+#         employee = db.session.get(Employee, id)
+#     # 2) employeeForm이 수정form일땐, role선택여부를 위해 g.user가 고용주로 들어가며
+#     #   기본정보인 user정보를 채우기 위해, user도 들어간다.
+#
+#     #### 직원관련 수정 등은, role구성이 자신이하로만 구성되므로, 조건을 확인하여, 아니면 돌려보내보자
+#     if not employee.user.role.is_under(g.user.role):
+#         flash('자신보다 아래 직위의 직원만 수정할 수 있습니다.', category='is-danger')
+#         return redirect(redirect_url())
+#
+#     # 항상 수정form을 만드는 user / employform의 수정form인 employee= / role이 1개가 아니라, g.user이하의 role을 만드는 employer=
+#     form = EmployeeForm(employee.user, employee=employee)
+#
+#     # print("form.join_date.data >>>", form.join_date.data)
+#
+#     if form.validate_on_submit():
+#         #### user ####
+#         user_info = {
+#             'email': form.email.data,
+#             'sex': form.sex.data,
+#             'phone': form.phone.data,
+#             'address': form.address.data,
+#
+#             'role_id': form.role_id.data,
+#         }
+#         user = employee.user
+#         user.update2(user_info)
+#
+#         f = form.avatar.data
+#         if f != user.avatar:
+#             avatar_path, filename = upload_file_path(directory_name='avatar', file=f)
+#             f.save(avatar_path)
+#             delete_uploaded_file(directory_and_filename=user.avatar)
+#             user.avatar = f'avatar/{filename}'
+#
+#         #### employee ####
+#         employee_info = {
+#             'name': form.name.data,
+#             'sub_name': form.sub_name.data,
+#             'birth': form.birth.data,
+#             'join_date': form.join_date.data,
+#             'job_status': form.job_status.data,
+#             #### 수정된 user객체를 넣어준다
+#             'user': user,
+#             #### 생성시에 없었던, job_status와, resign_date를 넣어준다
+#             # 'job_status': form.job_status.data,
+#             # 'resign_date': form.resign_date.data,
+#         }
+#
+#         employee.update2(employee_info)
+#
+#         with DBConnectionHandler() as db:
+#             db.session.add(employee)
+#             db.session.commit()
+#             # print(employee.user.role_id)
+#             flash("직원 수정 성공", category='is-success')
+#             print('employee  >> ', employee.name)
+#
+#         return redirect(url_for('admin.employee'))
+#
+#     return render_template('admin/employee_form.html',
+#                            form=form
+#                            )
 
 @admin_bp.route('/employee/edit/<int:id>', methods=['GET', 'POST'])
 @login_required
@@ -1543,8 +1781,13 @@ def employee_invite():
 def employee_edit(id):
     # 1) user기본정보는, employee 1:1 subquery로서 바로 찾을 수 있기 때문에 조회는 생략한다.
     # employee화면에서는, employee id를 보내주기 때문에 user_id와 별개로 id로 찾는다.
-    with DBConnectionHandler() as db:
-        employee = db.session.get(Employee, id)
+    # with DBConnectionHandler() as db:
+    #     employee = db.session.get(Employee, id)
+    # 아래에 보니, 기본적으로 employee는 user.role까지 터치한다.
+    # employee = Employee.get(id)
+    employee = Employee.load({'user': ('selectin', {'role': 'selectin'})}) \
+        .filter_by(id=id).first()
+
     # 2) employeeForm이 수정form일땐, role선택여부를 위해 g.user가 고용주로 들어가며
     #   기본정보인 user정보를 채우기 위해, user도 들어간다.
 
@@ -1554,130 +1797,181 @@ def employee_edit(id):
         return redirect(redirect_url())
 
     # 항상 수정form을 만드는 user / employform의 수정form인 employee= / role이 1개가 아니라, g.user이하의 role을 만드는 employer=
-    form = EmployeeForm(employee.user, employee=employee, employer=g.user)
-
-    # print("form.join_date.data >>>", form.join_date.data)
+    form = EmployeeForm(employee.user, employee=employee)
 
     if form.validate_on_submit():
+        data = form.data
         #### user ####
-        user_info = {
-            'email': form.email.data,
-            'sex': form.sex.data,
-            'phone': form.phone.data,
-            'address': form.address.data,
-
-            'role_id': form.role_id.data,
-        }
+        user_data = {key: value for key, value in data.items() if
+                     key in ['email', 'sex', 'phone', 'address', 'role_id', 'avatar']}
         user = employee.user
-        user.update(user_info)
-
-        f = form.avatar.data
-        if f != user.avatar:
-            avatar_path, filename = upload_file_path(directory_name='avatar', file=f)
-            f.save(avatar_path)
+        if user_data.get('avatar') and user.avatar != user_data.get('avatar'):
+            avatar_file = user_data.get('avatar')
+            avatar_path, filename = upload_file_path(directory_name='avatar', file=avatar_file)
+            avatar_file.save(avatar_path)
             delete_uploaded_file(directory_and_filename=user.avatar)
-            user.avatar = f'avatar/{filename}'
+            user_data['avatar'] = f'avatar/{filename}'
+
+        # - 직원으로 변환되면, user의 role부터 미리 선택된 것으로 바뀌어야한다.
+        user.fill(**user_data)
 
         #### employee ####
-        employee_info = {
-            'name': form.name.data,
-            'sub_name': form.sub_name.data,
-            'birth': form.birth.data,
-            'join_date': form.join_date.data,
-            'job_status': form.job_status.data,
-            #### 수정된 user객체를 넣어준다
-            'user': user,
-            #### 생성시에 없었던, job_status와, resign_date를 넣어준다
-            # 'job_status': form.job_status.data,
-            # 'resign_date': form.resign_date.data,
-        }
+        # - role은 employee에  있진 않다. 부모격인 user객체에 들어가있음.
+        # job_status는 form에는 존재하지만, 생성시에는 view에 안뿌린다. 대신 default값이 들어가있으니, 그것으로 재직되게 한다?
+        # resign_date는 default값 없이 form필드에도 명시안한다
+        employee_data = {key: value for key, value in data.items() if
+                         key in ['name', 'sub_name', 'birth', 'join_date', 'job_status']}
+        employee_data['user'] = user  # 수정된 user정보를 넣어서 수정해준다.
 
-        employee.update(employee_info)
+        result, msg = employee.update(**employee_data)
 
-        with DBConnectionHandler() as db:
-            db.session.add(employee)
-            db.session.commit()
-            # print(employee.user.role_id)
-            flash("직원 수정 성공", category='is-success')
-            print('employee  >> ', employee.name)
+        if result:
+            flash(f'{result} {msg}')
+            return redirect(url_for('admin.employee'))
 
-        return redirect(url_for('admin.employee'))
+        flash(msg)
 
-    return render_template('admin/employee_form.html',
-                           form=form
-                           )
+    errors = [{'field': key, 'messages': form.errors[key]} for key in form.errors.keys()] if form.errors else []
+    return render_template('admin/employee_form.html', form=form, errors=errors)
 
+
+# @admin_bp.route('/employee/job_status', methods=['POST'])
+# @login_required
+# @role_required(allowed_roles=[Roles.CHIEFSTAFF])
+# def employee_job_status_change():
+#     # print('request.form.to_dict()  >> ', request.form.to_dict())
+#     # request.form.to_dict()  >>  {'employee_id': '9', 'job_status': '1', 'date': '2023-03-06'}
+#
+#     employee_id = request.form.get('employee_id', type=int)
+#     job_status = request.form.get('job_status', type=int)
+#     target_date = request.form.get('date',
+#                                    type=lambda x: datetime.strptime(x, '%Y-%m-%d').date()
+#                                    )
+#
+#     with DBConnectionHandler() as db:
+#         employee = db.session.get(Employee, employee_id)
+#
+#         if not employee.role.is_under(g.user.role):
+#             flash('자신보다 하위 직위의 직원만 수정할 수 있습니다.', category='is-danger')
+#             return redirect(redirect_url())
+#
+#         #### 퇴사자는 재직상태 변경 못하고, 직원초대로만 가능하도록 early return
+#         if employee.job_status == JobStatusType.퇴사:
+#             flash(f'퇴사자는 재직상태변경이 불가하며 User관리에서 직원초대로 새로 입사해야합니다. ', category='is-danger')
+#             return redirect(redirect_url())
+#
+#         #### new => 퇴직은 입사일보다 더 이전에는 할 수 없도록 검사하기
+#         if job_status == JobStatusType.퇴사 and target_date < employee.join_date:
+#             flash(f'입사일보다 더 이전으로 퇴사할 수 없습니다. ', category='is-danger')
+#             return redirect(redirect_url())
+#
+#         #### 복직은 휴직자만 가능하도록 걸기
+#         if job_status == JobStatusType.재직 and employee.job_status != JobStatusType.휴직:
+#             flash(f'복직은 휴직자만 선택할 수 있습니다. ', category='is-danger')
+#             return redirect(redirect_url())
+#
+#         #### new => 복직은 최종 휴직일(in emp)보다 더 이전에는 할 수 없도록 검사하기
+#         if job_status == JobStatusType.재직 and target_date < employee.leave_date:
+#             flash(f'휴직일보다 더 이전으로 복직할 수 없습니다. ', category='is-danger')
+#             return redirect(redirect_url())
+#
+#         #### 이미 해당 재직상태인데 같은 것으로 변경하는 것을 막기 위한 처리문
+#         # => 이것을 처리해줘야 emp.user.role  <-> Role.get_by_name('USER')시 session내 같은 객체 조회를 막을 수 있다
+#         if employee.job_status == job_status:
+#             flash(f'같은 상태로 변경할 수 없습니다. ', category='is-danger')
+#             return redirect(redirect_url())
+#
+#     # Employee.change_job_status(employee_id, job_status)
+#     Employee.change_job_status(employee_id, job_status, target_date)
+#     flash(f'재직상태변경이 완료되었습니다.', category='is-success')
+#
+#     # flash('자신보다 아래 직위의 직원만 수정할 수 있습니다.', category='is-danger')
+#
+#     # #### 퇴사처리1) 직원의 재직상태를 퇴사로 변경
+#     # employee.job_status = job_status
+#     # if job_status == JobStatusType.퇴사:
+#     #     #### 퇴사처리 메서드로 구현(job_status-외부 + resign_date-내부 + role(default인 USER)-내부 변경
+#     #     #### => 재직상태는 외부에서 주는 것이라 인자로 받아서 처리?!
+#     #     employee.change_status(job_status)
+#     #
+#     #     #### 퇴사처리2) 직원의 퇴직일(resign_date)가 찍히게 된다.
+#     #     employee.resign_date = date.today()
+#     #
+#     #     #### 퇴사처리3) 직원의 Role을 STAFF이상 => User(deafult=True)로 변경한다.
+#     #     # 퇴사처리시 role을 user로 다시 바꿔, 직원정보는 남아있되, role이 user라서 접근은 못하게 한다
+#     #     role = db.session.scalars(
+#     #         select(Role)
+#     #         .where(Role.default == True)
+#     #     ).first()
+#     #     employee.user.role = role
+#     #
+#     #
+#     # db.session.add(employee)
+#     # db.session.commit()
+#
+#     return redirect(redirect_url())
 
 @admin_bp.route('/employee/job_status', methods=['POST'])
 @login_required
 @role_required(allowed_roles=[Roles.CHIEFSTAFF])
 def employee_job_status_change():
+    # print('request.form.to_dict()  >> ', request.form.to_dict())
+    # request.form.to_dict()  >>  {'employee_id': '9', 'job_status': '1', 'date': '2023-03-06'}
+
     employee_id = request.form.get('employee_id', type=int)
     job_status = request.form.get('job_status', type=int)
     target_date = request.form.get('date',
                                    type=lambda x: datetime.strptime(x, '%Y-%m-%d').date()
                                    )
 
-    with DBConnectionHandler() as db:
-        employee = db.session.get(Employee, employee_id)
+    # employee = Employee.load({'user': ('selectin', {'role': 'selectin'})}).filter_by(id=employee_id).first()
+    employee = Employee.load({'user': ('selectin', {'role': 'selectin'}),
+                              'employee_departments': 'joined',
+                              }) \
+        .filter_by(id=employee_id).first()
 
-        if not employee.role.is_under(g.user.role):
-            flash('자신보다 하위 직위의 직원만 수정할 수 있습니다.', category='is-danger')
-            return redirect(redirect_url())
+    employee_role = employee.user.role
 
-        #### 퇴사자는 재직상태 변경 못하고, 직원초대로만 가능하도록 early return
-        if employee.job_status == JobStatusType.퇴사:
-            flash(f'퇴사자는 재직상태변경이 불가하며 User관리에서 직원초대로 새로 입사해야합니다. ', category='is-danger')
-            return redirect(redirect_url())
+    #### 기본 검증
+    # 1) 날짜의 유효성 검증 (퇴사 > 입사일)
+    if JobStatusType.is_resign(job_status) and target_date < employee.join_date:
+        flash(f'입사일보다 더 이전으로 퇴사할 수 없습니다. ', category='is-danger')
+        return redirect(redirect_url())
 
-        #### new => 퇴직은 입사일보다 더 이전에는 할 수 없도록 검사하기
-        if job_status == JobStatusType.퇴사 and target_date < employee.join_date:
-            flash(f'입사일보다 더 이전으로 퇴사할 수 없습니다. ', category='is-danger')
-            return redirect(redirect_url())
+    # 2) 같은 상태로의 변환
+    if employee.job_status == job_status:
+        flash(f'같은 상태로 변경할 수 없습니다. ', category='is-danger')
+        return redirect(redirect_url())
 
-        #### 복직은 휴직자만 가능하도록 걸기
-        if job_status == JobStatusType.재직 and employee.job_status != JobStatusType.휴직:
-            flash(f'복직은 휴직자만 선택할 수 있습니다. ', category='is-danger')
-            return redirect(redirect_url())
+    #### 특수 검증
+    # 4) 대상직원이 현재유저보다 더 낮은 직위여야한다.
+    if not employee_role.is_under(g.user.role):
+        flash('자신보다 하위 직위의 직원만 수정할 수 있습니다.', category='is-danger')
+        return redirect(redirect_url())
 
-        #### new => 복직은 최종 휴직일(in emp)보다 더 이전에는 할 수 없도록 검사하기
-        if job_status == JobStatusType.재직 and target_date < employee.leave_date:
-            flash(f'휴직일보다 더 이전으로 복직할 수 없습니다. ', category='is-danger')
-            return redirect(redirect_url())
+    # 5) 이미 퇴사한 상태라면, 직원초대/직원전환으로만 재직상태를 변경하게 한다.
+    if JobStatusType.is_resign(employee.job_status):
+        flash(f'퇴사자는 재직상태변경이 불가하며 User관리에서 직원초대로 새로 입사해야합니다. ', category='is-danger')
+        return redirect(redirect_url())
 
-        #### 이미 해당 재직상태인데 같은 것으로 변경하는 것을 막기 위한 처리문
-        # => 이것을 처리해줘야 emp.user.role  <-> Role.get_by_name('USER')시 session내 같은 객체 조회를 막을 수 있다
-        if employee.job_status == job_status:
-            flash(f'같은 상태로 변경할 수 없습니다. ', category='is-danger')
-            return redirect(redirect_url())
+    # 6) 복직(재직선택)은 휴직자만 선택가능하도록
+    if JobStatusType.is_active(job_status) and employee.job_status != JobStatusType.휴직:
+        flash(f'복직은 휴직자만 선택할 수 있습니다. ', category='is-danger')
+        return redirect(redirect_url())
 
-    # Employee.change_job_status(employee_id, job_status)
-    Employee.change_job_status(employee_id, job_status, target_date)
-    flash(f'재직상태변경이 완료되었습니다.', category='is-success')
+    # 7) 날짜의 유효성 검증 (복직일 > 최종 휴직일)
+    if JobStatusType.is_active(job_status) and target_date < employee.leave_date:
+        flash(f'휴직일보다 더 이전으로 복직할 수 없습니다. ', category='is-danger')
+        return redirect(redirect_url())
 
-    # flash('자신보다 아래 직위의 직원만 수정할 수 있습니다.', category='is-danger')
+    # Employee.change_job_status(employee_id, job_status, target_date)
 
-    # #### 퇴사처리1) 직원의 재직상태를 퇴사로 변경
-    # employee.job_status = job_status
-    # if job_status == JobStatusType.퇴사:
-    #     #### 퇴사처리 메서드로 구현(job_status-외부 + resign_date-내부 + role(default인 USER)-내부 변경
-    #     #### => 재직상태는 외부에서 주는 것이라 인자로 받아서 처리?!
-    #     employee.change_status(job_status)
-    #
-    #     #### 퇴사처리2) 직원의 퇴직일(resign_date)가 찍히게 된다.
-    #     employee.resign_date = date.today()
-    #
-    #     #### 퇴사처리3) 직원의 Role을 STAFF이상 => User(deafult=True)로 변경한다.
-    #     # 퇴사처리시 role을 user로 다시 바꿔, 직원정보는 남아있되, role이 user라서 접근은 못하게 한다
-    #     role = db.session.scalars(
-    #         select(Role)
-    #         .where(Role.default == True)
-    #     ).first()
-    #     employee.user.role = role
-    #
-    #
-    # db.session.add(employee)
-    # db.session.commit()
+    # required: user.role(selectin) + employee_departments(joined)
+    result, msg = employee.update_job_status(job_status, target_date)
+    if result:
+        flash(f'재직상태변경이 완료되었습니다.', category='is-success')
+    else:
+        flash(msg)
 
     return redirect(redirect_url())
 
@@ -1685,17 +1979,72 @@ def employee_job_status_change():
 @admin_bp.route('employee/<int:employee_id>/user_popup')
 @login_required
 def user_popup(employee_id):
-    employee = Employee.get_by_id(employee_id)
-    user = employee.user
+    # employee = Employee.load({'user': ('selectin', {'role': 'selectin'})}).filter_by(id=employee_id).first()
+    # user = employee.user
+    user = User.load({'role': 'selectin'}) \
+        .filter_by(employee___id=employee_id).first()
 
     return render_template('admin/employee_user_popup.html', user=user)
 
 
+# #### front 미구현
+# @admin_bp.route('/departments/<int:employee_id>', methods=['GET'])
+# @login_required
+# def get_current_departments(employee_id):
+#     emp: Employee = Employee.get_by_id(employee_id)
+#     current_depts = emp.get_my_departments()
+#     current_dept_infos = [{'id': x.id, 'name': x.name} for x in current_depts]
+#
+#     return make_response(
+#         dict(deptInfos=current_dept_infos),
+#         200
+#     )
+
+#### front 미구현 for [부서] 변경 모달?!
 @admin_bp.route('/departments/<employee_id>', methods=['GET'])
 @login_required
 def get_current_departments(employee_id):
-    emp: Employee = Employee.get_by_id(int(employee_id))
-    current_depts = emp.get_my_departments()
+    employee = Employee.get(int(employee_id))
+    current_depts = employee.get_my_departments()
+    print('current_depts  >> ', current_depts)
+    # 특정 Employee의 - 현재 취임한 EmployeeDepartment정보가 있는 & 해고된 것은 아닌 - Department들
+    filter_by_map = dict(
+        and_=dict(
+            employee_departments___dismissal_date=None,
+            employee_departments___employee___id=employee_id
+        )
+    )
+    active_depts = Department.filter_by(**filter_by_map).all()
+    print('active_depts  >> ', active_depts)
+
+    # 현재 선택된 (특정)부서(id)를 제외하기
+    filter_by_map.get('and_').update(dict(id__ne=4))
+    active_depts = Department.filter_by(**filter_by_map).all()
+    print('active_except_depts  >> ', active_depts)
+
+    # 내가 팀장인 부서만
+    filter_by_map.get('and_').update(dict(employee_departments___is_leader=True))
+    active_depts = Department.filter_by(**filter_by_map).all()
+    print('active_except_is_leader_depts  >> ', active_depts)
+
+
+    # 필터링된 모든 부서들 중  최상위level 부서들만
+    min_level_of_dept = float('inf')
+    min_level_depts = []
+    for dept in active_depts:
+        if dept.level == min_level_of_dept:
+            min_level_depts.append(dept)
+        elif dept.level < min_level_of_dept:
+            min_level_of_dept = dept.level
+            min_level_depts = [dept]
+    print('min_level_depts  >> ', min_level_depts)
+
+    #### No Load with has/any + @hybrid_method
+    # relation path 묶어서 ___ keyword를 대체한다
+
+
+
+
     current_dept_infos = [{'id': x.id, 'name': x.name} for x in current_depts]
 
     return make_response(

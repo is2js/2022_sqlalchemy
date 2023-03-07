@@ -14,7 +14,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from src.config import project_config
 from src.infra.config.base import Base
 from src.infra.config.connection import DBConnectionHandler, db
-from src.main.templates.filters import format_date
+from src.main.utils.format_date import format_date
 from .departments import EmployeeDepartment, Department, DepartmentType
 from src.infra.tutorial3.common.base import BaseModel, InviteBaseModel
 from src.infra.tutorial3.common.int_enum import IntEnum
@@ -80,7 +80,7 @@ class User(BaseModel):
     # role = relationship('Role', backref=backref('users', lazy='dynamic'), lazy='subquery')
     # => eager options 적용을 위해 lazy='dynamic' 옵션 제거 => jinja에서 갖다쓰는거 해결하고 처리해야함.
     # role = relationship('Role', backref=backref('users'), lazy='subquery')
-    role = relationship('Role', backref=backref('users')) # eagerload와 lazy=subquery를 동시에 주면 sqlite multitrhead 에러난다.
+    role = relationship('Role', backref=backref('users'))  # eagerload와 lazy=subquery를 동시에 주면 sqlite multitrhead 에러난다.
     #### .join()에 관계칼럼을 사용하려면, lazy='subquery'를 주면 안된다.
     # role = relationship('Role', backref=backref('users'))
 
@@ -104,10 +104,10 @@ class User(BaseModel):
     # 2) many to one : lazy옵션 제거, uselist=False  + fk 2개이상시, foreign_keys( [fk칼럼]) 각각 지정
     # 3) 서로 relationship지정시 : 각각의 relationship을 string으로 back_populates=에 걸어주기
     inviters = relationship('EmployeeInvite', lazy='dynamic', foreign_keys='EmployeeInvite.inviter_id',
-                            back_populates='inviter', # 관계컬럼을 서로 정의할 경우, id copy시 자동으로 채우도록 지정
+                            back_populates='inviter',  # 관계컬럼을 서로 정의할 경우, id copy시 자동으로 채우도록 지정
                             )
     invitees = relationship('EmployeeInvite', lazy='dynamic', foreign_keys='EmployeeInvite.invitee_id',
-                            back_populates='invitee', # 관계컬럼을 서로 정의할 경우, id copy시 자동으로 채우도록 지정
+                            back_populates='invitee',  # 관계컬럼을 서로 정의할 경우, id copy시 자동으로 채우도록 지정
                             )
 
     ## 추가2-2 user생성시, role=관계객체를 입력하지 않은 경우, default인 User Role객체를 가져와 add해서 생성되도록 한다
@@ -129,14 +129,31 @@ class User(BaseModel):
             with DBConnectionHandler() as db:
                 self.role = db.session.scalars(select(Role).where(condition)).first()
 
-    # @property
+    # .create()내부 fill에서 settable검사는 @property는 invalid로 걸린다. @hybrid_property만 통과된다.
+    # => BUT password_hash대신 password로 입력하여 setter처리가 되려면, @property여야 자동 반영된다.
+    # => fill검사에 property를 추가해야한다.
+    #    fill검사를 통과하기 위해 @hybrid_property로 정의함녀 기존 @property를 덮어쓰고
+    #    TypeError: 'password' is an invalid keyword argument for User
+    # => fill검사 통과용 1) hybrid_property를 먼저 정의하고 2) 실제 setter가 적용되는 @property를 뒤에 선언해서 해결함
+
     @hybrid_property
     def password(self):
         raise AttributeError('비밀번호는 읽을 수 없습니다.')
 
-    @password.setter
+    # @password.inplace.setter # 2.0 # https://docs.sqlalchemy.org/en/20/orm/extensions/hybrid.html#defining-setters
+    #### User().fill() -> setattr()를 통해서 입력되는, Model.create()에서는 가능하나
+    #    User(password= )로 직접적으로 생성하면 @property가 아니라 @hybrid라서 에러뜬다
+    @password.setter # 1.4
     def password(self, password):
         self.password_hash = generate_password_hash(password)
+
+    # @property
+    # def password(self):
+    #     raise AttributeError('비밀번호는 읽을 수 없습니다.')
+    #
+    # @password.setter
+    # def password(self, password):
+    #     self.password_hash = generate_password_hash(password)
 
     def verify_password(self, password):
         return check_password_hash(self.password_hash, password)
@@ -256,7 +273,6 @@ class User(BaseModel):
 
             db.session.execute(stmt)
             db.session.commit()
-
 
             # current_user = db.session.get(cls, user_id)
             # current_user.last_seen = datetime.datetime.now()
@@ -553,6 +569,7 @@ class Role(BaseModel):
 
         return mapper.permissions >= role_perm
 
+
 class JobStatusType(enum.IntEnum):
     대기 = 0
     재직 = 1
@@ -563,6 +580,19 @@ class JobStatusType(enum.IntEnum):
     @classmethod
     def choices(cls):
         return [(choice.value, choice.name) for choice in cls if choice.value]
+
+    @classmethod
+    def is_active(cls, jos_status):
+        # enum은 비교할때 enum객체 op value로 비교하면 된다. 따로 .value로 비교안해도 됨.
+        return cls.재직 == jos_status
+
+    @classmethod
+    def is_leave(cls, jos_status):
+        return cls.휴직 == jos_status
+
+    @classmethod
+    def is_resign(cls, jos_status):
+        return cls.퇴사 == jos_status
 
 
 class Employee(BaseModel):
@@ -594,7 +624,14 @@ class Employee(BaseModel):
 
     reference = Column(String(128), nullable=True)
 
-
+    #### MANY 취임정보(들)에 대한 relationship 생성
+    employee_departments = relationship('EmployeeDepartment',
+                                        foreign_keys='EmployeeDepartment.employee_id',
+                                        back_populates='employee')
+    employee_leave_histories = relationship('EmployeeLeaveHistory',
+                                            foreign_keys='EmployeeLeaveHistory.employee_id',
+                                            back_populates='employee',
+                                            )
 
     # qrcode, qrcode_img: https://github.com/prameshstha/QueueMsAPI/blob/85dedcce356475ef2b4b149e7e6164d4042ffffb/bookings/models.py#L92
 
@@ -770,6 +807,7 @@ class Employee(BaseModel):
         # => 그림1: https://raw.githubusercontent.com/is3js/screenshots/main/image-20230114212700480.png
         #### 이 사람이 퇴사한 상태라면, 퇴사일을 마지막으로 기준으로 근무 개월수를 세어야한다
         if self.is_resigned:
+            # if self.is_resigned and self.resign_date:
 
             # end_date = self.resign_date
             #### 퇴직일이 해당일이라면, 하루 전이 마지막 근무일이다.
@@ -1030,7 +1068,6 @@ class Employee(BaseModel):
             )
             return db.session.execute(stmt).all()
 
-
     #### EmployeeDepartment의 (고용일은 당연있고) 휴직일x퇴사일x/휴직했고 복귀X/퇴사일찍힘.jobstatus로 정렬하기 위해
     #### EmployeeDepartment에 . statushybrid_propert -> expression 완성하여 => order_by
     ####                     .status_string을 .status로 만들어서 -> select
@@ -1055,7 +1092,8 @@ class Employee(BaseModel):
                 # .where(Department.status == 1)
                 # 퇴사정보를 맨 처음, 그다음 복직정보, 그다음 휴직/재직 정보 순으로
                 #  + 같은 상태면, 종료일이 빠른 빠른 순으로 먼저
-                .order_by(desc(EmployeeDepartment.status), EmployeeDepartment.start_date, EmployeeDepartment.end_date)
+                .order_by(desc(EmployeeDepartment.status), EmployeeDepartment.start_date,
+                          EmployeeDepartment.end_date)
             )
             return db.session.execute(stmt).all()
 
@@ -1076,7 +1114,6 @@ class Employee(BaseModel):
             )
             position = db.session.scalar(stmt)
             return position if position else '(공석)'
-
 
     #### with other entity
     @hybrid_property
@@ -1108,7 +1145,6 @@ class Employee(BaseModel):
     @hybrid_property
     def is_administrator(self):
         return self.role.is_(Roles.ADMINISTRATOR)
-
 
     @classmethod
     def get_by_name(cls, name):
@@ -1153,6 +1189,80 @@ class Employee(BaseModel):
 
             return db.session.scalars(stmt).first()
 
+    # refactor
+    def update_job_status(self, job_status, target_date):
+        """
+        EagerLoad required: User.Role + EmployeeDepartment
+        ----
+        employee = Employee.load({'user': ('selectin', {'role': 'selectin'}),
+                              'employee_departments': 'joined',
+                              }) \
+            .filter_by(id=employee_id).first()
+        """
+        #### 재직->퇴사로 변경하는 경우
+        # 1) job_status assign
+        # 2) resign_date assign
+        # 3) log(reference) append
+        # 4) #R.user.role -> default 'USER' assign if not default
+        # 5) #R Many EmployeeDepartment list -> dismissal_date assign
+        if JobStatusType.is_resign(job_status):
+            for emp_dept in self.employee_departments:
+                emp_dept.dismissal_date = target_date
+
+            if not self.user.role.default:
+                self.user.role = Role.filter_by(name='USER').first()
+
+            reference = f'퇴사({format_date(target_date)})'
+            if self.reference:
+                reference += '</br>' + self.reference
+
+            data = dict(job_status=job_status, resign_date=target_date, reference=reference)
+            return self.update(**data)
+
+        #### 재직->휴직으로 변경하는 경우
+        # 1) job_status assign
+        # 2) leave_date assign
+        # 3) log(reference) append
+        # 4) #R Many EmployeeDepartment list -> leave_date assign + (기존 최종복직일 비우기)reinstatement_date None assign
+        elif JobStatusType.is_leave(job_status):
+            for emp_dept in self.employee_departments:
+                emp_dept.leave_date = target_date
+                emp_dept.reinstatement_date = None
+
+            reference = f'휴직({format_date(target_date)})'
+            if self.reference:
+                reference += '</br>' + self.reference
+
+            data = dict(job_status=job_status, leave_date=target_date, reference=reference)
+            return self.update(**data)
+
+        #### 휴직->복직(재직)으로 변경하는 경우
+        # 1) job_status assign
+        # 2) (복직일 기록은 없고, EmployeeLeaveHistory가 target_date로 생성된다)
+        # 3) log(reference) append
+        # 4) #R Many EmployeeDepartment list -> reinstatement_date assign
+        # 5) EmployeeLeaveHistory create by emp, emp.leave_date + target_date(reinstatement_date)
+        elif JobStatusType.is_active(job_status):
+            for emp_dept in self.employee_departments:
+                emp_dept.reinstatement_date = target_date
+
+            reference = f'복직({format_date(target_date)})'
+            if self.reference:
+                reference += '</br>' + self.reference
+
+            # EmployeeLeaveHistory.create(employee=self, leave_date=self.leave_date,
+            #                             reinstatement_date=target_date)
+            #### class를 가져와서 연결하려면, self.관계가 아니라, self.__class__.관계로 접근해야RelationshipProperty가 나온다
+            # => self.로 접근하면, list가 나온다.
+            EmployeeLeaveHistory_ = self.__class__.employee_leave_histories.property.mapper.class_
+            EmployeeLeaveHistory_.create(employee=self, leave_date=self.leave_date,
+                                         reinstatement_date=target_date)
+
+            data = dict(job_status=job_status, reference=reference)
+            return self.update(**data)
+        else:
+            raise KeyError(f'Invalid job status : {job_status}')
+
     ### with other entity
     @classmethod
     def change_job_status(cls, emp_id: int, job_status: int, target_date):
@@ -1167,7 +1277,7 @@ class Employee(BaseModel):
                 # emp.resign_date = datetime.date.today()
                 emp.resign_date = target_date
 
-                emp.update_reference(f'퇴사({format_date(target_date)})')
+                emp.fill_reference(f'퇴사({format_date(target_date)})')
 
                 #### 관계필드를 조회하는 순간 같은세션에서 같은 key의 객체를 가져오게 되므로
                 #### USER role이 아닌 경우에만, USER role을 찾아서 대입해준다.
@@ -1197,7 +1307,7 @@ class Employee(BaseModel):
                 #### 휴직시, 최종 휴직일칼럼도 채운다 like 퇴직
                 emp.leave_date = target_date
 
-                emp.update_reference(f'휴직({format_date(target_date)})')
+                emp.fill_reference(f'휴직({format_date(target_date)})')
 
                 db.session.add(emp)
 
@@ -1220,7 +1330,7 @@ class Employee(BaseModel):
 
                 emp.job_status = job_status
 
-                emp.update_reference(f'복직({format_date(target_date)})')
+                emp.fill_reference(f'복직({format_date(target_date)})')
 
                 db.session.add(emp)
 
@@ -1243,19 +1353,11 @@ class Employee(BaseModel):
 
                 return emp
 
-    def update_reference(self, text):
+    def fill_reference(self, text):
         if not self.reference:
             self.reference = text
         else:
             self.reference = text + '</br>' + self.reference
-
-    def update2(self, info_dict=None, **kwargs):
-        if info_dict:
-            for k, v in info_dict.items():
-                setattr(self, k, v)
-
-        for k, v in kwargs.items():
-            setattr(self, k, v)
 
     #### with other entity
     def get_leave_histories(self):
@@ -1266,7 +1368,8 @@ class Employee(BaseModel):
                 .order_by(EmployeeLeaveHistory.add_date)  # 시간순으로 가져오기
             )
 
-            return db.session.scalars(stmt).all()
+            result = db.session.scalars(stmt).all()
+            return result
 
     #### with other entity
     @property
@@ -1359,7 +1462,8 @@ class Employee(BaseModel):
             #### 이전 부서가 있는 경우, 이전부서에 해임처리
             # => 위에서 self를 add라느라 썼다면, 쓰지말고 id(value)만 넘겨서 처리되도록 하자.
             if before_dept_id:
-                before_emp_dept: EmployeeDepartment = EmployeeDepartment.get_by_emp_and_dept_id(self.id, before_dept_id)
+                before_emp_dept: EmployeeDepartment = EmployeeDepartment.get_by_emp_and_dept_id(self.id,
+                                                                                                before_dept_id)
                 before_emp_dept.dismissal_date = target_date
 
                 db.session.add(before_emp_dept)
@@ -1396,7 +1500,8 @@ class Employee(BaseModel):
             # (1) 현재부서가 선택되었다면, [부서추가]가 아닌 [부서변경] OR  [부서제거]상황이다.
             #    => 둘다 현재부서 취임정보를 해임시켜야한다.
             if current_dept_id:
-                current_emp_dept: EmployeeDepartment = EmployeeDepartment.get_by_emp_and_dept_id(self.id, current_dept_id)
+                current_emp_dept: EmployeeDepartment = EmployeeDepartment.get_by_emp_and_dept_id(self.id,
+                                                                                                 current_dept_id)
                 current_emp_dept.dismissal_date = target_date
 
                 db.session.add(current_emp_dept)
@@ -1411,7 +1516,7 @@ class Employee(BaseModel):
             if not after_dept_id and current_dept_id:
                 # 부서제거시, 부서제거 refence입력하고 add
                 current_dept: Department = Department.get_by_id(current_dept_id)
-                self.update_reference(f"[{current_dept.name}]부서 해임({format_date(target_date)})")
+                self.fill_reference(f"[{current_dept.name}]부서 해임({format_date(target_date)})")
                 db.session.add(self)
 
                 db.session.commit()
@@ -1433,12 +1538,12 @@ class Employee(BaseModel):
                 # => current O/X에 따라 부서변경/ 부서추가의 메세지 따로 반환
                 if current_dept_id:
                     current_dept: Department = Department.get_by_id(current_dept_id)
-                    self.update_reference(f"[{current_dept.name}→{after_dept.name}]부서 변경({format_date(target_date)})")
+                    self.fill_reference(f"[{current_dept.name}→{after_dept.name}]부서 변경({format_date(target_date)})")
 
                     message = f"부서 변경[{current_dept.name}→{after_dept.name}]을 성공하였습니다."
 
                 else:
-                    self.update_reference(f"[{after_dept.name}]부서 취임({format_date(target_date)})")
+                    self.fill_reference(f"[{after_dept.name}]부서 취임({format_date(target_date)})")
                     message = f"부서 추가[{after_dept.name}]를 성공하였습니다."
 
                 db.session.add(self)
@@ -1562,37 +1667,34 @@ class Employee(BaseModel):
                 #### job_status에는 이미 enum이 들어가 있다.
                 emp_dict['job_status'] = emp_dict['job_status'].name
 
-                results.append( emp_dict)
+                results.append(emp_dict)
 
             return results
 
-
-
-    # #### with other entity
-    # def is_demote(self, as_leader, current_dept_id):
-    #
-    #     #### (0) 팀원으로 가는 경우가 아니면 애초에 탈락이다.
-    #     if as_leader:
-    #         return False
-    #     #### 강등에는 현재부서에 대해 팀장이라는 조건이 필요하다.
-    #     #### (1) 현재부서가 없다면 강등에서 먼저 탈락이다.
-    #     current_dept = Department.get_by_id(current_dept_id)
-    #     if not current_dept:
-    #         return False
-    #
-    #     #### (2) 현재부서 있더라도, 팀장이 아니면 탈락이다.
-    #     is_current_dept_leader = self.is_leader_in(Department.get_by_id(current_dept_id))
-    #     if not is_current_dept_leader:
-    #         return False
-    #
-    #     #### (3) 현재부서의 팀장인 상태에서, 제외하고 다른팀 팀장이면 강등에서 탈락이다.
-    #
-    #     #### 강등: 만약, before_dept_id를 [제외]하고 팀장인 부서가 없으면서(현재부서만 팀장) & as_leader =False(마지막 팀장자리 -> 팀원으로 내려가면) => 강등
-    #     #### - 선택된 부서외 팀장인 다른 부서가 있다면, 현재부서만 팀장 -> 팀원으로 내려가서, 팀장 직책 유지
-    #     other_depts_as_leader = self.get_my_departments(as_leader=True, except_dept_id=current_dept_id)
-    #
-    #     return len(other_depts_as_leader) == 0
-
+# #### with other entity
+# def is_demote(self, as_leader, current_dept_id):
+#
+#     #### (0) 팀원으로 가는 경우가 아니면 애초에 탈락이다.
+#     if as_leader:
+#         return False
+#     #### 강등에는 현재부서에 대해 팀장이라는 조건이 필요하다.
+#     #### (1) 현재부서가 없다면 강등에서 먼저 탈락이다.
+#     current_dept = Department.get_by_id(current_dept_id)
+#     if not current_dept:
+#         return False
+#
+#     #### (2) 현재부서 있더라도, 팀장이 아니면 탈락이다.
+#     is_current_dept_leader = self.is_leader_in(Department.get_by_id(current_dept_id))
+#     if not is_current_dept_leader:
+#         return False
+#
+#     #### (3) 현재부서의 팀장인 상태에서, 제외하고 다른팀 팀장이면 강등에서 탈락이다.
+#
+#     #### 강등: 만약, before_dept_id를 [제외]하고 팀장인 부서가 없으면서(현재부서만 팀장) & as_leader =False(마지막 팀장자리 -> 팀원으로 내려가면) => 강등
+#     #### - 선택된 부서외 팀장인 다른 부서가 있다면, 현재부서만 팀장 -> 팀원으로 내려가서, 팀장 직책 유지
+#     other_depts_as_leader = self.get_my_departments(as_leader=True, except_dept_id=current_dept_id)
+#
+#     return len(other_depts_as_leader) == 0
 
 #### 초대는 분야마다 초대하는 content(직원초대 -> Role 중 1개)가 다르기 때문에
 #### => Type을 놓지않고, 필드를 다르게해서 새로 만들어야한다.
@@ -1609,7 +1711,6 @@ class Employee(BaseModel):
 #     @classmethod
 #     def choices(cls):
 #         return [(choice.value, choice.name) for choice in cls if choice.value]
-
 
 class EmployeeInvite(InviteBaseModel, CRUDMixin):
     ko_NAME = '직원초대'
@@ -1652,7 +1753,7 @@ class EmployeeInvite(InviteBaseModel, CRUDMixin):
         mapper = mapper or cls
         # has/any에 들어갈 User model class 는 import하지말고,
         # mapper.관계칼럼을 이용해서 꺼낸다.
-        Inviter = mapper.inviter.property.mapper.class_ # User
+        Inviter = mapper.inviter.property.mapper.class_  # User
         return mapper.inviter.has(Inviter.id == user.id)
 
     @hybrid_method
@@ -1665,7 +1766,7 @@ class EmployeeInvite(InviteBaseModel, CRUDMixin):
         WHERE users.id = employee_invites.invitee_id AND users.id = :id_1)
         """
         mapper = mapper or cls
-        Invitee = mapper.invitee.property.mapper.class_ # User
+        Invitee = mapper.invitee.property.mapper.class_  # User
         return mapper.invitee.has(Invitee.id == user.id)
 
     @classmethod
@@ -1690,6 +1791,7 @@ class EmployeeInvite(InviteBaseModel, CRUDMixin):
 # BaseModel을 상속안하므로, 똑같이 session 삽입(임시)
 # temp
 EmployeeInvite.set_scoped_session(db.get_scoped_session())
+
 # EmployeeInvite.set_engine(db.get_engine())
 
 class EmployeeLeaveHistory(BaseModel, CRUDMixin):
@@ -1710,8 +1812,7 @@ class EmployeeLeaveHistory(BaseModel, CRUDMixin):
     # department_id = Column(Integer, ForeignKey('employee_departments.department_id'),
     #                        nullable=False, index=True)
     #### 부서정보가 빠지면, EmpDept가 아닌 Emp와 1:M의 관계로서, 반대로 관계객체도 만들 수 있다?!
-    employee = relationship("Employee", backref="employee_leave_histories", foreign_keys=[employee_id],
-                            )
+    employee = relationship("Employee", foreign_keys=[employee_id], back_populates="employee_leave_histories")
 
     leave_date = Column(Date, nullable=False)
     reinstatement_date = Column(Date, nullable=False)
@@ -1722,8 +1823,8 @@ class EmployeeLeaveHistory(BaseModel, CRUDMixin):
                     f" 휴직={self.leave_date!r} ~ 복직={self.reinstatement_date!r}]"
         return info
 
+    # BaseModel을 상속안하므로, 똑같이 session 삽입(임시)
+    # temp
+    # EmployeeLeaveHistory.set_scoped_session(db.get_scoped_session())
+    # EmployeeLeaveHistory.set_engine(db.get_engine())
 
-# BaseModel을 상속안하므로, 똑같이 session 삽입(임시)
-# temp
-EmployeeLeaveHistory.set_scoped_session(db.get_scoped_session())
-# EmployeeLeaveHistory.set_engine(db.get_engine())

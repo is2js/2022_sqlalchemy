@@ -3,13 +3,12 @@ import enum
 
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, select, func, BigInteger, Date, Text, distinct, \
     case, and_, or_, delete
-from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.ext.hybrid import hybrid_property, hybrid_method
 from sqlalchemy.orm import relationship, backref, with_parent
 
 from src.infra.config.connection import DBConnectionHandler
 from src.infra.tutorial3.common.base import BaseModel
 from src.infra.tutorial3.common.int_enum import IntEnum
-from src.main.templates.filters import format_date
 
 
 class DepartmentType(enum.IntEnum):
@@ -451,8 +450,6 @@ class Department(BaseModel):
 
             db.session.commit()
 
-
-
     def get_children(self):
         with DBConnectionHandler() as db:
             stmt = (
@@ -726,8 +723,7 @@ class Department(BaseModel):
             if not target_dept:
                 raise ValueError('해당 부서는 존재하지 않습니다.')
 
-
-            if  not isinstance(after_sort, int):
+            if not isinstance(after_sort, int):
                 raise ValueError('sort가 정수여야 합니다.')
 
             before_sort = target_dept.sort
@@ -812,7 +808,7 @@ class Department(BaseModel):
                 if target_dept.parent_id in target_dept.get_self_and_children_id_list():
                     raise ValueError('하위 부서로 이동은 불가능 합니다.')
 
-                if (after_parent_id and not isinstance(after_parent_id, int)) or not isinstance(after_sort, int) :
+                if (after_parent_id and not isinstance(after_parent_id, int)) or not isinstance(after_sort, int):
                     raise ValueError('level, sort는 정수여야 합니다.')
 
                 # (1) 대상부서 + 자식들 미리 select
@@ -839,7 +835,7 @@ class Department(BaseModel):
                     select(Department)
                     .where(Department.parent_id == after_parent_id)
                     .where(Department.sort >= after_sort)
-                    .order_by(Department.path.desc()) # 필수
+                    .order_by(Department.path.desc())  # 필수
                 ).all()
 
                 # print("after_related_depts", after_related_depts)
@@ -931,6 +927,59 @@ class Department(BaseModel):
 
             return True, "부서 활성 변경에 성공하였습니다."
 
+    # refactor
+    @hybrid_method
+    def is_active_of_employee(cls, employee, mapper=None,
+                              exclude_dept_id=None, only_leader=None, only_employee=None, min_level=None
+                              ):
+        """
+        emp2 = Employee.get(2)
+        Department.filter_by(is_active_of_employee=emp2).order_by('path').all()
+        => [Department(id=1, name='상위부서', parent_id=None, sort=1, path='001'), Department(id=2, name='하위부서1', parent_id=1, sort=1, path='001001'), Department(id=4, name='상위부서2', parent_id=None, sort=2, path='002')]
+        """
+        mapper = mapper or cls
+        #### 1) Department <- EmployeeDepartment <- Employee(mapper) 순으로 연결되므로
+        # 각각의 rel_cls를 mapper.relation로 찾는다.
+        EmployeeDepartment_ = mapper.employee_departments.property.mapper.class_
+        # - 최종 rel_cls는 보통 직전 rel_cls.__최종__fk == 최종obj.id로 연결되어,
+        #  ex> EmployeeDepartment_.employee_id == employee.id
+        # 최종에 대한 조건식이 있을 때만 rel_cls를 찾는다.
+        # Employee_ = EmployeeDepartment_.employee.property.mapper.class_
+        #### 2) mapper(Employee)로 시작하여 has/any로 순서대로 연결한다.
+        # return mapper.employee_departments.any(  # exists().where( mapper.id == rel_cls.fk
+        #     and_(
+        #         EmployeeDepartment_.dismissal_date.is_(None),
+        #         EmployeeDepartment_.employee_id == employee.id
+        #     )
+        # )
+
+        #### 3) 동적으로 filter expr를 추가하기 위해, 뽑아내서 관리한다
+        # - _and()까지 뽑아오면 추가가 안되므로, 안에 조건식만 뽑아온다
+        # - tuple로 관리하면, 동적 추가가 안되므로 list로 뽑아와서 *로 분배한다.
+        conditions = [
+            EmployeeDepartment_.dismissal_date.is_(None),
+            EmployeeDepartment_.employee_id == employee.id,
+        ]
+
+        # 현재 선택된 (특정)부서(id)를 제외하기
+        if exclude_dept_id:
+            conditions.append(cls.id != exclude_dept_id)
+
+        # 내가 팀장인 부서만
+        if only_leader:
+            conditions.append(EmployeeDepartment_.is_leader == True)
+
+        # 내가 팀원인 부서만
+        if only_employee:
+            conditions.append(EmployeeDepartment_.is_leader == False)
+
+        # 부서들 중 최상위부서만(최소 level값과 동일)
+        conditions.append(cls.level == func.min(cls.level))
+
+        return mapper.employee_departments.any(  # exists().where( mapper.id == rel_cls.fk
+            and_(*conditions)
+        )
+
 
 # 2.
 class EmployeeDepartment(BaseModel):
@@ -957,12 +1006,15 @@ class EmployeeDepartment(BaseModel):
                            nullable=True)
 
     # new
-    employee = relationship("Employee", backref="employee_departments", foreign_keys=[employee_id],
-                            # lazy='joined', # fk가 nullable하지 않으므로, joined를 줘도 된다.
+    employee = relationship("Employee", foreign_keys=[employee_id], uselist=False,
+                            back_populates='employee_departments',
                             )
+    # backref="employee_departments",
+    # lazy='joined', # fk가 nullable하지 않으므로, joined를 줘도 된다.
 
-    department = relationship("Department", backref=backref("employee_departments", passive_deletes=True),
-                              foreign_keys=[department_id],
+    department = relationship("Department", foreign_keys=[department_id],
+                              backref=backref("employee_departments", passive_deletes=True),
+
                               # lazy='joined', # fk가 nullable하지 않으므로, joined를 줘도 된다.
                               )
 

@@ -4,7 +4,10 @@ version: "3.9"
 name: sqlalchemy
 
 services:
-  db:
+  mysql:
+    # env_file은 conatiner를 위한 환경변수고, docker-comopse에 전달되어 사용될 순 없다
+    # => 하려면 docker-compose.yml과 동일한 경로에 .env파일 or 명령어에 --env-file 로 입력해줘야한다.
+
     ## 컨테이너 이름을 생략한다. -> 고정된 이름을 주면,  다른 옵션, 여러개의 다른 -p(project name)으로 app을 띄울 때, 똑같은 컨테이너 이름이 이미 존재한다고 에러 난다.
     #container_name: mysql-sqlalchemy
     ## build: 도커파일경로 -> 생략

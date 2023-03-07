@@ -38,7 +38,3 @@ class Banner(BaseModel):
     # exp_start_date = Column(DateTime, index=True, default=datetime.datetime.now)
     # exp_end_date = Column(DateTime)
 
-    def __repr__(self) -> str:
-        info: str = f"{self.__class__.__name__}" \
-                    f"[{self.id} => {self.img}]"
-        return info

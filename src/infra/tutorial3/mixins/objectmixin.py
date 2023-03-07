@@ -148,16 +148,16 @@ class ObjectMixin(Base, BaseQuery):
         self._alias_map = None
         self._expression_base = None
 
-    # 1. only API 사용을 위한 경우, 공유할 session 1개만 받는다.
+    # 1. 비sqlite or only API 사용을 위한 경우, 공유할 session 1개만 받는다.
     scoped_session = None
 
     @classmethod
     def set_scoped_session(cls, scoped_session):
         cls.scoped_session = scoped_session
 
-    # 2. flask-jinja를 사용하여
+    # 2. sqtlie + flask-jinja를 사용하여
     # 1) app.context_processor(inject_category_and_settings)처럼
-    #    route login외 서로 다른 곳 session이 호출될 우려가 있는 경우
+    #    route login외 서로 다른 thread에서 session이 호출될 우려가 있는 경우
     _engine = None
 
     @classmethod
@@ -761,10 +761,9 @@ class ObjectMixin(Base, BaseQuery):
 
         for attr in attrs:
             if RELATION_SPLITTER in attr:
-                print('attr  >> ', attr)
-
+                # print('attr  >> ', attr)
                 rel_column_name, rel_attr = attr.split(RELATION_SPLITTER, 1)
-                print('rel_attr  >> ', rel_attr)
+                # print('rel_attr  >> ', rel_attr)
 
                 relations[rel_column_name].append(rel_attr)
 

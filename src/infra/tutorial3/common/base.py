@@ -14,7 +14,7 @@ from src.infra.tutorial3.mixins.expressionmixin import ExpressionMixin
 from src.infra.tutorial3.mixins.objectmixin import ObjectMixin
 from src.infra.tutorial3.mixins.reprmixin import ReprMixin
 from src.infra.tutorial3.mixins.smart_mixin import SmartMixin
-from src.main.templates.filters import format_date, format_datetime
+from src.main.utils.format_date import format_datetime, format_date
 
 default_table_args = {
     'mysql_engine': 'InnoDB',
