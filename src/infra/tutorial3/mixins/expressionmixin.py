@@ -304,7 +304,7 @@ class ExpressionMixin(CRUDMixin):  # 작업시만 BaseQuery + ObjectMixin을 달
         if db_dialect == POSTGRESQL:
             stmt = f"""
             select to_char(generate_series, '{date_format}') as date 
-            from generate_series('{to_string_date(srt_date)}'::DATE, '{to_string_date(end_date)}'::DATE, '1 {interval_unit}s'::INTERVAL)
+            from generate_series('{to_string_date(srt_date)}'::DATE, '{to_string_date(end_date)}'::DATE, '1 {unit}s'::INTERVAL)
             """
             return (
                 text(stmt)
