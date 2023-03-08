@@ -1055,8 +1055,10 @@ class ObjectMixin(Base, BaseQuery):
         return self._query.subquery()
 
     # for route에서 row별 table 데이터(json) 전달
-    def to_dict2(self, nested=False, hybrid_atts=False, exclude=None, session: Session = None):
+    def to_dict2(self, nested=False, hybrid_atts=False, exclude=None, include=None, session: Session = None):
         """
+        < Department.to_dict2()> 도 가능하도록 처리 필요? classmethod 적용하기
+
         1) 이미 mode_obj로 조회되어 session없는 순수model객체 상태(not session obj) -> has not _session
             ex> u = User.get(1) -> (O) no session 객체 1개
             => init_obj하여 session 보급후, add하여 relation접근가능한 상태로 만들어 처리
@@ -1100,10 +1102,18 @@ class ObjectMixin(Base, BaseQuery):
 
              Tag.group_by('id', selects=['name', 'posts___id__count', 'posts___id__sum']).to_dict2(exclude='id_sum')
             => [{'name': '태그1', 'id_count': 1}, {'name': 'asdf', 'id_count': 0}]
+
+        4) include 키워드 포함
+          d = Department.first()
+          d.to_dict2(include=['id', 'name'])
+          =>  {'id': 1, 'name': '상위부서'}
         """
         # 배제할 것이 list가 아니더라도 list로 처리
-        if exclude and not isinstance(exclude, (list, tuple, set)):
+        if exclude and not isinstance(exclude, abc.Iterable):
             exclude = [exclude]
+        # 포함할 것만 주어질 수도 있다.
+        if include and not isinstance(include, abc.Iterable):
+            include = [include]
 
         #### 1. model obj 1개
         # -> init_obj 후, session에 add하여, relation 조회가능한 상태 -> close_model_obj
@@ -1114,7 +1124,8 @@ class ObjectMixin(Base, BaseQuery):
             result = dict()
 
             # 1) 배제가 없으면 .__table__.columns에서 일반 칼럼들을 다 꺼낸다. (관계x hybridx)
-            view_column_names = self.get_attr_names_except_exclude(exclude, self.column_names)
+            # + include도 같이 처리한다.
+            view_column_names = self.filter_include_and_exclude(self.column_names, include, exclude)
 
             # 2) 일반칼럼데이터들을 집어넣는다. - 시간형식은 예외처리한다.
             for column_name in view_column_names:
@@ -1137,7 +1148,7 @@ class ObjectMixin(Base, BaseQuery):
             # 3) 하이브리드칼럼을 넣기를 선택한다면, 순회하면서 넣는다.
             if hybrid_atts:
                 # 여기도 배제 확인
-                view_hybrid_prop_names = self.get_attr_names_except_exclude(exclude, self.hybrid_property_names)
+                view_hybrid_prop_names = self.filter_include_and_exclude(self.hybrid_property_names, include, exclude)
 
                 for hybrid_prop_name in view_hybrid_prop_names:
                     result[hybrid_prop_name] = getattr(self, hybrid_prop_name)
@@ -1145,7 +1156,7 @@ class ObjectMixin(Base, BaseQuery):
             # 4) 관계객체의 데이터를 dict형태로 포함하여 넣고 싶다면, 재귀로 얻어낸 dict를 최종dict에 포함시킨다.
             if nested:
                 # 배제 확인
-                view_relation_names = self.get_attr_names_except_exclude(exclude, self.relation_names)
+                view_relation_names = self.filter_include_and_exclude(self.relation_names, include, exclude)
 
                 for relation_name in view_relation_names:
 
@@ -1193,7 +1204,7 @@ class ObjectMixin(Base, BaseQuery):
 
                 dict_list = []
                 for model_obj in results:
-                    model_dict = model_obj.to_dict2(nested=nested, hybrid_atts=hybrid_atts, exclude=exclude,
+                    model_dict = model_obj.to_dict2(nested=nested, hybrid_atts=hybrid_atts, include=include, exclude=exclude,
                                                     session=self._session)
                     dict_list.append(model_dict)
 
@@ -1230,7 +1241,10 @@ class ObjectMixin(Base, BaseQuery):
                 return result
 
     # for to_dict
-    def get_attr_names_except_exclude(self, exclude, attr_names):
+    def filter_include_and_exclude(self, attr_names, include, exclude):
+        if include:
+            attr_names = filter(lambda e: e in include, attr_names)
+
         if exclude is None:
             return attr_names
 
