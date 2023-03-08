@@ -9,6 +9,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import InstrumentedAttribute, aliased, contains_eager, Session, RelationshipProperty, sessionmaker, \
     scoped_session
+from sqlalchemy.orm.exc import DetachedInstanceError
 
 from src.infra.config.connection import db
 from src.infra.tutorial3.mixins.base_query import BaseQuery
@@ -39,21 +40,60 @@ def _flat_schema(schema: dict):
         })
     }
     => {'user': JOINED, 'comments': SUBQUERY, 'comments.users': JOINED}
+    ----
+    self-relation를 위한 depth만큼 eagerload하는 기능 추가
+    d = Department.load({'children':'selectin'}).filter_by(id=1).first()
+    d.children[0]
+    => Department(id=2, name='하위부서1', parent_id=1, sort=1, path='001001')
+    Department(id=2, name='하위부서1', parent_id=1, sort=1, path='001001')
+    d.children[0].children[0]
+    => sqlalchemy.orm.exc.DetachedInstanceError:
+
+    d = Department.load({'children':('selectin', 3)}).filter_by(id=1).first()
+      >>  {'children': 'selectin', 'children.children': 'selectin', 'children.children.children': 'selectin'}
+    d.children[0].children[0]
+    => Department(id=5, name='ㅋㅋㅋ', parent_id=2, sort=1, path='001001001')
+    d.children[0].children[0].children[0]
+    Department(id=6, name='ㅇㅇ', parent_id=5, sort=1, path='001001001001')
     """
     if not schema:
         return {}
 
     def _flat_recursive(schema, parent_column_name, result):
         for rel_column_name_or_prop, value in schema.items():
+            # 관계칼럼을 넣은 경우 ex> User.posts -> 'posts'의 관계칼럼명으로 변환
             if isinstance(rel_column_name_or_prop, InstrumentedAttribute):
                 rel_column_name_or_prop = rel_column_name_or_prop.key
 
+            # 1) 'posts' : ('joined', {  }) inner_schema로서 한번 더 평탄화 하기
             if isinstance(value, tuple):
-                eager_type, inner_schema = value[0], value[1]
+                # 1-1) 추가. tuple인데, 1번째 인자가 inner_schema가 아닌 int로 왔을때
+                #      'posts': ('joined', 3) -> inner_schema와 관련없이 자체적으로 depth(.)를 주며 eagerload시킨다.
+                # => 그만큼 반복해서 eagerload하게 하기(현재를 부모칼럼으로 한 + int -1로  inner_schema만들기)
+                if type(value[1]) == int:
+                    eager_type = value[0]
 
+                    load_repeat_count = value[1]
+                    current_column_name = parent_column_name + '.' + rel_column_name_or_prop if parent_column_name \
+                        else rel_column_name_or_prop
+
+                    while load_repeat_count > 0:
+                        result[current_column_name] = eager_type
+
+                        load_repeat_count -= 1
+                        current_column_name += '.' + rel_column_name_or_prop
+                    # print('result  >> ', result)
+                    continue
+
+                else:
+                    eager_type, inner_schema = value[0], value[1]
+
+            # 2) 'posts' : {'tags'} 로 tuple이 아닌 그냥 관계명을 던지는 경우
+            # -> inner_schema로서 'posts' : ('joined', {'tags' : ??? })로 간주하기
             elif isinstance(value, dict):
                 eager_type, inner_schema = JOINED, value
 
+            # 3) 'posts만 오는 경우 -> inner_schema가 없음. posts만 저장해놓기
             else:
                 eager_type, inner_schema = value, None
 
@@ -1263,3 +1303,22 @@ class ObjectMixin(Base, BaseQuery):
     #### select(cls) == not expression_based 실행메서드를 추가한다면
     # => session안에서 relation에 접근할 경우(to_dict)가 아니라면,
     #    self._set_unloaded_eager_exprs()를 추가한 뒤 실행시키자.
+
+    #####
+    # load된 self-relational obj용
+    #####
+    def flatten_children(self, attr_name='children'):
+        """
+        dept = Department.load({'children':('joined', 2)}).filter_by(id=1).first()
+        [Department(id=1, name='상위부서', parent_id=None, sort=1, path='001'), Department(id=2, name='하위부서1', parent_id=1, sort=1, path='001001'), Department(id=5, name='ㅋㅋㅋ', parent_id=2, sort=1, path='001001001'), Department(id=3, name='하위부
+        서2', parent_id=1, sort=2, path='001002')]
+        """
+        # 자신의 처리이자, 최종 data
+        result = [self]
+        try:
+            for child in getattr(self, attr_name):
+                result += child.flatten_children()
+        except DetachedInstanceError:
+            return result
+
+        return result
