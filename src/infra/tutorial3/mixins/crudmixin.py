@@ -47,7 +47,12 @@ class CRUDMixin(Base, ObjectMixin):
         """
         # obj = cls.create_obj(session=session, **kwargs)
         obj = cls.create_obj(session=session)
+        ### => fill전에 미리 session에 merge로 집어넣었더니.. mysql에서 적용안된다.
+        # => fill전엔 add로?
+        # if obj not in obj._session:
+        #     obj._session.add(obj)
         obj.fill(**kwargs)  # 검증을 위해 fill을 사용한다.
+        # print('obj.__dict__  >> ', obj.__dict__)
 
         # 1. 만들어진 [미등록 obj]내 unique=True인 칼럼의 값을 가져와, 존재하는지 검사한다.
         # if obj.exists_self():
@@ -127,10 +132,14 @@ class CRUDMixin(Base, ObjectMixin):
     # for create + for update  ## 실행메서드 ##
     def save(self, auto_commit: bool = True):
         #### try/catch는 외부세션을 넣어주는데서 할 것이다?
-        print('self  >> ', self.__dict__)
-
-        self._session.add(self)
-        print('adddd  >> ')
+        # print('self  >> ', self.__dict__)
+        #
+        # if self not in self._session:
+        self._session.merge(self)
+        # else:
+        #     self._session.merge(self)
+        # print('adddd  >> ')
+        ### => 이미 fill할 때 session에 올렸다면, commit이나 flush만 해주면 된다?!
 
         # 1. add후 id, 등 반영하기 위해 [자체생성/외부받은 session 상관없이] flush를 때려준다.
         self._session.flush()
@@ -514,27 +523,32 @@ class CRUDMixin(Base, ObjectMixin):
         False, '업데이트 실패'
         """
         # create: cls(**kwargs).init_obj()
-        try:
+        # try:
             # is_updated = self.fill(**kwargs)
             #
             # if is_updated:
+            #### init_obj하고 fill채우도록하기 for relation도(many.append()) fill
+            # => session이 미리 담아두고 fill하면, 기존 many들도 다 같은 session에 담겨져있어서
+            #    에러난다.
+            # => 미리 안담아두면..
+        self.init_obj(session=session)
+        self.fill(**kwargs)
+        # updated_obj = self.init_obj(session=session).save(auto_commit=auto_commit)
+        updated_obj = self.save(auto_commit=auto_commit)
 
-            self.fill(**kwargs)
-            updated_obj = self.init_obj(session=session).save(auto_commit=auto_commit)
+        # model_obj를 직접 변환시, 재호출을 위해 초기화 취소 -> 재호출해도 다 다시 초기화되며,  session 등을 지우면, 외부session이 날아가버리는 부작용으로 취소
+        # self.close_model_obj()
+        # print('updated_obj.name  >> ', updated_obj.name)
 
-            # model_obj를 직접 변환시, 재호출을 위해 초기화 취소 -> 재호출해도 다 다시 초기화되며,  session 등을 지우면, 외부session이 날아가버리는 부작용으로 취소
-            # self.close_model_obj()
-            # print('updated_obj.name  >> ', updated_obj.name)
-
-            return updated_obj, '업데이트 성공'
+        return updated_obj, '업데이트 성공'
             # else:
             #     # self.close_model_obj()
             #     return False, '값의 변화가 없어서 업데이트 실패'
 
-        except Exception as e:
-            print(e)
-            # self.close_model_obj()
-            return False, '알수 없는 이유로 업데이트 실패'
+        # except Exception as e:
+        #     print(e)
+        #     # self.close_model_obj()
+        #     return False, '알수 없는 이유로 업데이트 실패'
 
     ###################
     # Delete          # -> only self method => create_obj없이 model_obj에서 [최초호출].init_obj()로 초기화

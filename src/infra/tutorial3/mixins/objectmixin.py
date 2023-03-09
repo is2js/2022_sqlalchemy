@@ -8,7 +8,8 @@ from sqlalchemy import MetaData, select, func, text, exists
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import InstrumentedAttribute, aliased, contains_eager, Session, RelationshipProperty, sessionmaker, \
-    scoped_session
+    scoped_session, object_session
+from sqlalchemy.orm.collections import InstrumentedList
 from sqlalchemy.orm.exc import DetachedInstanceError
 
 from src.infra.config.connection import db
@@ -355,7 +356,7 @@ class ObjectMixin(Base, BaseQuery):
     # for Update + for Create + for create_obj
     def fill(self, **kwargs):
         # is_updated = False
-
+            
         for column_name, new_value in kwargs.items():
             # flask form.data(dict)로 항상 들어오는 'csrf_toekn'와  form으로 들어오는 hidden태그는 무시
             #    + hidden 태그도 혹시 들어오면 에러내지말고 pass
@@ -374,7 +375,31 @@ class ObjectMixin(Base, BaseQuery):
             if column_name in self.column_names and getattr(self, column_name) == new_value:
                 continue
 
-            setattr(self, column_name, new_value)
+            # #### many relation인 경우 set대신에 append하도록 추가
+            # if isinstance(getattr(self, column_name), InstrumentedList):
+            #     if isinstance(new_value, abc.Iterable):
+            #         for obj in new_value:
+            #             if object_session(obj) is self._session:
+            #                 # 이미 세션에 있는 객체라서 넘어가서 그냥commit으로 처리되게 하자
+            #                 print(obj, 'pass in session')
+            #                 continue
+            #             getattr(self, column_name).append(obj)
+            #     else:
+            #         if new_value in self._session:
+            #             # 이미 세션에 있는 객체라서 넘어가서 그냥commit으로 처리되게 하자
+            #             print(new_value, 'pass in session')
+            #             continue
+            #         getattr(self, column_name).append(new_value)
+            # # else:
+            # else:
+            if isinstance(getattr(self, column_name), abc.Iterable):
+                list_ = getattr(self, column_name)
+                if isinstance(new_value, abc.Iterable):
+                    list_ += new_value
+                else:
+                    list_.append(new_value)
+            else:
+                setattr(self, column_name, new_value)
             # 1개라도 업뎃 되면 flag 1번만 표시
             # if not is_updated:
             #     is_updated = True
@@ -589,7 +614,7 @@ class ObjectMixin(Base, BaseQuery):
 
         """
         Column attrs : selects/order_by/group_by
-        
+
         Conditional attrs mean filters or having
         - filters -> for select(cls) -> all / first etc
         - having -> for select(칼럼들).select_from ->  only execute
