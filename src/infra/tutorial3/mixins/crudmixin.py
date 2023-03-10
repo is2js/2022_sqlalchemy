@@ -135,6 +135,9 @@ class CRUDMixin(Base, ObjectMixin):
         # print('self  >> ', self.__dict__)
         #
         # if self not in self._session:
+        #### => create/update모두 fill 후 처리하는 상황이므로,
+        ####    + relation도 수정한 것을 fill한 뒤, merge로 덮어써서 처리
+        # if many relation을 = []로 채운다면 기존 many들은 싹다 none으로 업데이트해버리다가 제약조건에 걸린다.
         self._session.merge(self)
         # else:
         #     self._session.merge(self)
@@ -143,16 +146,12 @@ class CRUDMixin(Base, ObjectMixin):
 
         # 1. add후 id, 등 반영하기 위해 [자체생성/외부받은 session 상관없이] flush를 때려준다.
         self._session.flush()
-        print('flush  >> ')
         # 2. 외부session인 경우, 외부의 마지막 옵션으로 더이상 사용안한다면 밖에서 auto_commit=True로 -> commit()을 때려 close시킨다.
         # => self.close()는 외부session을 flush()만 시키는데, 외부session이 CUD하는 경우, 자체적으로 commit()해야한다.
         # => 외부에서 더 쓴다면, 외부에서 sessino=sesion만 넣고 auto_commit 안하면 된다.
 
-        print('auto_commit  >> ', auto_commit)
-
         if auto_commit:
             self._session.commit()
-            print('commit  >> ')
 
         return self
 
@@ -302,7 +301,7 @@ class CRUDMixin(Base, ObjectMixin):
     ###################
     # Read - get      #
     ###################
-    @classmethod
+    @class_or_instancemethod
     def get(cls, *args, session: Session = None, **kwargs):
         """
         1. id(pk)로  1개만 검색하는 경우 => sessioin.get(cls, id)로 찾음.
@@ -377,6 +376,18 @@ class CRUDMixin(Base, ObjectMixin):
                     raise KeyError(f'Can\'t search pk or unique key({col_name}) value: {not_searched_values}')
                 # print('obj._query in many >> ', obj._query)
                 return results
+
+    @get.instancemethod
+    def get(self, id_, session: Session=None):
+        if type(id_) != int:
+            raise KeyError(f'id(pk)를 정수(int)로 입력해주세요.')
+
+        self.set_session_and_check_served(session)
+        result = self._session.get(self.__class__, id_)
+        self.close()
+
+        return result
+
 
     # for get
     @class_property
