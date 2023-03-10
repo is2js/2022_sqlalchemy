@@ -379,11 +379,21 @@ class CRUDMixin(Base, ObjectMixin):
 
     @get.instancemethod
     def get(self, id_, session: Session=None):
+        """
+        Employee.load({'user':'selectin'}).get(1)
+        => <Employee 1>
+        Employee.load({'user':'selectin'}).get(1000)
+        => None
+        """
         if type(id_) != int:
             raise KeyError(f'id(pk)를 정수(int)로 입력해주세요.')
 
         self.set_session_and_check_served(session)
-        result = self._session.get(self.__class__, id_)
+        # objectmixin의 다른 first() 실행메서드를 이용해야 query + eagerload하기
+        # 실행메서드 직전에schema상의 subquery, selectin eagerload 처리
+        # session.get(cls, id)만 호출하면 _query이용안해서 eagerload안하게 됨.
+        # result = self._session.get(self.__class__, id_)
+        result = self.filter_by(id=id_).first()
         self.close()
 
         return result
