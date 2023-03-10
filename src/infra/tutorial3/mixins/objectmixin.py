@@ -363,7 +363,8 @@ class ObjectMixin(Base, BaseQuery):
             if column_name in ['csrf_token', 'submit'] or column_name.startswith('hidden_'):
                 continue
 
-            if column_name not in self.settable_column_names:
+            # settable_column_names외에 @property라도 setter가 있으면 허용한다.
+            if column_name not in self.settable_column_names and not self.is_property_setter(column_name):
                 raise KeyError(f"Invalid column name: {column_name}")
 
             # 같은 값은 업데이트 안하고 넘김
@@ -375,36 +376,29 @@ class ObjectMixin(Base, BaseQuery):
             if column_name in self.column_names and getattr(self, column_name) == new_value:
                 continue
 
-            # #### many relation인 경우 set대신에 append하도록 추가
-            # if isinstance(getattr(self, column_name), InstrumentedList):
-            #     if isinstance(new_value, abc.Iterable):
-            #         for obj in new_value:
-            #             if object_session(obj) is self._session:
-            #                 # 이미 세션에 있는 객체라서 넘어가서 그냥commit으로 처리되게 하자
-            #                 print(obj, 'pass in session')
-            #                 continue
-            #             getattr(self, column_name).append(obj)
-            #     else:
-            #         if new_value in self._session:
-            #             # 이미 세션에 있는 객체라서 넘어가서 그냥commit으로 처리되게 하자
-            #             print(new_value, 'pass in session')
-            #             continue
-            #         getattr(self, column_name).append(new_value)
-            # # else:
-            # else:
-            if isinstance(getattr(self, column_name), abc.Iterable):
-                list_ = getattr(self, column_name)
-                if isinstance(new_value, abc.Iterable):
-                    list_ += new_value
-                else:
-                    list_.append(new_value)
+            # keyword에 relation propperty가 uselist=False면, 해당class type의 객체가 뜨지만
+            # => many relationship이 keyword로 오면,
+            # -> employee_departments: type: sqlalchemy.orm.collections.InstrumentedList
+            # -> 그렇다면 입력 many객체가 1개면, many에 append / list가 오면 덮어쓰는 것(일반 setter와 같음)로 정한다.
+            # -> many에 append를 하면 기존에 있던 것이라면, session.merge()에 의해 자동 수정반영된다.
+            if isinstance(getattr(self, column_name), InstrumentedList) and \
+                    not isinstance(new_value, list):
+                getattr(self, column_name).append(new_value)
             else:
+                print('column_name, new_value  >> ', column_name, new_value)
+
                 setattr(self, column_name, new_value)
-            # 1개라도 업뎃 되면 flag 1번만 표시
-            # if not is_updated:
-            #     is_updated = True
 
         return self  # 한번 이라도 업뎃되면 True/ 아니면 False 반환
+
+    # for fill
+    # settable_column_names외에 @property라도 setter가 있으면 허용한다.
+    # -> settable_column_names에 포함하지 않은 이유는, @property 목록에서 순회하며 검사해야하는 것을 피하기 위해
+    # -> settable_column_names가 아니면서 && [@property.setter도 아니면] 탈락 => 탈락조건에 and로 추가하여
+    # => 통과는 A or B로 되게 한다.
+    # Employee.role.setter: <built-in method setter of property object at 0x000001B92EA08B88>
+    def is_property_setter(self, column_name):
+        return hasattr(getattr(self.__class__, column_name), 'setter')
 
     # for exists_self + for update - fill - settable column snames
     @class_property
