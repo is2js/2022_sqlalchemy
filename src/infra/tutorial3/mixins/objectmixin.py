@@ -377,13 +377,17 @@ class ObjectMixin(Base, BaseQuery):
             if column_name in self.column_names and getattr(self, column_name) == new_value:
                 continue
 
-            # keyword에 relation propperty가 uselist=False면, 해당class type의 객체가 뜨지만
+            ## keyword에 relation propperty가 uselist=False면, 해당class type의 객체가 뜨지만
             # => many relationship이 keyword로 오면,
             # -> employee_departments: type: sqlalchemy.orm.collections.InstrumentedList
             # -> 그렇다면 입력 many객체가 1개면, many에 append / list가 오면 덮어쓰는 것(일반 setter와 같음)로 정한다.
             # -> many에 append를 하면 기존에 있던 것이라면, session.merge()에 의해 자동 수정반영된다.
-            if isinstance(getattr(self, column_name), InstrumentedList) and \
-                    not isinstance(new_value, list):
+            ## property가 password라서 읽으면 에러나는 것인데, many relationship 검사를 할 수도 있다.
+            # -> 이 때 확인하는 과정에서 에러가 나 버린다.
+            # -> 해당이 column_name이 relation_property일때만 검사하도록 수정한다.
+            # if isinstance(getattr(self, column_name), InstrumentedList) \
+            if column_name in self.relation_names and isinstance(getattr(self, column_name), InstrumentedList) \
+                    and not isinstance(new_value, list):
                 getattr(self, column_name).append(new_value)
             else:
                 setattr(self, column_name, new_value)
