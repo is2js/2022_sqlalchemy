@@ -43,12 +43,13 @@ class LoginForm(FlaskForm):
     # - html에서는 특정필드에 대한 에러 {% if form.username.errors %}로 뿌리므로
     #   => id필드에 대해 몰아서 검사하자.
     def validate_username(form, field):
-        with DBConnectionHandler() as db:
-            # id를 모르니 select문으로
-            user = db.session.scalars((
-                select(User)
-                .where(User.username == field.data)
-            )).first()
+        # with DBConnectionHandler() as db:
+        #     # id를 모르니 select문으로
+        #     user = db.session.scalars((
+        #         select(User)
+        #         .where(User.username == field.data)
+        #     )).first()
+        user = User.filter_by(username=field.data).first()
 
         if not user:
             raise ValidationError('해당 사용자가 존재하지 않습니다.')
@@ -77,24 +78,23 @@ class RegisterForm(FlaskForm):
     password1 = PasswordField('password1')
 
     def validate_username(form, field):
-        with DBConnectionHandler() as db:
-            stmt = exists().where(User.username == field.data).select()
-            exists_user = db.session.scalars(
-                stmt
-            ).one()
-
-        if exists_user:
+        # with DBConnectionHandler() as db:
+        #     stmt = exists().where(User.username == field.data).select()
+        #     exists_user = db.session.scalars(
+        #         stmt
+        #     ).one()
+        if User.filter_by(username=field.data).exists():
             raise ValidationError('이미 존재하는 username입니다')
 
     def validate_email(self, field):
-        condition = User.email == field.data
+        # condition = User.email == field.data
+        #
+        # with DBConnectionHandler() as db:
+        #     is_exists = db.session.scalars(
+        #         exists().where(condition).select()
+        #     ).one()
 
-        with DBConnectionHandler() as db:
-            is_exists = db.session.scalars(
-                exists().where(condition).select()
-            ).one()
-
-        if is_exists:
+        if User.filter_by(email=field.data).exists():
             raise ValidationError('이미 존재하는 email 입니다')
 
 
@@ -134,10 +134,10 @@ class UserInfoForm(FlaskForm):
                         description="[010 1234 1234], [01012341234], [011-1234-1234] 3가지 다 입력가능! 포함 숫자 11개만 주의!"
                         )
 
-    # 수정form를 위한  생성자 재정의
-    def __init__(self, user=None, *args, **kwargs):
-        self.user = user
-
+    # 수정form를(model과 같은 필드명으로 할당으로 채워지기) 위한  생성자 재정의
+    # def __init__(self, user=None, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
+        self.user = g.user
         if self.user:
             # super().__init__(**self.user.__dict__)
             super().__init__(**self.user.__dict__, **kwargs)
@@ -151,17 +151,20 @@ class UserInfoForm(FlaskForm):
         #     return
         # print("옵셔널필드의 경우 입력안할시 validate_ 메서드를 타나?")
 
-        if self.user:  # 수정시 자신의 제외하고 데이터 중복 검사
-            condition = and_(User.id != self.user.id, User.email == field.data)
-        else:  # 생성시 자신의 데이터를 중복검사
-            condition = User.email == field.data
+        if self.user:  # 수정시 자신의 제외하고 unique로 데이터 중복 검사
+            # condition = and_(User.id != self.user.id, User.email == field.data)
+            filter_data = dict(id__ne=self.user.id, email=field.data)
+        else:  # 생성시 unique로 자신의 데이터를 중복검사
+            # condition = User.email == field.data
+            filter_data = dict(email=field.data)
 
-        with DBConnectionHandler() as db:
-            is_exists = db.session.scalars(
-                exists().where(condition).select()
-            ).one()
-
-        if is_exists:
+        # with DBConnectionHandler() as db:
+        #     is_exists = db.session.scalars(
+        #         exists().where(condition).select()
+        #     ).one()
+        #
+        # if is_exists:
+        if User.filter_by(**filter_data).exists():
             raise ValidationError('이미 존재하는 email 입니다')
 
     def validate_phone(self, field):
@@ -175,16 +178,19 @@ class UserInfoForm(FlaskForm):
         # => 그렇다. validate에서는 filters를 거친 데이터가 들어온다.
 
         if self.user:  # 수정시 자신의 제외하고 데이터 중복 검사
-            condition = and_(User.id != self.user.id, User.phone == field.data)
+            # condition = and_(User.id != self.user.id, User.phone == field.data)
+            filter_data = dict(id__ne=self.user.id, phone=field.data)
         else:  # 생성시 자신의 데이터를 중복검사
-            condition = User.phone == field.data
+            # condition = User.phone == field.data
+            filter_data = dict(phone=field.data)
 
-        with DBConnectionHandler() as db:
-            is_exists = db.session.scalars(
-                exists().where(condition).select()
-            ).one()
-
-        if is_exists:
+        # with DBConnectionHandler() as db:
+        #     is_exists = db.session.scalars(
+        #         exists().where(condition).select()
+        #     ).one()
+        #
+        # if is_exists:
+        if User.filter_by(**filter_data).exists():
             raise ValidationError('이미 존재하는 phone 입니다')
 
 

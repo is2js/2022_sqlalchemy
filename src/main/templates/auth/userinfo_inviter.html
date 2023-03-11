@@ -5,8 +5,8 @@
         <p class="image is-64x64">
             <img style="height: 64px;width: 100%;"
                  src="
-                             {% if invite.inviter.avatar %}
-                             {{url_for('download_file', filename=invite.inviter.avatar)}}
+                             {% if invite.invitee.avatar %}
+                             {{url_for('download_file', filename=invite.invitee.avatar)}}
                              {% else %}
                              {{url_for('static', filename='img/user/default_avatar.svg')}}
                              {% endif %}
@@ -20,9 +20,9 @@
             <!--            <p>-->
             <p class="mb-0 is-size-6">
                 <!-- 관리자급은, name을 기입안하고 바로 role을 부여받았을 수 있다. => or로 deafult name주기 -->
-                <strong>{{ invite.inviter.employee.name or '이름없음' }}</strong>님의
+                <strong>{{ invite.invitee.employee.name or '이름없음' }}</strong>님에게
                 <span class="has-text-primary-dark">직원초대({{invite.role.name}})</span>
-                가 도착했습니다.
+                를 보냈습니다
 
                 <span class="has-text-grey-light">
                     <span class="icon"><i class="mdi mdi-clipboard-text-clock-outline"></i></span>
@@ -33,14 +33,8 @@
         {% if invite.is_valid %}
         <nav class="level is-mobile">
             <div class="level-left is-size-7">
-                <a class="level-item button is-primary is-small"
-                   href="{{url_for('auth.employee_invite_accept', id=invite.id)}}"
-                >
-                    <span style="margin-right: 1px;" class="icon"><i class="mdi mdi-check"></i></span>
-                    수락
-                </a>
-                <!-- 거절과 연기는 only form - post로 요청하여 redirect받기 -->
-                <form action="{{url_for('auth.employee_invite_reject', id= invite.id) }}"
+                <!-- 거절과 연기(받은)/전송취소(보낸)는 only form - post로 요청하여 redirect받기 -->
+                <form action="{{url_for('auth.employee_invite_cancel', id= invite.id) }}"
                       method="post"
                       @submit.prevent="submitForm"
                       class="mr-3"
@@ -50,7 +44,7 @@
                             :disabled="isLoading"
                     >
                         <span style="margin-right: 1px;" class="icon"><i class="mdi mdi-close"></i></span>
-                        거절
+                        전송 취소
                     </button>
                 </form>
 
@@ -73,11 +67,9 @@
         <span class="has-text-grey-light"> 응답이 끝난 초대입니다.</span>
         {% endif %}
     </div>
-    <!--    <div class="media-right">-->
-    <!--        <button class="delete"></button>-->
-    <!--    </div>-->
+
 </article>
 {% endfor %}
 {% else %}
-    <span class="has-text-grey-light"> 받은 초대가 없습니다.</span>
+    <span class="has-text-grey-light"> 보낸 초대가 없습니다.</span>
 {% endif %}

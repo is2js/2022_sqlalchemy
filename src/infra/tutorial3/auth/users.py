@@ -252,24 +252,20 @@ class User(BaseModel):
             db.session.commit()
 
     # 최근방문시간 -> model ping메서드 -> auth route에서 before_app_request에 로그인시 메서드호출하면서 수정하도록 변경
-    @classmethod
-    def ping_by_id(cls, user_id):
-        with DBConnectionHandler() as db:
-            stmt = (
-                update(cls)
-                .where(cls.id == user_id)
-                .values({
-                    cls.last_seen: datetime.datetime.now()
-                })
-            )
-
-            db.session.execute(stmt)
-            db.session.commit()
-
-            # current_user = db.session.get(cls, user_id)
-            # current_user.last_seen = datetime.datetime.now()
-            # db.session.add(current_user)
-            # db.session.commit()
+    # => user.update로 정리됨.
+    # @classmethod
+    # def ping_by_id(cls, user_id):
+    #     with DBConnectionHandler() as db:
+    #         stmt = (
+    #             update(cls)
+    #             .where(cls.id == user_id)
+    #             .values({
+    #                 cls.last_seen: datetime.datetime.now()
+    #             })
+    #         )
+    #
+    #         db.session.execute(stmt)
+    #         db.session.commit()
 
     @classmethod
     def get_by_id(cls, id):
