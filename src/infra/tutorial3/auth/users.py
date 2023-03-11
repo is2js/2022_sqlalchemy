@@ -1258,7 +1258,6 @@ class Employee(BaseModel):
         User_ = mapper.user.mapper.class_
         return mapper.user.has((User_.role_id == role.id))
 
-
     # refactor
     @hybrid_method
     def has_role_name(cls, role_name, mapper=None):
@@ -1780,43 +1779,38 @@ class Employee(BaseModel):
         # 이 때, fill될 데이터는 filter_by + create 둘다에서 쓸 것이니 -> 미리 변수로 만들어놓는다.
         # result, message_after_save = after_emp_dept.save()
         after_emp_dept_data = dict(
-            dismissal_date=None,
+            dismissal_date=None, # default 칼럼이지만, filter_by에 활용하기 위해, 직접 default값을 명시
             employee_id=self.id,
             department_id=after_dept_id,
             employment_date=target_date,
             is_leader=as_leader,
         )
-        # 검증1. 변경할 부서가 이미 소속된 부서인 경우, 탈락
-        exists_after_emp_dept = EmployeeDepartment_.filter_by(
-            # dismissal_date=None,
-            # employee_id=after_emp_dept_data['employee_id'],
-            # department_id=after_emp_dept_data['department_id'],
-            **{k: v for k, v in after_emp_dept_data.items() if k not in ['is_leader', 'employee_date']}
-        ).exists()
-        if exists_after_emp_dept:
-            return False, '이미 소속 중인 부서입니다.'
 
-        # 검증2. as_leader로 부서변경을 원했는데, 이미 해당 after부서에 leader로 취업한 사람이 있는 경우, 탈락
-        if as_leader and EmployeeDepartment_.filter_by(
-                **{k: v for k, v in after_emp_dept_data.items() if k not in ['employee_id', 'employee_date']}
-        ).exists():
-            return False, '해당 부서에는 이미 팀장이 존재합니다.'
+        # # 검증1. 변경할 부서가 이미 소속된 부서인 경우, 탈락
+        # exists_after_emp_dept = EmployeeDepartment_.filter_by(
+        #     **{k: v for k, v in after_emp_dept_data.items() if k not in ['is_leader', 'employee_date']}
+        # ).exists()
+        # if exists_after_emp_dept:
+        #     return False, '이미 소속 중인 부서입니다.'
+        #
+        # # 검증2. as_leader로 부서변경을 원했는데, 이미 해당 after부서에 leader로 취업한 사람이 있는 경우, 탈락
+        # if as_leader and EmployeeDepartment_.filter_by(
+        #         **{k: v for k, v in after_emp_dept_data.items() if k not in ['employee_id', 'employee_date']}
+        # ).exists():
+        #     return False, '해당 부서에는 이미 팀장이 존재합니다.'
+        #
+        # # 검증3. 해당 after dept가 1인부서(부/장급부서)인데, 이미 1명의 active한 취임정보가 존재하는 경우
+        # after_dept = Department_.get(after_dept_id)
+        # if after_dept.type == DepartmentType.부장 and EmployeeDepartment_.filter_by(
+        #         **{k: v for k, v in after_emp_dept_data.items() if k in ['dismissal_date', 'department_id']}
+        # ).exists():
+        #     return False, '해당 부서는 1인 부서로서, 이미 팀장이 존재합니다.'
 
-        # 검증3. 해당 after dept가 1인부서(부/장급부서)인데, 이미 1명의 active한 취임정보가 존재하는 경우
-        after_dept = Department_.get(after_dept_id)
-        if after_dept.type == DepartmentType.부장 and EmployeeDepartment_.filter_by(
-                **{k: v for k, v in after_emp_dept_data.items() if k in ['dismissal_date', 'department_id']}
-        ).exists():
-            return False, '해당 부서는 1인 부서로서, 이미 팀장이 존재합니다.'
-
-        after_emp_dept, msg = EmployeeDepartment_.create(employee_id=self.id,
-                                                         department_id=after_dept_id,
-                                                         is_leader=as_leader,
-                                                         employment_date=target_date,
-                                                         auto_commit=False,
-                                                         # False안하면, session에서 expire되어서, -> 이후 update시 빈 객체가 들어간다?!
-                                                         )
-        #### 같은 session에서 commit하면, 결과물을 조회할 순 있지만,
+        # auto_commit=True로 줄 경우, 무조건 session.merge의 결과를 활용해야한다. False일 경우, session에 떠있어서, main obj 수정시 자동 반영 된다?
+        after_emp_dept, msg = EmployeeDepartment_.create(
+            **after_emp_dept_data,
+            auto_commit=False, # 중간 rel obj 생성이라 commit은 뒤에서
+        )
 
         if after_emp_dept:
             # result가 True라는 말은, after부서가 있어서 => 새로운 부서 취임정보 생성 완료
@@ -1825,7 +1819,8 @@ class Employee(BaseModel):
             # (4) 취임정보.create()에서 나온 성공1/실패N 메세지 중 [취임정보 생성 성공1]에 대해
             # => current O/X에 따라 부서변경/ 부서추가의 메세지 따로 반환
             # if current_dept_id:
-                # current_dept = Department.get(current_dept_id)
+            # current_dept = Department.get(current_dept_id)
+            after_dept = Department_.get(after_dept_id)
             if current_dept_id:
                 current_dept = Department_.get(current_dept_id)
                 self.fill_reference(f"[{current_dept.name}→{after_dept.name}]부서 변경({format_date(target_date)})")
@@ -1835,13 +1830,11 @@ class Employee(BaseModel):
                 self.fill_reference(f"[{after_dept.name}]부서 취임({format_date(target_date)})")
                 message = f"부서 추가[{after_dept.name}]를 성공하였습니다."
 
-
             # updated_data.update(dict(employee_departments=[current_emp_dept, after_emp_dept]))
             # self.fill(employee_departments=after_emp_dept)
             #### 이미 기존에 append할 employee_departments가 있는 상황인데,
             #    list로 전달하면, 덮어쓰기 되어버리므로
             #    추가적으로 append할 때는 1개는 fill로 처리하자.
-
             self.fill(employee_departments=after_emp_dept)  # data['employee_departments']가 이미 있으므로 미리 fill -> append
             self.update(**data)
 

@@ -335,6 +335,31 @@ class EmployeeDepartment(BaseModel):
     #     # return result, "새로운 부서취임 정보가 발생하였습니다."
 
     @classmethod
+    def create(cls, session: Session = None, auto_commit: bool = True, **kwargs):
+        # 검증1. 변경할 부서가 이미 소속된 부서인 경우, 탈락
+        exists_after_emp_dept = cls.filter_by(
+            **{k: v for k, v in kwargs.items() if k not in ['is_leader', 'employee_date']}
+        ).exists()
+        if exists_after_emp_dept:
+            return False, '이미 소속 중인 부서입니다.'
+
+        # 검증2. as_leader로 부서변경을 원했는데, 이미 해당 after부서에 leader로 취업한 사람이 있는 경우, 탈락
+        if kwargs['is_leader'] and cls.filter_by(
+                **{k: v for k, v in kwargs.items() if k not in ['employee_id', 'employee_date']}
+        ).exists():
+            return False, '해당 부서에는 이미 팀장이 존재합니다.'
+
+        # 검증3. 해당 after dept가 1인부서(부/장급부서)인데, 이미 1명의 active한 취임정보가 존재하는 경우
+        Department_ = cls.department.mapper.class_
+        after_dept = Department_.get(kwargs['department_id'])
+        if after_dept.type == DepartmentType.부장 and cls.filter_by(
+                **{k: v for k, v in kwargs.items() if k in ['dismissal_date', 'department_id']}
+        ).exists():
+            return False, '해당 부서는 1인 부서로서, 이미 팀장이 존재합니다.'
+
+        return super().create(session=session, auto_commit=auto_commit, **kwargs)
+
+    @classmethod
     def get_by_emp_id(cls, emp_id):
         with DBConnectionHandler() as db:
             stmt = (
