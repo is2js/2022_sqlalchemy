@@ -105,9 +105,9 @@ class Post(BaseModel):
 
     tags = relationship('Tag', secondary=posttags,
                         # lazy='subquery',
-                        lazy='subquery', join_depth=2,  # (front) for post -> post.tags -> tags |join(',')
+                        # lazy='subquery', join_depth=2,  # (front) for post -> post.tags -> tags |join(',')
                         # backref=backref('posts', lazy=True)
-                        backref=backref('posts', lazy='subquery'),  # tag -> (front) tag.posts 해결
+                        # backref=backref('posts', lazy='subquery'),  # tag -> (front) tag.posts 해결
                         )
 
     def __repr__(self):
@@ -123,6 +123,8 @@ class Tag(BaseModel):
     # id = Column(Integer, primary_key=True)
     id = Column(Integer().with_variant(BigInteger, "postgresql"), primary_key=True)
     name = Column(String(128), nullable=False, unique=True)
+
+    posts = relationship('Post', secondary=posttags, viewonly=True)
 
     def __repr__(self):
         # info: str = f"{self.__class__.__name__}" \

@@ -7,7 +7,7 @@ from sqlalchemy import and_, or_, select, func, distinct, inspect, Table, cast, 
     Numeric, desc, asc, join, extract
 from sqlalchemy.ext.hybrid import hybrid_property, hybrid_method
 from sqlalchemy.orm import InstrumentedAttribute, joinedload, subqueryload, selectinload, aliased, RelationshipProperty, \
-    contains_eager
+    contains_eager, DeclarativeMeta
 from sqlalchemy.orm.util import AliasedClass
 from sqlalchemy.sql import ColumnElement, Subquery, Alias, operators
 from sqlalchemy.sql.elements import UnaryExpression
@@ -166,7 +166,8 @@ class BaseQuery:
             # stmt.alias() + Table + stmt.subquery()
             column_expr = getattr(model.c, attr, None)
         else:
-            # aliased, 일반class
+            # aliased, 일반 model class
+            # cf) @hybrid_property는 attr가 아니라 expression으로서 getattr로 안꺼내진다.
             column_expr = getattr(model, attr, None)
 
         # if column is None:
@@ -308,8 +309,7 @@ class BaseQuery:
 
     @classmethod
     def check_filterable_attr_name(cls, model, attr):
-        if attr not in cls.get_filterable_attr_names(model)\
-                and not hasattr(cls, attr):
+        if attr not in cls.get_filterable_attr_names(model):
             raise KeyError(f'Invalid filter_by or having attr name: {attr}')
 
     @classmethod
@@ -817,10 +817,11 @@ class BaseQuery:
 
         for attr, value in filters.items():
             # 2-1) 우선 적으로 hybrid_method인지 검사하여 다르게 처리
-            if attr in cls.get_hybrid_method_names(model):
+            if attr in cls.get_hybrid_method_names(mapper):
                 method = getattr(cls, attr)
                 expressions.append(method(value, mapper=mapper))
                 continue
+
             # 2-2) 입력한 필터 옵션이 연산자처리인 경우
             # 2-2-1) filter expr는 if __가 있다면, [1]op 'id__eq' [2] op(eq)이 생략된 집계 'id__count' OR  [3] op명시 집계 'id__count__eq'
             # 'id'  'id__eq'   'id__count' 'id__count__eq' -> select/order와 다르게,

@@ -2,13 +2,14 @@ import datetime
 import enum
 import itertools
 import uuid
+from collections import abc
 
 from dateutil.relativedelta import relativedelta
 from flask import url_for, g
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, select, case, and_, exists, func, DateTime, \
-    BigInteger, update, Date, desc
+    BigInteger, update, Date, desc, literal_column, column
 from sqlalchemy.ext.hybrid import hybrid_property, hybrid_method
-from sqlalchemy.orm import relationship, backref, aliased
+from sqlalchemy.orm import relationship, backref, aliased, selectinload
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from src.config import project_config
@@ -76,11 +77,28 @@ class User(BaseModel):
     ## - user입장에선 정보성 role을 fk로 가졌다가, role entity에서 정보를 가져오는 것이지미나
     ## - role입장에선 1:m이다. 1user는 1role,  1role은 여러유저들에게 사용
     role_id = Column(Integer, ForeignKey('roles.id'), nullable=False)
+    #### employee.user.role 을 @property setter로 두고, session.merge로 변경한다면
+    # -> null로 한번 뒀따가, 바뀐 값으로 update하길 2번을 한다.
+    # -> 이 때 중간에 fk제약조건이 없어야한다.
+    # role_id = Column(Integer, ForeignKey('roles.id'))
+    # => 매번 flush 코드 제거하니 None 업데이트 사라짐.
+
     #### role에 정의했던 관계속성 옮김
     # role = relationship('Role', backref=backref('users', lazy='dynamic'), lazy='subquery')
     # => eager options 적용을 위해 lazy='dynamic' 옵션 제거 => jinja에서 갖다쓰는거 해결하고 처리해야함.
     # role = relationship('Role', backref=backref('users'), lazy='subquery')
-    role = relationship('Role', backref=backref('users'))  # eagerload와 lazy=subquery를 동시에 주면 sqlite multitrhead 에러난다.
+    role = relationship('Role',
+                        uselist=False,
+                        # back_populates='user'
+                        )
+    # for user_popup User.filter_by(employee___id)
+    employee = relationship('Employee', uselist=False, back_populates='user')
+
+    # eagerload와 lazy=subquery를 동시에 주면 sqlite multitrhead 에러난다.
+
+    ## emp에 relationship 추가
+    # employees = relationship('Employee', back_populates='user')
+
     #### .join()에 관계칼럼을 사용하려면, lazy='subquery'를 주면 안된다.
     # role = relationship('Role', backref=backref('users'))
 
@@ -143,7 +161,7 @@ class User(BaseModel):
     # @password.inplace.setter # 2.0 # https://docs.sqlalchemy.org/en/20/orm/extensions/hybrid.html#defining-setters
     #### User().fill() -> setattr()를 통해서 입력되는, Model.create()에서는 가능하나
     #    User(password= )로 직접적으로 생성하면 @property가 아니라 @hybrid라서 에러뜬다
-    @password.setter # 1.4
+    @password.setter  # 1.4
     def password(self, password):
         self.password_hash = generate_password_hash(password)
 
@@ -181,7 +199,7 @@ class User(BaseModel):
 
     @hybrid_method
     def is_(self, role_enum):
-        #### mysql에서는 enum(Permission).value를 안하면 비교가 안된다.
+        # mysql에서는 enum(Permission).value를 안하면 비교가 안되서, enum class에 propoerty 추가
         return self.role.permissions >= role_enum.max_permission
 
     @is_.expression
@@ -189,7 +207,7 @@ class User(BaseModel):
 
         mapper = mapper or cls
         Role_ = mapper.role.property.mapper.class_
-        #### mysql에서는 enum(Permission).value를 안하면 비교가 안된다.
+        # mysql에서는 enum(Permission).value를 안하면 비교가 안되서, enum class에 propoerty 추가
         return cls.role.has(Role_.permissions >= role_enum.max_permission)
 
     #### permissions 비교는 항상  >=로 하니까
@@ -439,6 +457,9 @@ class Role(BaseModel):
 
     employee_invites = relationship('EmployeeInvite', backref=backref('role', lazy='subquery'), lazy='dynamic')
 
+    # 해결1) User <- Role 관계설정
+    # user = relationship('User', back_populates='role', uselist=False)
+
     ## Role을 생성(수정시도 생성)할 때, Role객체 생성시 따로 permissions= int값(enum)을 입력하지 않는다면,
     ## - permission을 int 0으로 채워둔다.
     ## - 사실 Role객체를 미리 생성할 일은 없고, 나중에 일괄생성하는데, 그때 0부터 채우도록 하는 것
@@ -562,15 +583,15 @@ class JobStatusType(enum.IntEnum):
     @classmethod
     def is_active(cls, jos_status):
         # enum은 비교할때 enum객체 op value로 비교하면 된다. 따로 .value로 비교안해도 됨.
-        return cls.재직 == jos_status
+        return cls.재직.value == jos_status
 
     @classmethod
     def is_leave(cls, jos_status):
-        return cls.휴직 == jos_status
+        return cls.휴직.value == jos_status
 
     @classmethod
     def is_resign(cls, jos_status):
-        return cls.퇴사 == jos_status
+        return cls.퇴사.value == jos_status
 
 
 class Employee(BaseModel):
@@ -583,7 +604,11 @@ class Employee(BaseModel):
     user_id = Column(Integer, ForeignKey("users.id"), index=True)
     #### Many쪽에 backref가 아닌 관계속성을 직접 정의해야, => Many.one.any()를 stmt에 쓸 수 있다.
     # User에서 정의했던 관계속성 옮김 =>  employee = relationship('Employee', backref=backref('user', lazy='subquery'), lazy='subquery', uselist=False)
-    user = relationship('User', backref=backref('employee', lazy='subquery'), lazy='subquery', uselist=False)
+    user = relationship('User',
+                        uselist=False,
+                        # back_populates='employee'
+                        )
+
     # 부서
 
     name = Column(String(40), nullable=False)
@@ -600,16 +625,29 @@ class Employee(BaseModel):
     # new : 휴직 상태의 최종휴직일을 알도록 칼럼을 추가한다
     leave_date = Column(Date, nullable=True)
 
-    reference = Column(String(128), nullable=True)
+    reference = Column(String(500), nullable=True)
 
     #### MANY 취임정보(들)에 대한 relationship 생성
     employee_departments = relationship('EmployeeDepartment',
                                         foreign_keys='EmployeeDepartment.employee_id',
-                                        back_populates='employee')
+                                        back_populates='employee',
+                                        )
     employee_leave_histories = relationship('EmployeeLeaveHistory',
                                             foreign_keys='EmployeeLeaveHistory.employee_id',
                                             back_populates='employee',
                                             )
+
+    #### 다대다(취임정보)를 건너서 바로 Employee -> (EmpDept) -> Dept에 relationship 생성
+    # -> 오로지 조회용 Department class를 import없이 불러오기 위함.
+    # -> 대체 Employee.employee_departments.property.mapper.class_.department.mapper.class_
+    departments = relationship('Department',
+                               # secondary=EmployeeDepartment, # Table객체 아니라 바로 못올림.
+                               # secondary='employee_departments', # string도 더 위에서 정의한 Table객체 아니면 안됨.
+                               secondary=EmployeeDepartment.__table__,
+                               # back_populates='employees', # 이미 one-Many, one-Many로 relationship만들어서 안됨.
+                               # lazy=True, # session에 있을때 즉시 소환하는 lazy='selectin'임.
+                               viewonly=True,  # one-Many + Many-one으로 id복사하고 있다고 뜨니, 그냥 조회용으로만
+                               )
 
     # qrcode, qrcode_img: https://github.com/prameshstha/QueueMsAPI/blob/85dedcce356475ef2b4b149e7e6164d4042ffffb/bookings/models.py#L92
 
@@ -663,35 +701,35 @@ class Employee(BaseModel):
 
     @hybrid_property
     def is_pending(self):
-        return self.job_status == JobStatusType.대기
+        return self.job_status == JobStatusType.대기.value
 
     @is_pending.expression
     def is_pending(cls):
-        return cls.job_status == JobStatusType.대기
+        return cls.job_status == JobStatusType.대기.value
 
     @hybrid_property
     def is_active(self):
-        return self.job_status == JobStatusType.재직
+        return self.job_status == JobStatusType.재직.value
 
     @is_active.expression
     def is_active(cls):
-        return cls.job_status == JobStatusType.재직
+        return cls.job_status == JobStatusType.재직.value
 
     @hybrid_property
     def is_leaved(self):
-        return self.job_status == JobStatusType.휴직
+        return self.job_status == JobStatusType.휴직.value
 
     @is_leaved.expression
     def is_leaved(cls):
-        return cls.job_status == JobStatusType.휴직
+        return cls.job_status == JobStatusType.휴직.value
 
     @hybrid_property
     def is_resigned(self):
-        return self.job_status == JobStatusType.퇴사
+        return self.job_status == JobStatusType.퇴사.value
 
     @is_resigned.expression
     def is_resigned(cls):
-        return cls.job_status == JobStatusType.퇴사
+        return cls.job_status == JobStatusType.퇴사.value
 
     @property
     def birthday(self):
@@ -978,22 +1016,110 @@ class Employee(BaseModel):
             except ValueError:
                 return []
 
+    # refactor
+    def get_departments(self, as_leader=False, as_employee=False,
+                        min_level=False, exclude=None):
+        """
+        emp = Employee.get(2)
+        emp.get_departments()
+        => [Department(id=1, name='상위부서', parent_id=None, sort=1, path='001'), Department(id=2, name='하위부서1', parent_id=1, sort=1, path='001001'), Department(id=3, name='하위부서2', parent_id=1, sort=2, path='001002')]
+        emp.get_departments(as_leader=True)
+        => [Department(id=1, name='상위부서', parent_id=None, sort=1, path='001'), Department(id=3, name='하위부서2', parent_id=1, sort=2, path='001002')]
+        emp.get_departments(as_employee=True)
+        => [Department(id=2, name='하위부서1', parent_id=1, sort=1, path='001001')]
+        emp.get_departments(min_level=True)
+        => [Department(id=1, name='상위부서', parent_id=None, sort=1, path='001')]
+        emp.get_departments(exclude=1)
+        => [Department(id=2, name='하위부서1', parent_id=1, sort=1, path='001001'), Department(id=3, name='하위부서2', parent_id=1, sort=2, path='001002')]
+        emp.get_departments(exclude=[1,2])
+        => [Department(id=3, name='하위부서2', parent_id=1, sort=2, path='001002')]
+        """
+        # Department_ = self.__class__.departments.property.mapper.class_
+        # -> 이것도 되지만 aliased일때 처리가 추가된 듯? -> 아님.. 걍 됨.
+        Department_ = self.__class__.departments.mapper.class_
+
+        initial_filter_name = 'is_belonged_to'
+        if as_leader and as_employee:
+            raise Exception(f'only 1 select as_leader or as_employee')
+        elif as_leader:
+            initial_filter_name += '_as_leader'
+        elif as_employee:
+            initial_filter_name += '_as_employee'
+
+        filter_map = {
+            'and_': {
+                f'{initial_filter_name}': self
+            }
+        }
+
+        # 배제할 dept_id가 있다면, 추가 (view에서 선택된 dept를 제외할 때)
+        if exclude:
+            if isinstance(exclude, abc.Iterable):
+                filter_map.get('and_').update({'id__notin': exclude})
+            else:
+                filter_map.get('and_').update({'id__ne': exclude})
+
+        # 지금까지의 query에 집계값을 filter에 반영하기
+        if min_level:
+            # 1. 지금까지 사용된 query를 얻기 위해 실행직전까지를 obj로 만든다.
+            # obj = Department_.filter_by(**filter_map).order_by('path')
+            # # 2. .alias()를 통해 Subquery를 만들어고 변수로 뽑아 from이 될 준비를 한다.
+            # # -> 이 순간, @hybrid_property는 못쓰게 되며, subquery.a.칼럼으로 뽑아서 select한다
+            # a = obj._query.alias() # .alias()는 subquery를 만든다.
+            a = Department_.filter_by(**filter_map).subquery()
+            # 3. 집계 expression을 a.c.칼럼으로 expression을 작성하고, select_from( a )를 추가하여 새로운 query를 만듦.
+            level_expr = func.length(a.c.path) / Department_._N - 1
+            min_query = select(func.min(level_expr)).select_from(a)
+            # 4. 집계가 제대로 뽑히는지 test
+            # min_level_scalar = obj._session.scalar(
+            #     min_query
+            # )
+            # 5. main query와 함께 실행 + where절에 value로 사용할 수 있도록 scalar_subquery()를 붙인다.
+            # - 이 때, main query와 무관한 집계여야만, main query의 where절(filter_by의 value)에 사용할 수 있다.
+            min_level_subq = min_query.scalar_subquery()
+
+            # 6. 집계값을 filter_by에 동적으로 추가한다.
+            filter_map.get('and_').update({'level': min_level_subq})
+
+        return Department_.filter_by(**filter_map).order_by('path').all()
+
     #### with other entity
-    def is_leader_in(self, department: Department):
-        with DBConnectionHandler() as db:
-            stmt = (
-                select(EmployeeDepartment)
-                .where(EmployeeDepartment.dismissal_date.is_(None))
-                .where(EmployeeDepartment.department.has(Department.id == department.id))
-                .where(EmployeeDepartment.employee.has(Employee.id == self.id))
-            )
+    # def is_leader_in(self, department: Department):
+    #     with DBConnectionHandler() as db:
+    #         stmt = (
+    #             select(EmployeeDepartment)
+    #             .where(EmployeeDepartment.dismissal_date.is_(None))
+    #             .where(EmployeeDepartment.department.has(Department.id == department.id))
+    #             .where(EmployeeDepartment.employee.has(Employee.id == self.id))
+    #         )
+    #
+    #         emp_dep: EmployeeDepartment = db.session.scalars(stmt).first()
+    #
+    #         if not emp_dep:
+    #             return False
+    #
+    #         return emp_dep.is_leader
 
-            emp_dep: EmployeeDepartment = db.session.scalars(stmt).first()
+    # refactor
+    def is_leader_in(self, department):
+        """
+        dept = Department.get(1)
+        emp = Employee.get(2)
+        emp.is_leader_in(dept)
+        True
+        dept2 = Department.get(2)
+        emp.is_leader_in(dept2)
+        False
+        """
+        EmployeeDepartment_ = self.__class__.employee_departments.mapper.class_
+        is_leader = EmployeeDepartment_.filter_by(
+            dismissal_date=None,
+            is_leader=True,
+            is_recorded_about=self,
+            is_recorded_in=department
+        ).exists()
 
-            if not emp_dep:
-                return False
-
-            return emp_dep.is_leader
+        return is_leader
 
     #### with other entity
     def get_leader_or_senior_leader(self):
@@ -1094,35 +1220,85 @@ class Employee(BaseModel):
             return position if position else '(공석)'
 
     #### with other entity
+    # @hybrid_property
+    # def role(self):
+    #     with DBConnectionHandler() as db:
+    #         stmt = (
+    #             select(Role)
+    #             .where(Role.user.has(User.id == self.user_id))
+    #         )
+    #         role = db.session.scalars(stmt).first()
+    #         return role
+
+    # refactor
     @hybrid_property
     def role(self):
-        with DBConnectionHandler() as db:
-            stmt = (
-                select(Role)
-                .where(Role.users.any(User.id == self.user_id))
-            )
-            role = db.session.scalars(stmt).first()
-            return role
+        return self.user.role
 
-    #### with other entity
+    @role.setter
+    def role(self, role):
+        self.user.role = role
+
+    # refactor => @hybrid_property와 동일한 이름의 method/expression을 생성하면 filter_by에 걸리기도 전에 덮어쓴다.
+    @hybrid_method
+    def has_role(cls, role, mapper=None):
+        """
+        *@hybrid_property보다 위에 정의한 경우 -> filter_by로 표현식을 getattr()로 만들 때,
+           @hybrid_property를 가져가서, getattr(cls, attr, None)시 표현식이 안만들어진다.
+           더 아래쪽의 @hybrid_property를 가져가면 getattr()에서 None으로 반환됨.
+        => Employee.filter_by(role=Role.get(2)).all()
+        []
+
+        *@hybrid_proerty보다 아래에 정의하여 -> filter_by 표현식에서 @hybrid_method가 잡혀가게 해야한다.
+
+        => Employee.filter_by(role=Role.get(2)).all()
+        [<Employee 5>]
+        """
+        mapper = mapper or cls
+        User_ = mapper.user.mapper.class_
+        return mapper.user.has((User_.role_id == role.id))
+
+
+    # refactor
+    @hybrid_method
+    def has_role_name(cls, role_name, mapper=None):
+        """
+        # Rel-Rel의 id or obj가 아닌, Role의 특정 필드(name)를 인자로 필터링 한다면,
+        # Re + Rel모두 class_를 뽑아낸 뒤, has ( has())로 2번 걸어줘야한다.
+        # has1개만 두면, EXIST 절이 casadian product from Rel1, Rel1로 잡히게 된다.
+
+        Employee.filter_by(has_role_name__ne='ADMINISTRATOR').all()
+        => [<Employee 2>, <Employee 3>, <Employee 4>, <Employee 5>]
+        """
+        mapper = mapper or cls
+        User_ = mapper.user.mapper.class_
+        Role_ = User_.role.mapper.class_
+
+        return mapper.user.has((User_.role.has(Role_.name == role_name)))
+
     @hybrid_property
     def is_staff(self):
-        return self.role.is_(Roles.STAFF)
+        # return self.role.is_(Roles.STAFF)
+        return self.user.role.is_(Roles.STAFF)
 
-    #### with other entity
     @hybrid_property
     def is_chiefstaff(self):
-        return self.role.is_(Roles.CHIEFSTAFF)
+        """
+        required: Employee.load({'user': ('selectin', {'role':'selectin'})})
+        """
+        return self.user.role.is_(Roles.CHIEFSTAFF)
 
     #### with other entity
     @hybrid_property
     def is_executive(self):
-        return self.role.is_(Roles.EXECUTIVE)
+        # return self.role.is_(Roles.EXECUTIVE)
+        return self.user.role.is_(Roles.EXECUTIVE)
 
     #### with other entity
     @hybrid_property
     def is_administrator(self):
-        return self.role.is_(Roles.ADMINISTRATOR)
+        # return self.role.is_(Roles.ADMINISTRATOR)
+        return self.user.role.is_(Roles.ADMINISTRATOR)
 
     @classmethod
     def get_by_name(cls, name):
@@ -1156,16 +1332,18 @@ class Employee(BaseModel):
 
             return db.session.scalars(stmt).all()
 
-    @classmethod
-    def get_not_resigned_by_id(cls, id):
-        with DBConnectionHandler() as db:
-            stmt = (
-                select(cls)
-                .where(cls.id == id)
-                .where(cls.job_status != JobStatusType.퇴사)
-            )
-
-            return db.session.scalars(stmt).first()
+    # delete
+    # @classmethod
+    # def get_not_resigned_by_id(cls, id):
+    #     with DBConnectionHandler() as db:
+    #         stmt = (
+    #             select(cls)
+    #             .options(selectinload('user').selectinload('role'))
+    #             .where(cls.id == id)
+    #             .where(cls.job_status != JobStatusType.퇴사)
+    #         )
+    #
+    #         return db.session.scalars(stmt).first()
 
     # refactor
     def update_job_status(self, job_status, target_date):
@@ -1461,80 +1639,220 @@ class Employee(BaseModel):
                 db.session.rollback()
                 return False, message_after_save
 
+    # def change_department(self, current_dept_id, after_dept_id, as_leader, target_date):
+    #     with DBConnectionHandler() as db:
+    #         ## 부서의 [제거 or 변경/추가] 와 무관하게 승진/강등여부 판단 => role필드 변화해놓기
+    #         # => cf) 관계객체(user)의 .role필드에는 해당 데이터가 불러와 있으니, 같은 객체를 get조회해서 대입할시 에러 나니 조심.
+    #         if self.is_demote(current_dept_id, after_dept_id, as_leader):
+    #             self.user.role = Role.get_by_name('STAFF')
+    #             # db.session.add(self) # 뒤에 self.reference변경때문에 add를 좀 더 뒤에서
+    #
+    #         if self.is_promote(after_dept_id, as_leader):
+    #             self.user.role = Role.get_by_name('CHIEFSTAFF')
+    #             # db.session.add(self)
+    #
+    #         ## 현재 취임정보를 제거할 상황(부서변경or부서제거)을 찾아 먼저 제거하기
+    #         # (1) 현재부서가 선택되었다면, [부서추가]가 아닌 [부서변경] OR  [부서제거]상황이다.
+    #         #    => 둘다 현재부서 취임정보를 해임시켜야한다.
+    #         if current_dept_id:
+    #             current_emp_dept: EmployeeDepartment = EmployeeDepartment.get_by_emp_and_dept_id(self.id,
+    #                                                                                              current_dept_id)
+    #             current_emp_dept.dismissal_date = target_date
+    #
+    #             db.session.add(current_emp_dept)
+    #
+    #         ## 다음 취임정보를 생성하지 않는 상황(부서 제거) 먼저 처리하기
+    #         # (2) after 부서가 선택안되었다면 (current는 무조건 선택된) => [부서제거]의 상황으로 취임정보 생성 없이
+    #         #     현재 취임정보 삭제된 상태를 commit하고 끝낸다.
+    #         #    1) after부서가 없다면 -> [부서제거]로서 취임정보 생성 없이 바로 return해야한다.
+    #         #    =>  after부서가 없는 [부서제거] 상태 ( current는 무조건 있음 )를 처리한다.
+    #         #    2) after부서가 있다면 -> [부서변경] or [부서추가]의 상황으로 취임정보 새로 생성되어야한ㄷ다
+    #         # (2-1)
+    #         if not after_dept_id and current_dept_id:
+    #             # 부서제거시, 부서제거 refence입력하고 add
+    #             current_dept: Department = Department.get_by_id(current_dept_id)
+    #             self.fill_reference(f"[{current_dept.name}]부서 해임({format_date(target_date)})")
+    #             db.session.add(self)
+    #
+    #             db.session.commit()
+    #             return True, f"[{current_dept.name}]부서 제거를 성공하였습니다."
+    #
+    #         ## 다음 취임정보를 생성하는 상황(부서 변경 or 부서 추가)
+    #         # (2-2) (after부서가 있는 상태): current O[부서변경] or current X [부서추가] -> after 부서 취임정보 생성
+    #         after_emp_dept: EmployeeDepartment = EmployeeDepartment(employee_id=self.id,
+    #                                                                 department_id=after_dept_id,
+    #                                                                 is_leader=as_leader,
+    #                                                                 employment_date=target_date)
+    #         result, message_after_save = after_emp_dept.save()
+    #
+    #         if result:
+    #             ## result가 True라는 말은, after부서가 있어서 => 새로운 부서 취임정보 생성 완료
+    #             after_dept: Department = Department.get_by_id(after_dept_id)
+    #             # (3) current부서 O : 부서 변경 / current부서 X : 부서 추가
+    #             # (4) 취임정보.save()에서 나온 성공1/실패N 메세지 중 [취임정보 생성 성공1]에 대해
+    #             # => current O/X에 따라 부서변경/ 부서추가의 메세지 따로 반환
+    #             if current_dept_id:
+    #                 current_dept: Department = Department.get_by_id(current_dept_id)
+    #                 self.fill_reference(f"[{current_dept.name}→{after_dept.name}]부서 변경({format_date(target_date)})")
+    #
+    #                 message = f"부서 변경[{current_dept.name}→{after_dept.name}]을 성공하였습니다."
+    #
+    #             else:
+    #                 self.fill_reference(f"[{after_dept.name}]부서 취임({format_date(target_date)})")
+    #                 message = f"부서 추가[{after_dept.name}]를 성공하였습니다."
+    #
+    #             db.session.add(self)
+    #             db.session.commit()
+    #
+    #             return True, message
+    #
+    #         ## save에 실패하면 message_after_save의 이유로 실패했다고 rollback하고  반환한다.
+    #         # (5) 최종 저장여부를 결정하는 것은 부서변경여부다. .save()가 실패하여 result가 False로 올경우 rollback한다.
+    #         else:
+    #             # (2-2) 만약  after부서에 취임 실패한다면, 취임정보.save()에서 나온 에러메세지를 반환 => route에서 그대로 취임실패 메세지를 flash
+    #             db.session.rollback()
+    #             return False, message_after_save
+
+    # refactor
     def change_department(self, current_dept_id, after_dept_id, as_leader, target_date):
+        """
+        required : Employee.load({
+                    'user': ('selectin', {'role':'selectin'}),
+                    'employee_departments':'joined' # for update employee_departments fill
+                })\
+        """
+        data = dict()  # 한번에 fill = update의 인자로 주기 위해 모으기 용
 
-        with DBConnectionHandler() as db:
-            ## 부서의 [제거 or 변경/추가] 와 무관하게 승진/강등여부 판단 => role필드 변화해놓기
-            # => cf) 관계객체(user)의 .role필드에는 해당 데이터가 불러와 있으니, 같은 객체를 get조회해서 대입할시 에러 나니 조심.
-            if self.is_demote(current_dept_id, after_dept_id, as_leader):
-                self.user.role = Role.get_by_name('STAFF')
-                # db.session.add(self) # 뒤에 self.reference변경때문에 add를 좀 더 뒤에서
+        # 여기는 role은 property다.
+        # Employee -> user -> Role로 이으려면, 연달아서 가아야한다.
+        # Role_ = self.__class__.role.property.mapper.class_
+        Role_ = self.__class__.user.mapper.class_.role.mapper.class_
 
-            if self.is_promote(after_dept_id, as_leader):
-                self.user.role = Role.get_by_name('CHIEFSTAFF')
-                # db.session.add(self)
+        # 1. 승진여부 -> #Role 변화 : 부서변화(취임정보)의  [제거 or 변경/추가]와 무관하게 먼저 판단하기
+        if self.is_demote(current_dept_id, after_dept_id, as_leader):
+            # self.user.role = Role.filter_by(name='STAFF').first()
+            # self.fill(role =Role.filter_by(name='STAFF').first())
+            data['role'] = Role_.filter_by(name='STAFF').first()
 
-            ## 현재 취임정보를 제거할 상황(부서변경or부서제거)을 찾아 먼저 제거하기
-            # (1) 현재부서가 선택되었다면, [부서추가]가 아닌 [부서변경] OR  [부서제거]상황이다.
-            #    => 둘다 현재부서 취임정보를 해임시켜야한다.
-            if current_dept_id:
-                current_emp_dept: EmployeeDepartment = EmployeeDepartment.get_by_emp_and_dept_id(self.id,
-                                                                                                 current_dept_id)
-                current_emp_dept.dismissal_date = target_date
+        elif self.is_promote(after_dept_id, as_leader):
+            # self.fill(role=Role.filter_by(name='CHIEFSTAFF').first())
+            data['role'] = Role_.filter_by(name='CHIEFSTAFF').first()
 
-                db.session.add(current_emp_dept)
+        EmployeeDepartment_ = self.__class__.employee_departments.mapper.class_
+        # 2. 선택된 [현재부서]의 [취임정보#EmployeeDepartment 해임 표시] 할 상황 -> [부서변경]or[부서제거]을 찾아 처리
+        # (1) 현재부서가 선택되었다면, [부서추가]가 아닌 => [부서변경] OR [부서제거]상황  => 둘다 현재부서 [취임정보를 해임]시켜야한다.
+        if current_dept_id:
+            current_emp_dept = EmployeeDepartment_.filter_by(
+                dismissal_date=None,
+                employee_id=self.id,
+                department_id=current_dept_id,
+            ).first()
+            # many relationship 객체인데, 1개를 수정해야하는 상황이면, fill/update에 list가 아닌 1개의 수정된 obj를 넣어주면
+            # -> fill내부에서 append로 반영되고, 기존에 존재하던 것도 merge에 의해 자동 수정 반영된다.
+            current_emp_dept.dismissal_date = target_date
+            # self.fill(employee_departments=current_emp_dept)
+            data['employee_departments'] = current_emp_dept
 
-            ## 다음 취임정보를 생성하지 않는 상황(부서 제거) 먼저 처리하기
-            # (2) after 부서가 선택안되었다면 (current는 무조건 선택된) => [부서제거]의 상황으로 취임정보 생성 없이
-            #     현재 취임정보 삭제된 상태를 commit하고 끝낸다.
-            #    1) after부서가 없다면 -> [부서제거]로서 취임정보 생성 없이 바로 return해야한다.
-            #    =>  after부서가 없는 [부서제거] 상태 ( current는 무조건 있음 )를 처리한다.
-            #    2) after부서가 있다면 -> [부서변경] or [부서추가]의 상황으로 취임정보 새로 생성되어야한ㄷ다
-            # (2-1)
-            if not after_dept_id and current_dept_id:
-                # 부서제거시, 부서제거 refence입력하고 add
-                current_dept: Department = Department.get_by_id(current_dept_id)
-                self.fill_reference(f"[{current_dept.name}]부서 해임({format_date(target_date)})")
-                db.session.add(self)
-
-                db.session.commit()
-                return True, f"[{current_dept.name}]부서 제거를 성공하였습니다."
-
-            ## 다음 취임정보를 생성하는 상황(부서 변경 or 부서 추가)
-            # (2-2) (after부서가 있는 상태): current O[부서변경] or current X [부서추가] -> after 부서 취임정보 생성
-            after_emp_dept: EmployeeDepartment = EmployeeDepartment(employee_id=self.id,
-                                                                    department_id=after_dept_id,
-                                                                    is_leader=as_leader,
-                                                                    employment_date=target_date)
-            result, message_after_save = after_emp_dept.save()
-
+        # (2) 다음 취임정보#EmployeeDepartment를 생성하지 않는 상황 -> [부서 제거] 먼저 처리하기
+        #    -> after 부서가 선택안되었다면 (current는 무조건 선택된) => [부서제거]의 상황으로 취임정보 생성 없이
+        #       현재 취임정보 해임된 상태를 commit하고 끝낸다.
+        #    (2-1) after부서가 없다면 -> [부서제거]로서 취임정보 생성 없이 바로 return해야한다.
+        #       =>  after부서가 없는 [부서제거] 상태 ( current는 무조건 있음 )를 처리한다.
+        #    (2-2) after부서가 있다면 -> [부서변경] or [부서추가]의 상황으로 취임정보 새로 생성되어야한ㄷ다
+        Department_ = self.__class__.departments.mapper.class_
+        # (2-1)
+        if not after_dept_id:
+            # 부서제거시, 부서제거 reference입력하고 add
+            current_dept = Department_.get(current_dept_id)
+            self.fill_reference(f"[{current_dept.name}]부서 해임({format_date(target_date)})")
+            # result, msg = self.update()
+            result, msg = self.update(**data)
             if result:
-                ## result가 True라는 말은, after부서가 있어서 => 새로운 부서 취임정보 생성 완료
-                after_dept: Department = Department.get_by_id(after_dept_id)
-                # (3) current부서 O : 부서 변경 / current부서 X : 부서 추가
-                # (4) 취임정보.save()에서 나온 성공1/실패N 메세지 중 [취임정보 생성 성공1]에 대해
-                # => current O/X에 따라 부서변경/ 부서추가의 메세지 따로 반환
-                if current_dept_id:
-                    current_dept: Department = Department.get_by_id(current_dept_id)
-                    self.fill_reference(f"[{current_dept.name}→{after_dept.name}]부서 변경({format_date(target_date)})")
-
-                    message = f"부서 변경[{current_dept.name}→{after_dept.name}]을 성공하였습니다."
-
-                else:
-                    self.fill_reference(f"[{after_dept.name}]부서 취임({format_date(target_date)})")
-                    message = f"부서 추가[{after_dept.name}]를 성공하였습니다."
-
-                db.session.add(self)
-                db.session.commit()
-
-                return True, message
-
-            ## save에 실패하면 message_after_save의 이유로 실패했다고 rollback하고  반환한다.
-            # (5) 최종 저장여부를 결정하는 것은 부서변경여부다. .save()가 실패하여 result가 False로 올경우 rollback한다.
+                return True, f"[{current_dept.name}]부서 제거를 성공하였습니다."
             else:
-                # (2-2) 만약  after부서에 취임 실패한다면, 취임정보.save()에서 나온 에러메세지를 반환 => route에서 그대로 취임실패 메세지를 flash
-                db.session.rollback()
-                return False, message_after_save
+                return False, msg
+
+        # (2-2) 다음 취임정보#EmployeeDepartment를 생성하는 상황(부서 변경 or 부서 추가)
+        # (2-2-1) (after부서가 있는 상태): current O[부서변경] or current X [부서추가] -> after 부서 취임정보 생성
+        #### 추가. .save()에 검증을 통합하지말고, .create()위에 일단 정의하기
+
+        # 추가1. exists()는 create에 fill될 keyword를 가지고 미리 filter_by를 만든 뒤 호출한다.
+        # 이 때, fill될 데이터는 filter_by + create 둘다에서 쓸 것이니 -> 미리 변수로 만들어놓는다.
+        # result, message_after_save = after_emp_dept.save()
+        after_emp_dept_data = dict(
+            dismissal_date=None,
+            employee_id=self.id,
+            department_id=after_dept_id,
+            employment_date=target_date,
+            is_leader=as_leader,
+        )
+        # 검증1. 변경할 부서가 이미 소속된 부서인 경우, 탈락
+        exists_after_emp_dept = EmployeeDepartment_.filter_by(
+            # dismissal_date=None,
+            # employee_id=after_emp_dept_data['employee_id'],
+            # department_id=after_emp_dept_data['department_id'],
+            **{k: v for k, v in after_emp_dept_data.items() if k not in ['is_leader', 'employee_date']}
+        ).exists()
+        if exists_after_emp_dept:
+            return False, '이미 소속 중인 부서입니다.'
+
+        # 검증2. as_leader로 부서변경을 원했는데, 이미 해당 after부서에 leader로 취업한 사람이 있는 경우, 탈락
+        if as_leader and EmployeeDepartment_.filter_by(
+                **{k: v for k, v in after_emp_dept_data.items() if k not in ['employee_id', 'employee_date']}
+        ).exists():
+            return False, '해당 부서에는 이미 팀장이 존재합니다.'
+
+        # 검증3. 해당 after dept가 1인부서(부/장급부서)인데, 이미 1명의 active한 취임정보가 존재하는 경우
+        after_dept = Department_.get(after_dept_id)
+        if after_dept.type == DepartmentType.부장 and EmployeeDepartment_.filter_by(
+                **{k: v for k, v in after_emp_dept_data.items() if k in ['dismissal_date', 'department_id']}
+        ).exists():
+            return False, '해당 부서는 1인 부서로서, 이미 팀장이 존재합니다.'
+
+        after_emp_dept, msg = EmployeeDepartment_.create(employee_id=self.id,
+                                                         department_id=after_dept_id,
+                                                         is_leader=as_leader,
+                                                         employment_date=target_date,
+                                                         auto_commit=False,
+                                                         # False안하면, session에서 expire되어서, -> 이후 update시 빈 객체가 들어간다?!
+                                                         )
+        #### 같은 session에서 commit하면, 결과물을 조회할 순 있지만,
+
+        if after_emp_dept:
+            # result가 True라는 말은, after부서가 있어서 => 새로운 부서 취임정보 생성 완료
+            # after_dept = Department_.filter_by(status=True, id=after_dept_id).first()
+            # (3) current부서 O : 부서 변경 / current부서 X : 부서 추가
+            # (4) 취임정보.create()에서 나온 성공1/실패N 메세지 중 [취임정보 생성 성공1]에 대해
+            # => current O/X에 따라 부서변경/ 부서추가의 메세지 따로 반환
+            # if current_dept_id:
+                # current_dept = Department.get(current_dept_id)
+            if current_dept_id:
+                current_dept = Department_.get(current_dept_id)
+                self.fill_reference(f"[{current_dept.name}→{after_dept.name}]부서 변경({format_date(target_date)})")
+                message = f"부서 변경[{current_dept.name}→{after_dept.name}]을 성공하였습니다."
+
+            else:
+                self.fill_reference(f"[{after_dept.name}]부서 취임({format_date(target_date)})")
+                message = f"부서 추가[{after_dept.name}]를 성공하였습니다."
+
+
+            # updated_data.update(dict(employee_departments=[current_emp_dept, after_emp_dept]))
+            # self.fill(employee_departments=after_emp_dept)
+            #### 이미 기존에 append할 employee_departments가 있는 상황인데,
+            #    list로 전달하면, 덮어쓰기 되어버리므로
+            #    추가적으로 append할 때는 1개는 fill로 처리하자.
+
+            self.fill(employee_departments=after_emp_dept)  # data['employee_departments']가 이미 있으므로 미리 fill -> append
+            self.update(**data)
+
+            return True, message
+
+        ## save에 실패하면 message_after_save의 이유로 실패했다고 rollback하고  반환한다.
+        # (5) 최종 저장여부를 결정하는 것은 부서변경여부다. .save()가 실패하여 result가 False로 올경우 rollback한다.
+        else:
+            # (2-2) 만약  after부서에 취임 실패한다면, 취임정보.save()에서 나온 에러메세지를 반환 => route에서 그대로 취임실패 메세지를 flash
+            # db.session.rollback()
+            return False, msg
 
     # #### with other entity
     # def is_promote(self, as_leader):
@@ -1548,7 +1866,7 @@ class Employee(BaseModel):
     #     depts_as_leader = self.get_my_departments(as_leader=True)
     #     return len(depts_as_leader) == 0
 
-    #### with other entity
+    #### refactor
     def is_promote(self, after_dept_id, as_leader):
         # 추가 -> (1) 이미 직위가 CHIEFSTAFF이상이면 탈락이다.
         if self.is_chiefstaff:
@@ -1558,7 +1876,8 @@ class Employee(BaseModel):
         if not after_dept_id:
             return False
         # 추가 -> (3) after부서가 부/장급일 땐, as_leader가 부서원으로 왔어도 True로 미리 바꿔놔야한다.
-        after_dept: Department = Department.get_by_id(after_dept_id)
+        # after_dept: Department = Department.get_by_id(after_dept_id)
+        after_dept: Department = Department.filter_by(status=True, id=after_dept_id)
         #            그 전에, active부서가 아니면 탈락이다.
         if not after_dept:
             return False
@@ -1573,13 +1892,14 @@ class Employee(BaseModel):
         # (5) 팀+장으로 가는데, 이미 팀장인 부서가 있다면 탈락이다. => 없어야 통과다
         #### 승진: 만약, before_dept_id를 [포함]하여 팀장인 부서가 없으면서(아무도것도 팀장X) & as_leader =True(최초 팀장으로 가면) => 승진
         #### - 팀장인 부서가 1개도 없다면, 팀원 -> 팀장 최초로 올라가서, 승진
-        depts_as_leader = self.get_my_departments(as_leader=True)
+        # depts_as_leader = self.get_my_departments(as_leader=True)
+        depts_as_leader = self.get_departments(as_leader=True)
         if depts_as_leader:
             return False
 
         return True
 
-    #### with other entity
+    #### refactor
     def is_demote(self, current_dept_id, after_dept_id, as_leader):
         # (0) EXECUTIVE 이상인 사람은, 강등에 해당하지 않는다.(이사급, 관리자가 STAFF되어버리는 참사 방지)
         # => 애초에 강등은, CHIESTAFF <-> STAFF 사이에서만 일어난다.
@@ -1593,27 +1913,30 @@ class Employee(BaseModel):
         # (2) 현재부서가 없다면 [부서 추가]의 상황으로 강등 탈락.
         if not current_dept_id:
             return False
+
         # (3) 현재부서가 있더라도, 조회시 active한 부서가 아니라면 강등 탈락이다.
-        current_dept = Department.get_by_id(current_dept_id)
+        current_dept = Department.filter_by(status=True, id=current_dept_id).first()
         if not current_dept:
             return False
 
         # (4) current외 다른 부서의 팀장으로 소속되어 있다면 강등 탈락이다.
         #### 강등: 만약, before_dept_id를 [제외]하고 팀장인 부서가 없으면서(현재부서만 팀장) & as_leader =False(마지막 팀장자리 -> 팀원으로 내려가면) => 강등
         #### - 선택된 부서외 팀장인 다른 부서가 있다면, 현재부서만 팀장 -> 팀원으로 내려가서, 팀장 직책 유지
-        other_depts_as_leader = self.get_my_departments(as_leader=True, except_dept_id=current_dept_id)
+        # other_depts_as_leader = self.get_my_departments(as_leader=True, except_dept_id=current_dept_id)
+        other_depts_as_leader = self.get_departments(as_leader=True, exclude=current_dept_id)
+
         if other_depts_as_leader:
             return False
 
         # (5) (팀장인 또다른 부서X)현부서만 가지고 있더라도, 팀장이 아니라면 강등 탈락이다.
-        is_current_dept_leader = self.is_leader_in(Department.get_by_id(current_dept_id))
+        is_current_dept_leader = self.is_leader_in(current_dept)
         if not is_current_dept_leader:
             return False
 
         # (6) after부서가 None이어도 되는데, 만약 있는데 부/장급 부서라면 as_leader True를 할당해야하며
         # -> as_leader 판단시 True면 [부서원or부서제거]의 상황이 아니므로 탈락이다.
         if after_dept_id:
-            after_dept: Department = Department.get_by_id(after_dept_id)
+            after_dept: Department = Department.get(after_dept_id)
             if after_dept.type == DepartmentType.부장:
                 as_leader = True
 
@@ -1648,6 +1971,7 @@ class Employee(BaseModel):
                 results.append(emp_dict)
 
             return results
+
 
 # #### with other entity
 # def is_demote(self, as_leader, current_dept_id):
@@ -1766,9 +2090,11 @@ class EmployeeInvite(InviteBaseModel, CRUDMixin):
             invite_list = db.session.scalars(stmt).all()
         return invite_list
 
+
 # BaseModel을 상속안하므로, 똑같이 session 삽입(임시)
 # temp
 EmployeeInvite.set_scoped_session(db.get_scoped_session())
+
 
 # EmployeeInvite.set_engine(db.get_engine())
 
@@ -1805,4 +2131,3 @@ class EmployeeLeaveHistory(BaseModel, CRUDMixin):
     # temp
     # EmployeeLeaveHistory.set_scoped_session(db.get_scoped_session())
     # EmployeeLeaveHistory.set_engine(db.get_engine())
-

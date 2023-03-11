@@ -210,14 +210,32 @@ def index():
                                                                               unit='day',
                                                                               filter_by=None)
 
-    user_count = User.filter_by(is_staff__eq=False).count()
+    user_count = User.filter_by(is_staff=False).count()
     user_count_diff, user_count_diff_rate = User.count_and_rate_between('add_date', date.today(), interval=7,
                                                                         unit='day',
-                                                                        filter_by=dict(is_staff__eq=False))
-    employee_count = Employee.filter_by(and_=dict(
-        or_=dict(is_active__eq=True, is_leaved__eq=True),
-        user___is_administrator__eq=False
-    )).count()
+                                                                        filter_by=dict(is_staff=False))
+
+    # employee_count = Employee.filter_by(
+    #     and_=dict(
+    #         or_=dict(is_active=True, is_leaved=True),
+    #         user___role___name__ne='ADMINISTRATOR',
+    #     )
+    # ).count()
+    #
+
+    # employee_count = Employee.filter_by(
+    #     and_=dict(
+    #         or_=dict(is_active=True, is_leaved=True),
+    #         has_role=Role.filter_by(name='ADMINISTRATOR').first(),
+    #     )
+    # ).count()
+
+    employee_count = Employee.filter_by(
+        and_=dict(
+            or_=dict(is_active=True, is_leaved=True),
+            has_role_name__ne=Roles.ADMINISTRATOR.name
+        )).count()
+
     employee_count_diff, employee_count_diff_rate = Employee.count_and_rate_between(
         'add_date', date.today(),
         interval=7,
@@ -225,9 +243,10 @@ def index():
         filter_by=dict(
             and_=dict(
                 or_=dict(
-                    is_active__eq=True,
-                    is_leaved__eq=True),
-                user___is_administrator__eq=False
+                    is_active=True,
+                    is_leaved=True),
+                # user___role___name__ne='ADMINISTRATOR'
+                has_role_name__ne=Roles.ADMINISTRATOR.name
             )),
     )
 
@@ -307,7 +326,8 @@ def index():
     # [{'name': '태그1', 'count': 1, 'sum': 2}, {'name': 'asdf', 'count': 0, 'sum': 0}]
 
     # 칼럼명_집계로 자동label을 잡으니, 템플릿에서 맞게 수정해준다.
-    tag_with_post_count = Tag.group_by('id', selects=['name', 'posts___id__count', 'posts___id__sum']).to_dict2()
+    tag_with_post_count = Tag.group_by('id', selects=['name', 'posts___id__count', 'posts___id__sum']) \
+        .limit(3).to_dict2()
     # print('tag_with_post_count [after]  >> ', tag_with_post_count)
     # [{'name': '태그1', 'id_count': 1, 'id_sum': 2}, {'name': 'asdf', 'id_count': 0, 'id_sum': 0}]
 
@@ -325,8 +345,24 @@ def index():
     #  ['24일', '25일', '26일', '27일', '28일', '1일', '2일']
 
     chart = Chart(pyecharts)
-    user_chart = chart.count_bar_for_interval(User, 'add_date', 7, 'day', filter_by=dict(is_administrator=False),
-                                              )
+    # user_chart = chart.count_bar_for_interval(
+    #     User, 'add_date', 7, 'day', filter_by=dict(is_administrator=False),
+    #                                           )
+    user_chart = chart.count_bars_for_interval(
+        [User, Employee], 'add_date', 7, 'day', filter_by_per_model=dict(
+            User=dict(is_administrator=False),
+            Employee=dict(
+                and_=dict(
+                    or_=dict(
+                        is_active=True,
+                        is_leaved=True
+                    ),
+                    has_role_name__ne=Roles.ADMINISTRATOR.name,
+                )
+            ))
+    )
+
+
     # print('user_chart._xaxis_data  >> ', user_chart._xaxis_data)
     #  ['24일', '25일', '26일', '27일', '28일', '1일', '2일']
 
@@ -341,9 +377,7 @@ def index():
     #                                            filters={'is_administrator': False}
     #                                            )
     #### after
-    user_sex_pie_chart = chart.count_pie_per_category(User, 'sex', filter_by=dict(is_administrator=False),
-
-                                                      )
+    user_sex_pie_chart = chart.count_pie_per_category(User, 'sex', filter_by=dict(is_administrator=False))
 
     ### 만약, df로 만들거라면 row별로 dict()를 치면 row1당 column:value의 dict list가 된다.
     # print([dict(r) for r in db.session.execute(stmt)])
@@ -377,7 +411,6 @@ def index():
 
     year_chart = chart.count_bars_for_interval([User, Employee, Post, Category, Banner, Tag], 'add_date', 12,
                                                'month',
-
                                                filter_by_per_model={
                                                    User: dict(is_administrator=False),
                                                    Employee: dict(
@@ -385,7 +418,7 @@ def index():
                                                            or_=dict(
                                                                is_active__eq=True,
                                                                is_leaved__eq=True),
-                                                           user___is_administrator__eq=False
+                                                           user___is_administrator=False
                                                        ))
                                                })
 
@@ -842,7 +875,7 @@ def category_delete(id):
 def article():
     page = request.args.get('page', 1, type=int)
 
-    pagination = Post.order_by('-add_date').paginate(page, per_page=10)
+    pagination = Post.load({'tags': 'joined'}).order_by('-add_date').paginate(page, per_page=10)
     # stmt = select(Post).order_by(Post.add_date.desc())
     # pagination = paginate(stmt, page=page, per_page=10)
     post_list = pagination.items
@@ -913,7 +946,7 @@ def article_add():
 @login_required
 @role_required(allowed_roles=[Roles.STAFF])
 def article_edit(id):
-    post = Post.get(id)
+    post = Post.filter_by(id=id).load({'tags': 'joined'}).first()
     form = PostForm(post)
 
     if form.validate_on_submit():
@@ -1033,8 +1066,6 @@ def user():
 
     # pagination = paginate(stmt, page=page, per_page=10)
     user_list = pagination.items
-    print('user_list  >> ', user_list)
-
 
     #### 직원초대시 modal에 띄울 role_list를 건네주기
     # with DBConnectionHandler() as db:
@@ -1212,10 +1243,8 @@ def user_edit(id):
             delete_uploaded_file(directory_and_filename=user.avatar)
 
             data['avatar'] = f'avatar/{filename}'
-        print('data  >> ', data)
 
         result, msg = user.update(**data)
-        print('result  >> ', result.email)
 
         if result:
             flash(f'{result} User 수정 완료.')
@@ -1416,7 +1445,8 @@ def employee():
     #     .order_by(Employee.join_date.desc())
     # .where(Employee.is_active) \
 
-    pagination = Employee.order_by('-join_date').paginate(page, per_page=10)
+    pagination = Employee.load({'user': ('selectin', {'role': 'selectin'})}).order_by('-join_date').paginate(page,
+                                                                                                             per_page=10)
     employee_list = pagination.items
 
     #### 재직상태변경 modal 속 select option 추가로 내려보내기
@@ -1609,25 +1639,29 @@ def employee_invite():
     # 3) 검색시에는, 보내는사람과 받는사람을 필터링하면 된다. 관계테이블이므로, 관계객체.has()/any() - 데이터존재검사 + 추가조건을 건다
     # 4) 만료되지 않는 것에 대해서만 존재검사를 한다.
     # 5) *추후 answer안된 것들만 검사한다
-    inviter = g.user
-    invitee = User.get(user_id)
+    # inviter = g.user
+    # invitee = User.get(user_id)
+    data = dict(
+        inviter=g.user,
+        invitee=User.get(user_id)
+    )
 
     # eagerload할 필요가 없기 때문에, hybrid_method로 exsists를 만들어 relation 필터링한다.
     # is_invite_exists = EmployeeInvite \
     #     .filter_by(and_=dict(is_valid=True, inviter___id=inviter.id, invitee___id=invitee.id)) \
     #     .exists()
     is_invite_exists = EmployeeInvite \
-        .filter_by(is_sented_by=inviter, is_received_by=invitee, is_valid=True) \
+        .filter_by(**data, is_valid=True) \
         .exists()
 
     if is_invite_exists:
-        flash(f"{invitee.username}에게 이미 직원초대를 보냈습니다.", category="is-danger")
+        flash(f"{data['invitee'].username}에게 이미 직원초대를 보냈습니다.", category="is-danger")
     else:
         role = Role.filter_by(id=role_id).first()
 
-        result, msg = EmployeeInvite.create(inviter=inviter, invitee=invitee, role=role, )
+        result, msg = EmployeeInvite.create(**data, role=role)
         if result:
-            flash(f"{invitee.username}에게 직원초대({role.name})를 보냈습니다.", category='is-success')
+            flash(f"{data['invitee'].username}에게 직원초대({role.name})를 보냈습니다.", category='is-success')
         else:
             flash(msg)
 
@@ -2005,47 +2039,49 @@ def user_popup(employee_id):
 @login_required
 def get_current_departments(employee_id):
     employee = Employee.get(int(employee_id))
-    current_depts = employee.get_my_departments()
-    print('current_depts  >> ', current_depts)
-    # 특정 Employee의 - 현재 취임한 EmployeeDepartment정보가 있는 & 해고된 것은 아닌 - Department들
-    filter_by_map = dict(
-        and_=dict(
-            employee_departments___dismissal_date=None,
-            employee_departments___employee___id=employee_id
-        )
-    )
-    active_depts = Department.filter_by(**filter_by_map).all()
-    print('active_depts  >> ', active_depts)
+    # current_depts = employee.get_my_departments()
+    # print('current_depts  >> ', current_depts)
+    # # 특정 Employee의 - 현재 취임한 EmployeeDepartment정보가 있는 & 해고된 것은 아닌 - Department들
+    # filter_by_map = dict(
+    #     and_=dict(
+    #         employee_departments___dismissal_date=None,
+    #         employee_departments___employee___id=employee_id
+    #     )
+    # )
+    # active_depts = Department.filter_by(**filter_by_map).all()
+    # print('active_depts  >> ', active_depts)
+    #
+    # # 현재 선택된 (특정)부서(id)를 제외하기
+    # filter_by_map.get('and_').update(dict(id__ne=4))
+    # active_depts = Department.filter_by(**filter_by_map).all()
+    # print('active_except_depts  >> ', active_depts)
+    #
+    # # 내가 팀장인 부서만
+    # filter_by_map.get('and_').update(dict(employee_departments___is_leader=True))
+    # active_depts = Department.filter_by(**filter_by_map).all()
+    # print('active_except_is_leader_depts  >> ', active_depts)
+    #
+    #
+    # # 필터링된 모든 부서들 중  최상위level 부서들만
+    # min_level_of_dept = float('inf')
+    # min_level_depts = []
+    # for dept in active_depts:
+    #     if dept.level == min_level_of_dept:
+    #         min_level_depts.append(dept)
+    #     elif dept.level < min_level_of_dept:
+    #         min_level_of_dept = dept.level
+    #         min_level_depts = [dept]
+    # print('min_level_dep'
+    #       ' ts  >> ', min_level_depts)
+    #
+    # #### No Load with has/any + @hybrid_method
+    # # relation path 묶어서 ___ keyword를 대체한다
+    #
+    # current_dept_infos = [{'id': x.id, 'name': x.name} for x in current_depts]
+    # print('current_dept_infos  >> ', current_dept_infos)
 
-    # 현재 선택된 (특정)부서(id)를 제외하기
-    filter_by_map.get('and_').update(dict(id__ne=4))
-    active_depts = Department.filter_by(**filter_by_map).all()
-    print('active_except_depts  >> ', active_depts)
-
-    # 내가 팀장인 부서만
-    filter_by_map.get('and_').update(dict(employee_departments___is_leader=True))
-    active_depts = Department.filter_by(**filter_by_map).all()
-    print('active_except_is_leader_depts  >> ', active_depts)
-
-
-    # 필터링된 모든 부서들 중  최상위level 부서들만
-    min_level_of_dept = float('inf')
-    min_level_depts = []
-    for dept in active_depts:
-        if dept.level == min_level_of_dept:
-            min_level_depts.append(dept)
-        elif dept.level < min_level_of_dept:
-            min_level_of_dept = dept.level
-            min_level_depts = [dept]
-    print('min_level_depts  >> ', min_level_depts)
-
-    #### No Load with has/any + @hybrid_method
-    # relation path 묶어서 ___ keyword를 대체한다
-
-
-
-
-    current_dept_infos = [{'id': x.id, 'name': x.name} for x in current_depts]
+    departments = employee.get_departments()
+    current_dept_infos = [x.to_dict2(include=['id', 'name']) for x in departments]
 
     return make_response(
         dict(deptInfos=current_dept_infos),
@@ -2053,40 +2089,66 @@ def get_current_departments(employee_id):
     )
 
 
-# @admin_bp.route('/departments/selectable/<department_id>', methods=['GET'])
+# @admin_bp.route('/departments/selectable/', methods=['POST'])
 # @login_required
-# def get_selectable_departments(department_id):
+# def get_selectable_departments():
+#     # print(request.form) # ImmutableMultiDict([('current_dept_id', '5'), ('employee_id', '16')])
+#     # print(request.args) # ImmutableMultiDict([])
+#     employee_id = request.form.get('employee_id', type=int)
+#     current_dept_id = request.form.get('current_dept_id', type=int)
+#     # print(employee_id, current_dept_id)  # None, None
+#     #### 현재부서에서 [부서 추가]시 current_dept_id가 None으로 들어올 수 있다.
+#     # if not employee_id or not current_dept_id:
+#     if not employee_id:
+#         return make_response(dict(message='직원id가 잘못되었습니다.'), 403)
 #
-#     current_dept : Department = Department.get_by_id(int(department_id))
-#     selectable_depts_infos = current_dept.get_selectable_departments()
+#     #### 현재부서가 None => [부서 추가]로 판단하여, 변경부서를 모든 부서를 건네준다.
+#     if current_dept_id:
+#         current_dept: Department = Department.get_by_id(current_dept_id)
+#         selectable_depts_infos = current_dept.get_selectable_departments()
+#     else:
+#         selectable_depts_infos = Department.get_all_infos()
+#
+#     #### 선택된 현재부서 => 가능한 부서들을 뽑아왔는데,
+#     #### => emp_id까지 추가로 받아서, 가능한 부서들  - ( 직원의 선택안된 현재 부서들id 제외시켜주기 )
+#     #### => [부서 추가]의 상황에서도  현재 소속부서들은 그대로 빼준다.
+#     current_employee: Employee = Employee.get_by_id(employee_id)
+#     current_dept_ids = [dept.id for dept in current_employee.get_my_departments()]
+#
+#     # 필터링
+#     selectable_depts_infos = [dept for dept in selectable_depts_infos if dept.get('id') not in current_dept_ids]
+#
+#     return make_response(
+#         dict(deptInfos=selectable_depts_infos),
+#         200
+#     )
+
 @admin_bp.route('/departments/selectable/', methods=['POST'])
 @login_required
 def get_selectable_departments():
-    # print(request.form) # ImmutableMultiDict([('current_dept_id', '5'), ('employee_id', '16')])
-    # print(request.args) # ImmutableMultiDict([])
     employee_id = request.form.get('employee_id', type=int)
     current_dept_id = request.form.get('current_dept_id', type=int)
     # print(employee_id, current_dept_id)  # None, None
-    #### 현재부서에서 [부서 추가]시 current_dept_id가 None으로 들어올 수 있다.
-    # if not employee_id or not current_dept_id:
+
+    # 직원정보가 없으면 잘못된 요청이다.
     if not employee_id:
         return make_response(dict(message='직원id가 잘못되었습니다.'), 403)
 
-    #### 현재부서가 None => [부서 추가]로 판단하여, 변경부서를 모든 부서를 건네준다.
-    if current_dept_id:
-        current_dept: Department = Department.get_by_id(current_dept_id)
-        selectable_depts_infos = current_dept.get_selectable_departments()
+    employee = Employee.get(employee_id)
+    # 1. [현재 부서]가 None => <부서 추가>로 판단하여,
+    # => [변경할 부서]에는 <모든 부서 - (내가 소속중인 부서)>를 반환해줘야한다.
+    if not current_dept_id:
+        current_dept_ids = [dept.id for dept in employee.get_my_departments()]
+        selectable_depts_infos = Department.filter_by(status=True, id__notin=current_dept_ids) \
+            .order_by('path').to_dict2(include=['id', 'name'])
+
+    # 2. [현재부서]가 존재할 경우 => <모든 부서 - (현재부서 + 현재부서의 자식부서들)>을 반환해줘야한다.
+    # if current_dept_id:
     else:
-        selectable_depts_infos = Department.get_all_infos()
-
-    #### 선택된 현재부서 => 가능한 부서들을 뽑아왔는데,
-    #### => emp_id까지 추가로 받아서, 가능한 부서들  - ( 직원의 선택안된 현재 부서들id 제외시켜주기 )
-    #### => [부서 추가]의 상황에서도  현재 소속부서들은 그대로 빼준다.
-    current_employee: Employee = Employee.get_by_id(employee_id)
-    current_dept_ids = [dept.id for dept in current_employee.get_my_departments()]
-
-    # 필터링
-    selectable_depts_infos = [dept for dept in selectable_depts_infos if dept.get('id') not in current_dept_ids]
+        current_dept = Department.load({'children': ('joined', 6)}).filter_by(id=current_dept_id).first()
+        not_allowed_dept_ids = [x.id for x in current_dept.flatten_children()]
+        selectable_depts_infos = Department.filter_by(status=True, id__notin=not_allowed_dept_ids).order_by(
+            'path').to_dict2(include=['id', 'name'])
 
     return make_response(
         dict(deptInfos=selectable_depts_infos),
@@ -2094,15 +2156,71 @@ def get_selectable_departments():
     )
 
 
+# @admin_bp.route('/departments/all', methods=['GET'])
+# @login_required
+# def get_all_departments():
+#     dept_infos = Department.get_all_infos()
+#     if not dept_infos:
+#         return make_response(dict(message='선택가능한 부서가 없습니다.'), 500)
+#
+#     return make_response(dict(deptInfos=dept_infos), 200)
 @admin_bp.route('/departments/all', methods=['GET'])
 @login_required
 def get_all_departments():
-    dept_infos = Department.get_all_infos()
+    # dept_infos = Department.get_all_infos()
+    dept_infos = Department.filter_by(status=True).order_by('path').to_dict2(include=['id', 'name'])
     if not dept_infos:
         return make_response(dict(message='선택가능한 부서가 없습니다.'), 500)
 
     return make_response(dict(deptInfos=dept_infos), 200)
 
+
+# @admin_bp.route('/departments/promote/', methods=['POST'])
+# @login_required
+# def determine_promote():
+#     current_dept_id = request.form.get('current_dept_id', type=int)
+#     employee_id = request.form.get('employee_id', type=int)
+#     as_leader = request.form.get('as_leader', type=lambda x: True if x == '부서장' else False)
+#     # 부/장급부서는 자동으로 as_leader = True를 박기 위해 추가로 받음.
+#     after_dept_id = request.form.get('after_dept_id', type=int)
+#
+#     # 필수 인자들이 안들어오면 에러다.
+#     if not employee_id:
+#         return make_response(dict(message='잘못된 요청입니다.'), 403)
+#
+#     # => 현재부서/변경부서는 둘중에 1개는 없을 수 있다. => 둘다 없으면 판단 못한다. => 부서장여부 스위치만 건들인 경우?
+#     # if not current_dept_id and not after_dept_id:
+#     if not (current_dept_id or after_dept_id):
+#         return make_response(dict(message='부서를 선택한 뒤, 부서장여부를 결정해주세요.'), 403)
+#
+#     # 부/장급부서를 변경부서로 선택했다면, 넘어오는 as_leader를 무조건 True로 반영하기
+#     # => 현재부서 -> 변경부서 [부서제거] 선택도입시 nuabllable한 after_dept_id로서, if 존재할때만 쿼리 날리기
+#     # if after_dept_id:
+#     #     after_dept: Department = Department.get_by_id(after_dept_id)
+#     #     if after_dept.type == DepartmentType.부장:
+#     #         as_leader = True
+#
+#     current_employee: Employee = Employee.get_by_id(employee_id)
+#
+#     # 승진여부판단에선 (전제 변경부서가 선택)이므로 => 변경부서가 [부서제거]-None가 아닌 [실제 값]으로 존재할때만 판단하도록 변경
+#     # if as_leader:
+#     # if after_dept_id and as_leader:
+#     is_promote = current_employee.is_promote(after_dept_id, as_leader)
+#     # else:
+#     #     # 부서장여부는, 부/장급이면 자동으로 True로 채워졌는데, 그래도 False라면, 승진은 절대 아니므로 배제하고 쿼리날릴 필요도 없이 무조건 False로
+#     #     is_promote = False
+#
+#     # 강등여부판단은 전제가 [변경부서선택 with 부서원] OR  변경부서선택을 => [부서제거]로 None이어도 상관없다.
+#     # => 내부에서 1개 팀장인데 && 부서원으로 뿐만 아니라 1개 팀장인데 && after_dept_id가 None도 추가해야할 듯하다.
+#     # if current_dept_id:
+#     # 1) 현재부서  +  선택부서가 부서원으로 판단
+#     is_demote = current_employee.is_demote(current_dept_id, after_dept_id, as_leader)
+#     # 2) 현재부서 + 선택부서가 None으로 해지를 추가할 예정
+#     # else:
+#     #     현재부서는 nullable이고, 현재부서가 없다면, 쿼리날리기도 전에 강등은 있을 수 없어서 무조건 False
+#     # is_demote = False
+#
+#     return make_response(dict(isPromote=is_promote, isDemote=is_demote), 200)
 
 @admin_bp.route('/departments/promote/', methods=['POST'])
 @login_required
@@ -2129,7 +2247,10 @@ def determine_promote():
     #     if after_dept.type == DepartmentType.부장:
     #         as_leader = True
 
-    current_employee: Employee = Employee.get_by_id(employee_id)
+    # current_employee: Employee = Employee.get_by_id(employee_id)
+    current_employee: Employee = Employee.load({'user': ('selectin', {'role': 'selectin'})}) \
+        .filter_by(id=employee_id) \
+        .first()
 
     # 승진여부판단에선 (전제 변경부서가 선택)이므로 => 변경부서가 [부서제거]-None가 아닌 [실제 값]으로 존재할때만 판단하도록 변경
     # if as_leader:
@@ -2144,12 +2265,47 @@ def determine_promote():
     # if current_dept_id:
     # 1) 현재부서  +  선택부서가 부서원으로 판단
     is_demote = current_employee.is_demote(current_dept_id, after_dept_id, as_leader)
+
     # 2) 현재부서 + 선택부서가 None으로 해지를 추가할 예정
     # else:
     #     현재부서는 nullable이고, 현재부서가 없다면, 쿼리날리기도 전에 강등은 있을 수 없어서 무조건 False
     # is_demote = False
 
     return make_response(dict(isPromote=is_promote, isDemote=is_demote), 200)
+
+
+# @admin_bp.route('/departments/change', methods=['POST'])
+# @login_required
+# @role_required(allowed_roles=[Roles.CHIEFSTAFF])
+# def department_change():
+#     # print(request.form)
+#     # ImmutableMultiDict([('employee_id', '4'), ('current_dept_id', '5'), ('after_dept_id', '4'), ('as_leader', '부서장'), ('date', '2023-01-20')])
+#     employee_id = request.form.get('employee_id', type=int)
+#     current_dept_id = request.form.get('current_dept_id', type=int)
+#     after_dept_id = request.form.get('after_dept_id', type=int)
+#     # b-switch 아래 hidden input은 isSwitchedCustom에 의해 부서장 or 부서원이 들어옴
+#     as_leader = request.form.get('as_leader', type=lambda x: True if x == '부서장' else False)
+#     target_date = request.form.get('date',
+#                                    type=lambda x: datetime.strptime(x, '%Y-%m-%d').date()
+#                                    )
+#
+#     # with DBConnectionHandler() as db:
+#     #     employee: Employee = db.session.get(Employee, employee_id)
+#     employee: Employee = Employee.get_not_resigned_by_id(employee_id)
+#     #### 해당 직원이 is_active필터링이 안걸리면 퇴사상태의 직원으로 간주하고, 변경불가하다고 돌려보내기
+#     if not employee:
+#         flash('퇴사한 직원은 부서 변경이 불가능 합니다.', category='is-danger')
+#         return redirect(redirect_url())
+#
+#     # (bool, msg) 반환
+#     result, message = employee.change_department(current_dept_id, after_dept_id, as_leader, target_date)
+#
+#     if result:
+#         flash(message, category='is-success')
+#     else:
+#         flash(message, category='is-danger')
+#
+#     return redirect(redirect_url())
 
 
 @admin_bp.route('/departments/change', methods=['POST'])
@@ -2167,11 +2323,15 @@ def department_change():
                                    type=lambda x: datetime.strptime(x, '%Y-%m-%d').date()
                                    )
 
-    # with DBConnectionHandler() as db:
-    #     employee: Employee = db.session.get(Employee, employee_id)
-    employee: Employee = Employee.get_not_resigned_by_id(employee_id)
+    employee: Employee = Employee.load({
+        'user': ('selectin', {'role': 'selectin'}),
+        'employee_departments': 'joined'  # for update employee_departments fill
+    }) \
+        .filter_by(id=employee_id) \
+        .first()
+
     #### 해당 직원이 is_active필터링이 안걸리면 퇴사상태의 직원으로 간주하고, 변경불가하다고 돌려보내기
-    if not employee:
+    if JobStatusType.is_resign(employee.job_status):
         flash('퇴사한 직원은 부서 변경이 불가능 합니다.', category='is-danger')
         return redirect(redirect_url())
 

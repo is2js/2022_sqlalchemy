@@ -365,8 +365,7 @@ class ObjectMixin(Base, BaseQuery):
                 continue
 
             # settable_column_names외에 @property or @hybrid_prorperty(cls.attr로 인식)도 .setter or .expression 있으면 허용한다.
-            if column_name not in self.settable_column_names and \
-                    not self.is_setter_or_expression(column_name):
+            if column_name not in self.settable_column_names and not self.is_setter_or_expression(column_name):
                 raise KeyError(f"Invalid column name: {column_name}")
 
             # 같은 값은 업데이트 안하고 넘김
