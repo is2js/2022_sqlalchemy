@@ -165,7 +165,9 @@ class CRUDMixin(Base, ObjectMixin):
         ##### self.served는 조회 실행메서드에서, 외부가 아니라면 조회후 close in self.close()
         #     외부session인 경우, session.close하지 않고, flush하고 사용하게 한다?
         #     save(create/update)는 무조건 flush는 해야한다? 더 사용안하는 auto_commit=False일때만 commit하지 않는다?!
-        self._session.flush()
+        #### merge는 flush기능을 가지고 있어서, 한번더 호출하면 에러난다.
+        # self._session.flush()
+
         # 2. 외부session인 경우, 외부의 마지막 옵션으로 더이상 사용안한다면 밖에서 auto_commit=True로 -> commit()을 때려 close시킨다.
         # => self.close()는 외부session을 flush()만 시키는데, 외부session이 CUD하는 경우, 자체적으로 commit()해야한다.
         # => 외부에서 더 쓴다면, 외부에서 sessino=sesion만 넣고 auto_commit 안하면 된다.
