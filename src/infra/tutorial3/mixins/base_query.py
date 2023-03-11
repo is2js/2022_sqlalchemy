@@ -308,7 +308,8 @@ class BaseQuery:
 
     @classmethod
     def check_filterable_attr_name(cls, model, attr):
-        if attr not in cls.get_filterable_attr_names(model):
+        if attr not in cls.get_filterable_attr_names(model)\
+                and not hasattr(cls, attr):
             raise KeyError(f'Invalid filter_by or having attr name: {attr}')
 
     @classmethod

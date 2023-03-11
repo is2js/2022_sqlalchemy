@@ -221,6 +221,7 @@ class ObjectMixin(Base, BaseQuery):
 
         else:
             raise Exception(f'engine or scoped session을 삽입해주세요.')
+
     #### FastAPI - DependsOn( model.get_session ) => generator 생성 메서드를 호출하지 않고 입력
     # 1) @property or @class_property로 정의해서 DependsOn내부 contextmanger에서 호출
     # 2) 알아서 () 호출후, next()까지 호출하는 듯.
@@ -356,15 +357,16 @@ class ObjectMixin(Base, BaseQuery):
     # for Update + for Create + for create_obj
     def fill(self, **kwargs):
         # is_updated = False
-            
+
         for column_name, new_value in kwargs.items():
             # flask form.data(dict)로 항상 들어오는 'csrf_toekn'와  form으로 들어오는 hidden태그는 무시
             #    + hidden 태그도 혹시 들어오면 에러내지말고 pass
             if column_name in ['csrf_token', 'submit'] or column_name.startswith('hidden_'):
                 continue
 
-            # settable_column_names외에 @property라도 setter가 있으면 허용한다.
-            if column_name not in self.settable_column_names and not self.is_property_setter(column_name):
+            # settable_column_names외에 @property or @hybrid_prorperty(cls.attr로 인식)도 .setter or .expression 있으면 허용한다.
+            if column_name not in self.settable_column_names and \
+                    not self.is_setter_or_expression(column_name):
                 raise KeyError(f"Invalid column name: {column_name}")
 
             # 같은 값은 업데이트 안하고 넘김
@@ -385,8 +387,6 @@ class ObjectMixin(Base, BaseQuery):
                     not isinstance(new_value, list):
                 getattr(self, column_name).append(new_value)
             else:
-                print('column_name, new_value  >> ', column_name, new_value)
-
                 setattr(self, column_name, new_value)
 
         return self  # 한번 이라도 업뎃되면 True/ 아니면 False 반환
@@ -397,10 +397,12 @@ class ObjectMixin(Base, BaseQuery):
     # -> settable_column_names가 아니면서 && [@property.setter도 아니면] 탈락 => 탈락조건에 and로 추가하여
     # => 통과는 A or B로 되게 한다.
     # Employee.role.setter: <built-in method setter of property object at 0x000001B92EA08B88>
-    def is_property_setter(self, column_name):
-        return hasattr(getattr(self.__class__, column_name), 'setter')
+    def is_setter_or_expression(self, column_name):
+        return hasattr(getattr(self.__class__, column_name), 'setter') or \
+               hasattr(getattr(self.__class__, column_name), 'expression')
 
-    # for exists_self + for update - fill - settable column snames
+        # for exists_self + for update - fill - settable column snames
+
     @class_property
     def column_names(cls):
         return cls.__table__.columns.keys()
@@ -940,12 +942,19 @@ class ObjectMixin(Base, BaseQuery):
         if not hasattr(self, '_session'):
             return
 
-        # 내부session을 -> close()
+        # 내부session을 -> 조회라도 항상 close()
+        # => 내부공용세션이라도, 매번 여러객체를 조회하기 때문에, 매번 close해준다.
+        #    변경사항이 필요한 경우, close되더라도, 어차피 merge로 인해 session올라가서 처리된다.
+        # * 내부 공용세션이라고 close안해주면 => sqlalchemy.exc.TimeoutError:
+        #   QueuePool limit of size 5 overflow 10 reached, connection timed out, timeout 30.00
         if not self.served:
             self._session.close()
         # 외부session이면 close할 필요없이 반영만  [외부 쓰던 session은 close 대신] -> [flush()로 db 반영시켜주기]
+        # -> 외부session이면, 금방 사라지거나, 맨마지막 놈이 commit되어 자동close()되므로 flush()만 해준다.
         else:
             self._session.flush()
+        #### => 공용세션 사용으로 바뀌면서, 조회시마다 close()할 필요없다?
+        #####   외부세션일때만, self.close()가 호출 되도록 해야할 듯.
 
     @class_or_instancemethod
     def first(cls, session: Session = None):
@@ -1263,7 +1272,8 @@ class ObjectMixin(Base, BaseQuery):
 
                 dict_list = []
                 for model_obj in results:
-                    model_dict = model_obj.to_dict2(nested=nested, hybrid_atts=hybrid_atts, include=include, exclude=exclude,
+                    model_dict = model_obj.to_dict2(nested=nested, hybrid_atts=hybrid_atts, include=include,
+                                                    exclude=exclude,
                                                     session=self._session)
                     dict_list.append(model_dict)
 

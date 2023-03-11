@@ -138,13 +138,33 @@ class CRUDMixin(Base, ObjectMixin):
         #### => create/update모두 fill 후 처리하는 상황이므로,
         ####    + relation도 수정한 것을 fill한 뒤, merge로 덮어써서 처리
         # if many relation을 = []로 채운다면 기존 many들은 싹다 none으로 업데이트해버리다가 제약조건에 걸린다.
-        self._session.merge(self)
+        # self._session.expunge_all() # 1) 기존의 조회시 들어간 캐쉬를 지우고
+        # self._session.add(self) # 2) 현재 변화(fil)된 객체를 처음부터 새로 올린다.
+        result = self._session.merge(self)
+        # self._session.refresh(self) #  다른sesion에서 db반영한 or "flush한 것"을 가져와서, 현재 수정내역을 반영하여 현재 session에 add
+        # 현재세션에서 미리 조회 -> 다른 sesson작업 이후 flush or commit -> 현재 수정 -> refresh로 db최신버전의 user를 가져와서 현재 수정내역을 반영
+        # => 즉, 현재수정내역을 타세션작업(commit/flush)끝난 것에  반영하기
+        #       현재의 수정내역을, load한 시점이 아닌, 더 최신 것에 반영해주기(수정객체조회 -> 최신self + 내 객체수정내역 + session.add = session.refresh)
+        # OR  expunge_all() + refresh로 올리고  -> 이후 객체 수정 + merge + commit
+        #        -> 하지만 fill로 이미 객체수정이 끝난 상황이라.. expunge_all + refresh필요없다.
+        # OR  현재 수정을 끝냈지만, 다른 곳에서 수정할 수 있을 가능성이 있다면, 그 찰라에 최신 것을 반영하여 return해주기
+        #      내수정 타세션 or No세션 add+commit -> return하기전 refresh -> return
+        # => async method들의 자신작업끝났지만, 최신것  반영해서 return for client  https://vscode.dev/github/adpmhel24/jpsc_ordering_system
+
         # else:
         #     self._session.merge(self)
         # print('adddd  >> ')
         ### => 이미 fill할 때 session에 올렸다면, commit이나 flush만 해주면 된다?!
 
         # 1. add후 id, 등 반영하기 위해 [자체생성/외부받은 session 상관없이] flush를 때려준다.
+        #### 수정) 외부session을 받은 상태 && auto_commit=False인 경우만 flush쳐주기
+        # -> 공용session에 & auto_commit=False면, flush 안하고 위에서 merge만 반영한다?
+        # if self.served and not auto_commit:
+        # -> 공용session도 auto_commit=False면, flush는 해야 db에 create id배정 된다.
+        # if not auto_commit:
+        ##### self.served는 조회 실행메서드에서, 외부가 아니라면 조회후 close in self.close()
+        #     외부session인 경우, session.close하지 않고, flush하고 사용하게 한다?
+        #     save(create/update)는 무조건 flush는 해야한다? 더 사용안하는 auto_commit=False일때만 commit하지 않는다?!
         self._session.flush()
         # 2. 외부session인 경우, 외부의 마지막 옵션으로 더이상 사용안한다면 밖에서 auto_commit=True로 -> commit()을 때려 close시킨다.
         # => self.close()는 외부session을 flush()만 시키는데, 외부session이 CUD하는 경우, 자체적으로 commit()해야한다.
@@ -153,7 +173,7 @@ class CRUDMixin(Base, ObjectMixin):
         if auto_commit:
             self._session.commit()
 
-        return self
+        return result # merge 사용 후, self merge결과물을 반환해서 session에 사용해야한다.
 
     #################
     # Read -load    #
