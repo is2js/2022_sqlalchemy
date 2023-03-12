@@ -225,6 +225,7 @@ class EmployeeForm(UserInfoForm):
                             default=JobStatusType.재직.value,
                             coerce=int,
                             )
+
     # 연차계산등을 위해, DateTime으로 해야한다? Date면 충분
     #### form의 default시간은 자신의 컴퓨터시간인 datetime.datetime.now()로 들어가게 하고, 백엔드에서 utc로 바꿔서 저장해야한다.
     # https://github.com/rmed/akamatsu/blob/0dbcd2a67ce865d29fb7d7049e627d322ea8e361/akamatsu/views/admin/pages.py#L127
@@ -247,7 +248,7 @@ class EmployeeForm(UserInfoForm):
                           # 이것은 wtf datepicker가 올려주는 형식과 동일해야해서 고정이다. 받는 것도 string만 받는다. 하지만 return는 filter없이도 date로 가져간다.
                           # default=datetime.datetime.now().date(),  # default는 vue에서 알아서 준다.
                           default=datetime.date.today(),  # default는 vue에서 알아서 준다.
-                          filters=(convert_to_date,) # 필수! 수정시 v-model에 string을 value에 채운체로 rendering되면 에러난다.
+                          filters=(convert_to_date,)  # 필수! 수정시 v-model에 string을 value에 채운체로 rendering되면 에러난다.
                           )
 
     # resign_date는 입력x
@@ -264,8 +265,8 @@ class EmployeeForm(UserInfoForm):
 
     # def __init__(self, current_user, employee=None, *args, **kwargs):
     def __init__(self, user,
-                 role=None, # 초대수락 or 직원전환시 -> 상사객체 OR 직원초대시, role객체 =>  role을 선택할 수 있거나 role을 미리 채운다
-                 employee=None, # 수정을 위한 미리생성된 user의 employee객체
+                 role=None,  # 초대수락 or 직원전환시 -> 상사객체 OR 직원초대시, role객체 =>  role을 선택할 수 있거나 role을 미리 채운다
+                 employee=None,  # 수정을 위한 미리생성된 user의 employee객체
                  *args, **kwargs):
         ## employee=가 있다면, 직원정보 수정/ 없다면 직원 생성
         ## role=이 있다면, 직원초대 수락으로 작성 / role이 없다면, employer의 직원전환
@@ -308,25 +309,29 @@ class EmployeeForm(UserInfoForm):
             # print("아바타에 아무것도 없으면 FileRequired가 적용된다.>>>", self.avatar.data)
             self.avatar.validators.append(FileRequired('직원이 될 예정이시라면, 사진을 업로드 해주세요!'))
         # else:
-            # print("아바타.data에 이미 존재해서 FileRequired 생략>>>", self.avatar.data)
-            # pass
+        # print("아바타.data에 이미 존재해서 FileRequired 생략>>>", self.avatar.data)
+        # pass
         self.address.validators = [DataRequired("주소를 입력해주세요!")]
         self.phone.validators = [DataRequired("휴대폰 번호를 입력해주세요!")]
 
         # 1) employer=는 직접 [직원전환]버튼을 누른 상태로서, role을 해당 employer 범위안에서 결정한다
         if self.employer:
-            # 직원전환 상사 [current_user]로 부여할 수 잇는 role을 채운다.
-            with DBConnectionHandler() as db:
-                #### 직원전환시 USER는 옵션에서 제외해야한다. -> 나보다는 낮지만,  STAFF이상으로 -> where. Role.is_STAFF 추가
-                roles_under_employee = db.session.scalars(
-                    select(Role)
-                    .where(Role.is_under(self.employer.role))
-                    .where(Role.is_(Roles.STAFF))
-                ).all()
-                self.role_id.choices = [(role.id, role.name) for role in roles_under_employee]
-                #### 자신이 들고있는 role은 기본값으로 줘놔야한다. 안그러면 select의 첫 값으로 잡힌다
-                # self.role_id.data = user.role_id
-                # self.role_id.name = user.role.name
+            # 직원전환하는 경우, STAFF이상 ~ 상사의 아래 단계 role들을 채운다.
+            roles_under_employee = Role.filter_by(is_=Roles.STAFF, is_under=self.employer.role).all()
+            # print('roles_under_employee  >> ', roles_under_employee)
+
+            self.role_id.choices = [(role.id, role.name) for role in roles_under_employee]
+            # with DBConnectionHandler() as db:
+            #     #### 직원전환시 USER는 옵션에서 제외해야한다. -> 나보다는 낮지만,  STAFF이상으로 -> where. Role.is_STAFF 추가
+            #     roles_under_employee = db.session.scalars(
+            #         select(Role)
+            #         .where(Role.is_under(self.employer.role))
+            #         .where(Role.is_(Roles.STAFF))
+            #     ).all()
+            #     self.role_id.choices = [(role.id, role.name) for role in roles_under_employee]
+            #     #### 자신이 들고있는 role은 기본값으로 줘놔야한다. 안그러면 select의 첫 값으로 잡힌다
+            #     # self.role_id.data = user.role_id
+            #     # self.role_id.name = user.role.name
 
         # 2) role=은 [직원초대]를 보낼 때 EmployeeInvite에 담긴 role_id => 해당role 1개만 지정되며 수정불가능하게 비활성화한다.
         elif self.role:
@@ -350,25 +355,33 @@ class EmployeeForm(UserInfoForm):
         #     self.birth.data = prev_emp.birth
 
     def validate_birth(self, field):
-        if self.employee:  # 수정시 자신의 제외하고 데이터 중복 검사
-            condition = and_(Employee.id != self.employee.id, Employee.birth == field.data)
-        else:  # 생성시 자신의 데이터를 중복검사
-            condition = Employee.birth == field.data
-
-        #### 재입사로서 self.user => Employee에 정보가 있을 경우, 해당 데이터 제외하고 검사
-        # print(self.user, self.user.has_employee_history)
-        # User[id=32] True
-        if self.user.has_employee_history:
-            condition = and_(Employee.user_id != self.user.id, Employee.birth == field.data)
-
-        with DBConnectionHandler() as db:
-            is_exists = db.session.scalar(
-                exists().where(condition).select()
+        # 수정시 자신의 제외하고 데이터 중복 검사
+        if self.employee:
+            #### 수정이 아닌, 재입사인 경우에도 이미 employee데이터가 존재하므로 같이 처리된다.
+            # condition = and_(Employee.id != self.employee.id, Employee.birth == field.data)
+            exists_conditions = dict(
+                id__ne=self.employee.id,
+                birth=field.data
+            )
+        # 생성시 자신의 데이터를 중복검사
+        else:
+            # condition = Employee.birth == field.data
+            exists_conditions = dict(
+                birth=field.data
             )
 
+        # 재입사로서 self.user => Employee에 정보가 있을 경우, 해당 데이터 제외하고 검사
+        # print(self.user, self.user.has_employee_history)
+        # User[id=32] True
+        # if self.user.has_employee_history:
+        #     condition = and_(Employee.user_id != self.user.id, Employee.birth == field.data)
 
-            if is_exists:
-                raise ValidationError('이미 존재하는 주민등록번호 입니다')
+        # with DBConnectionHandler() as db:
+        #     is_exists = db.session.scalar(
+        #         exists().where(condition).select()
+        #     )
+        if Employee.filter_by(**exists_conditions).exists():
+            raise ValidationError('이미 존재하는 주민등록번호 입니다')
 
 
 class EmployeeInfoForm(FlaskForm):
@@ -393,20 +406,22 @@ class EmployeeInfoForm(FlaskForm):
 
         self.employee = employee
         if self.employee:
-            super().__init__(*args, **self.employee.__dict__,  **kwargs)
+            super().__init__(*args, **self.employee.__dict__, **kwargs)
         else:
             super().__init__(*args, **kwargs)
 
     def validate_birth(self, field):
         if self.employee:  # 수정시 자신의 제외하고 데이터 중복 검사
-            condition = and_(Employee.id != self.employee.id, Employee.birth == field.data)
+            # condition = and_(Employee.id != self.employee.id, Employee.birth == field.data)
+            exists_conditions = dict(
+                id__ne=self.employee.id,
+                birth=field.data
+            )
         else:  # 생성시 자신의 데이터를 중복검사
-            condition = Employee.birth == field.data
+            # condition = Employee.birth == field.data
+            exists_conditions = dict(
+                birth=field.data
+            )
 
-        with DBConnectionHandler() as db:
-            is_exists = db.session.scalars(
-                exists().where(condition).select()
-            ).one()
-
-        if is_exists:
+        if Employee.filter_by(**exists_conditions).exists():
             raise ValidationError('이미 존재하는 주민등록번호 입니다')

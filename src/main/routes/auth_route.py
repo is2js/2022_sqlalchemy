@@ -872,17 +872,16 @@ def employee_invite_reject(id):
 @auth_bp.route('/invite/employee/postpone/<int:id>/', methods=['POST'])
 @login_required
 def employee_invite_postpone(id):
-    with DBConnectionHandler() as db:
-        invite = db.session.get(EmployeeInvite, id)
-
-        invite.create_on = invite.create_on + datetime.timedelta(days=EmployeeInvite._INVITE_EXPIRE_DAYS)
-
-        db.session.add(invite)
-        db.session.commit()
-
+    invite = EmployeeInvite.get(id)
+    result, msg = invite.update(
+        create_on=invite.create_on + datetime.timedelta(days=EmployeeInvite._INVITE_EXPIRE_DAYS)
+    )
+    if result:
         flash(f"초대를 {EmployeeInvite._INVITE_EXPIRE_DAYS}일 연기했습니다.", category='is-info')
+    else:
+        flash(msg)
 
-        return redirect(redirect_url())
+    return redirect(redirect_url())
 
 @auth_bp.route('/invite/employee/cancel/<int:id>/', methods=['POST'])
 @login_required
@@ -899,24 +898,9 @@ def employee_invite_cancel(id):
 @auth_bp.route('/employeeinfo/')
 @login_required
 def employeeinfo():
-    with DBConnectionHandler() as db:
-        stmt = (
-            select(Employee)
-            .where(Employee.is_active == True)
-            .where(Employee.user_id == g.user.id)
-        )
+    # 직원정보는 user.role까지 본다
+    employee = Employee.load({'user': ('selectin', {'role': 'selectin'})}).filter_by(user_id=g.user.id).first()
 
-        # jinja2.exceptions.UndefinedError: 'None' has no attribute 'user'
-        #### user정보가 없는 employee가 있다? 일단 admin으로 접속하면, 기본user정보가 없다?
-
-        employee = db.session.scalars(stmt).first()
-
-        if not employee:
-            return "active 직원 정보가 없습니다."
-
-        # print(g.user.id)
-        # print(employee.user_id)
-        # print(employee)
     return render_template('auth/userinfo_employeeinfo.html',
                            employee=employee
                            )
@@ -925,32 +909,18 @@ def employeeinfo():
 @auth_bp.route('/employeeinfo/edit/', methods=['GET', 'POST'])
 @login_required
 def employeeinfo_edit():
-    with DBConnectionHandler() as db:
-        stmt = (
-            select(Employee)
-            .where(Employee.user_id == g.user.id)
-        )
 
-        employee = db.session.scalars(stmt).first()
-
-        form = EmployeeInfoForm(employee=employee)
+    employee = Employee.filter_by(user_id=g.user.id).first()
+    form = EmployeeInfoForm(employee=employee)
 
     if form.validate_on_submit():
-        with DBConnectionHandler() as db:
-            stmt = (
-                select(Employee)
-                .where(Employee.user_id == g.user.id)
-            )
-
-            employee = db.session.scalars(stmt).first()
-            employee.name = form.name.data
-            employee.sub_name = form.sub_name.data
-            employee.birth = form.birth.data
-
-            db.session.add(employee)
-            db.session.commit()
-
+        data = form.data
+        result, msg = employee.update(**data)
+        if result:
             flash('직원 정보 수정 성공', category='is-success')
+            return redirect(url_for('auth.employeeinfo'))
+        else:
+            flash(msg)
 
     return render_template('auth/userinfo_employeeinfo_form.html',
                            form=form)

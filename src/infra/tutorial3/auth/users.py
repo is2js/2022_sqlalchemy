@@ -527,6 +527,21 @@ class Role(BaseModel):
     # https://stackoverflow.com/questions/1061283/lt-instead-of-cmp
 
     # https://stackoverflow.com/questions/71912085/hybrid-expressions-in-sqlalchemy-with-arguments
+    # @hybrid_method
+    # def is_(self, role_enum):
+    #     role_perm = role_enum.value[-1]
+    #     return self.permissions >= role_perm
+
+    # @is_.expression
+
+    # refactor
+    @hybrid_method
+    def is_(cls, role_enum, mapper=None):
+        mapper = mapper or cls
+
+        return mapper.permissions >= role_enum.max_permission
+
+    # refactor is_와 다르게 role객체를 받아 비교
     @hybrid_method
     def is_under(self, role):
         return self.permissions < role.permissions
@@ -551,19 +566,7 @@ class Role(BaseModel):
             ).first()
             return role
 
-    # @hybrid_method
-    # def is_(self, role_enum):
-    #     role_perm = role_enum.value[-1]
-    #     return self.permissions >= role_perm
 
-    # @is_.expression
-    @hybrid_method
-    def is_(cls, role_enum, mapper=None):
-        role_perm = role_enum.value[-1]
-
-        mapper = mapper or cls
-
-        return mapper.permissions >= role_perm
 
 
 class JobStatusType(enum.IntEnum):
