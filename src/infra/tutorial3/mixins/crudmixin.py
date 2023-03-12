@@ -264,17 +264,13 @@ class CRUDMixin(Base, ObjectMixin):
     @class_or_instancemethod
     def order_by(cls, *args, session: Session = None):
         """
+        Only args not list
         Category.order_by("-id").all()
+
+        Banner.order_by('-is_fixed', '-add_date').all()
+
         EmployeeDepartment.order_by("-department___id").all()
         """
-        # 'a', '-b' => *args => args => ('a', '-b')
-        # 'a'       => *args => args => ('a', )
-        # 만약 ['a', '-b']로 list로 입력했다면? => *args ['a', -'b'] => args (['a','-b'], )
-        #                                   => *args를 검사해서 iterable이면 args대신 *args를 사용하도록
-        # itertools.chain( *섞여있는list = *args )
-        # list(itertools.chain(*(['a', '-b'], 'a')))
-        # ['a', '-b', 'a']
-        args = tuple(itertools.chain(*args))
         obj = cls.create_obj(session=session, order_by=args)
 
         return obj
@@ -283,8 +279,11 @@ class CRUDMixin(Base, ObjectMixin):
     def order_by(self, *args):
         """
         Category.filter_by(id__lt=5).order_by("-id").all()
+
+        Only args not list
+        Banner.filter_by().order_by('-is_fixed', '-add_date').all()
+
         """
-        args = itertools.chain(*args)
         self.set_attrs(order_by=args)
 
         return self
