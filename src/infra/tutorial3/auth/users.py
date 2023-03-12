@@ -451,7 +451,8 @@ class Role(BaseModel):
     # users = relationship('User', backref=backref('role', lazy='subquery'), lazy='dynamic')
     #### => User쪽으로 관계속성 옮기기 for stmt 연결
 
-    employee_invites = relationship('EmployeeInvite', backref=backref('role', lazy='subquery'), lazy='dynamic')
+    # employee_invites = relationship('EmployeeInvite', backref=backref('role', lazy='subquery'), lazy='dynamic')
+    employee_invites = relationship('EmployeeInvite', back_populates='role')
 
     # 해결1) User <- Role 관계설정
     # user = relationship('User', back_populates='role', uselist=False)
@@ -2026,6 +2027,7 @@ class EmployeeInvite(InviteBaseModel, CRUDMixin):
 
     # 직원초대에서는, 초대마다 바뀔 수 있는 role정보를 가져 따로 엔터티를 만들었다.
     role_id = Column(Integer, ForeignKey('roles.id'), nullable=False)
+    role = relationship('Role', foreign_keys=[role_id], uselist=False, back_populates='employee_invites')
 
     def __repr__(self):
         return '<EmployeeInvite %r=>%r >' % (self.inviter_id, self.invitee_id)

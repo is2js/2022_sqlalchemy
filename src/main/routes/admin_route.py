@@ -1522,15 +1522,21 @@ def employee():
 @login_required
 @role_required(allowed_roles=[Roles.CHIEFSTAFF])
 def employee_add(user_id):
-    user = User.get(user_id)
-    # form = EmployeeForm(user, employer=g.user) # 고용주인 현재유저를 form내부에서 g.user로 쓰고 인자에서 삭제
-    form = EmployeeForm(user)
+    # user = User.get(user_id)
+    # 재입사인지 확인을 위해, employee까지 load해서 None이면 신규입사, 아니면 재입사다
+    user = User.load({'employee':'selectin'}).filter_by(id=user_id).first()
+
+    # 재입사인 경우, 수정form으로 인식되도록 employee=넣어주기
+    # -> uselist relation이 데이터가 없으면 조회시 None으로 들어감. -> 내부에서 없는 것으로 취급
+    user_employee = user.employee
+    form = EmployeeForm(user, employee=user_employee)
 
     if form.validate_on_submit():
         # User정보와 Employee정보를 따로 분리해서 각각 처리한다.
         data = form.data
 
         #### user ####
+        # - 여러개의 role이 아니라 1개의 role만 올라오므로 role relation을 불러올 필요는 없다
         user_data = {key: value for key, value in data.items() if
                      key in ['email', 'sex', 'phone', 'address', 'role_id', 'avatar']}
 
@@ -1544,20 +1550,49 @@ def employee_add(user_id):
         # - 직원으로 변환되면, user의 role부터 미리 선택된 것으로 바뀌어야한다.
         user.fill(**user_data)
 
-        #### employee ####
-        # - role은 employee에  있진 않다. 부모격인 user객체에 들어가있음.
-        # job_status는 form에는 존재하지만, 생성시에는 view에 안뿌린다. 대신 default값이 들어가있으니, 그것으로 재직되게 한다?
-        # resign_date는 default값 없이 form필드에도 명시안한다
-        employee_data = {key: value for key, value in data.items() if
-                         key in ['name', 'sub_name', 'birth', 'join_date', 'job_status']}
-        employee_data['user'] = user  # 수정된 user정보를 넣어서 수정해준다.
+        #### employee (재입사vs신규입사)####
+        # 1) employee relation이 존재함 -> 재입사 -> employee Update
+        #    달라질 수 있는 기본정보 VS 입사와 동일한 고정정보
+        if user_employee:
+            user_employee.fill(
+                # 재입사시 바뀔 수도 있는 정보(이미 form이 수정형으로서 채워져 있음)
+                name=form.name.data,
+                sub_name=form.sub_name.data,
+                birth=form.birth.data,
+                join_date=form.join_date.data,
+                # 재입사시 고정적인 부분 => 재직1 상태변경/퇴직일/휴직일 비우기
+                job_status=JobStatusType.재직.value,  # 재입사시 고정
+                resign_date=None,
+                leave_date=None,
+            )
+            # 특별한 fill
+            user_employee.fill_reference(f'재입사({format_date(form.join_date.data)})')
+            # employee정보를 main obj인 user에 fill
 
-        result, msg = Employee.create(**employee_data)
+        # 2) employee relation조회시 None -> 신규입사 -> employee Create
+        else:
+            # - role은 employee에  있진 않다. 부모격인 user객체에 들어가있음.
+            # job_status는 form에는 존재하지만, 생성시에는 view에 안뿌린다. 대신 default값이 들어가있으니, 그것으로 재직되게 한다?
+            # resign_date는 default값 없이 form필드에도 명시안한다
+            employee_data = {key: value for key, value in data.items() if
+                             key in ['name', 'sub_name', 'birth', 'join_date', 'job_status']}
+            employee_data['user'] = user  # 수정된 relation user정보를 fill해서 main obj에서 한번에 수정 반영
+
+            user_employee, msg = Employee.create(
+                **employee_data,
+                reference=f'신규입사({format_date(form.join_date.data)})'
+            )
+            if not user_employee:
+                flash(msg)
+                return redirect(url_for('admin.employee'))
+
+        # 완성된 employee정보를 main이 user의 relation에 전달
+        user.fill(employee=user_employee)
+        result, msg = user.update()
         if result:
-            flash(f'{result} {msg}')
-            return redirect(url_for('admin.employee'))
-
-        flash(msg)
+            flash("직원 전환 성공", category='is-info')
+        else:
+            flash(msg)
 
     errors = [{'field': key, 'messages': form.errors[key]} for key in form.errors.keys()] if form.errors else []
     return render_template('admin/employee_form.html', form=form, errors=errors)

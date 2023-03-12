@@ -136,8 +136,17 @@ class UserInfoForm(FlaskForm):
 
     # 수정form를(model과 같은 필드명으로 할당으로 채워지기) 위한  생성자 재정의
     # def __init__(self, user=None, *args, **kwargs):
-    def __init__(self, *args, **kwargs):
-        self.user = g.user
+    # def __init__(self, *args, **kwargs):
+    #     self.user = g.user
+    # 다시 수정 -> 직원form이 상속할 때, g.user를 수정할 유저로 들어가버리니,
+    # user=None이 명시적으로 필요한 듯. 들어오는 user가 없을 때만, g.user현재유저로 취급
+    def __init__(self, user=None, *args, **kwargs):
+        # g.user의 특정user [직원전환]일 경우, 현재유저가 수정대상이 아닐 수 있다.
+        # -> user=로 넘어오는 User객체를 수정용으로 우선 반영하여, [직원전환]에 대응
+        if not user:
+            self.user = g.user
+        else:
+            self.user = user
         if self.user:
             # super().__init__(**self.user.__dict__)
             super().__init__(**self.user.__dict__, **kwargs)
@@ -255,14 +264,18 @@ class EmployeeForm(UserInfoForm):
 
     # def __init__(self, current_user, employee=None, *args, **kwargs):
     def __init__(self, user,
-                 role=None, # 직원전환시 상사객체 OR 직원초대시, role객체 =>  role을 선택할 수 있거나 role을 미리 채운다
+                 role=None, # 초대수락 or 직원전환시 -> 상사객체 OR 직원초대시, role객체 =>  role을 선택할 수 있거나 role을 미리 채운다
                  employee=None, # 수정을 위한 미리생성된 user의 employee객체
                  *args, **kwargs):
-
+        ## employee=가 있다면, 직원정보 수정/ 없다면 직원 생성
+        ## role=이 있다면, 직원초대 수락으로 작성 / role이 없다면, employer의 직원전환
+        # 1) employer가 직원전환을 강제로 하는 경우 self.employer + 자신의 롤 + 수정(or재입사)라면 employee
+        # 2) role= 1개를 입력받아 -> 초대로 진원전환을 직접하는 경우 self.role +  수정(재입사)라면 employee
         self.employee = employee
-        self.employer = g.user
         self.role = role
-        #### 수정인 경우
+        # role=1개가 안주어져야, [employer]의 [직원전환]으로서 if self.employer에 g.user가 잡히고 그에 따른 role들이 반영
+        self.employer = g.user if not role else None
+        #### 수정(or재입사)인 경우
         if self.employee:
             # super().__init__(user, **self.employee.__dict__) => error
             ## 1) employee를 **kwargs로 보내주면, employee내부 user필드가 또 있어서, 겹치게 된다.
@@ -272,9 +285,9 @@ class EmployeeForm(UserInfoForm):
             # {'add_date': datetime.datetime(2022, 12, 21, 21, 50, 11, 114650), 'pub_date': datetime.datetime(2022, 12, 21, 21, 50, 11, 114650), 'id': 12, 'user_id': 37, 'name': '투자자', 'sub_name': '투자자', 'birth': '2010233349192', 'join_date': datetime.da
             # te(2022, 12, 21), 'job_status': <JobStatusType.재직: 1>, 'resign_date': None, 'user': User[id=37]}
             # print(self.employee.serialize())
-
             # super().__init__(user, **self.employee.to_dict(without_id=True))
             super().__init__(user, **self.employee.to_dict2(exclude=['add_date', 'pub_date', 'id']))
+        # Employee 생성 상황이지만, 부모인 UserInfoForm은 수정상태다.
         else:
             # super().__init__(*args, **kwargs)
             ## 상속한 부모 form UserInfoForm는 무조건 수정상태로 쓰니, user를 넣어준다.
@@ -289,6 +302,7 @@ class EmployeeForm(UserInfoForm):
         #### 이미 값이 들어가잇을 수 있기 때문에, 값이 안들어가있는 경우만 줘야한다.
         if not self.sex.data:
             self.sex.data = SexType.여자.value
+
         #### 근데, 이미 아바타가 존재해서 경로만 존재하는 경우 생략해야한다.
         if not self.avatar.data:
             # print("아바타에 아무것도 없으면 FileRequired가 적용된다.>>>", self.avatar.data)
