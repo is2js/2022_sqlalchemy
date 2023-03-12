@@ -1,6 +1,7 @@
 # ObjectMixin(BaseQuery) 이후로는 세팅된 Base를 사용하여, BaseModel이 Base대신 이것을 상속한다.
 from __future__ import annotations
 
+import itertools
 import math
 import typing
 
@@ -266,6 +267,14 @@ class CRUDMixin(Base, ObjectMixin):
         Category.order_by("-id").all()
         EmployeeDepartment.order_by("-department___id").all()
         """
+        # 'a', '-b' => *args => args => ('a', '-b')
+        # 'a'       => *args => args => ('a', )
+        # 만약 ['a', '-b']로 list로 입력했다면? => *args ['a', -'b'] => args (['a','-b'], )
+        #                                   => *args를 검사해서 iterable이면 args대신 *args를 사용하도록
+        # itertools.chain( *섞여있는list = *args )
+        # list(itertools.chain(*(['a', '-b'], 'a')))
+        # ['a', '-b', 'a']
+        args = tuple(itertools.chain(*args))
         obj = cls.create_obj(session=session, order_by=args)
 
         return obj
@@ -275,6 +284,7 @@ class CRUDMixin(Base, ObjectMixin):
         """
         Category.filter_by(id__lt=5).order_by("-id").all()
         """
+        args = itertools.chain(*args)
         self.set_attrs(order_by=args)
 
         return self

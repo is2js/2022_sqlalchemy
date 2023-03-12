@@ -650,11 +650,11 @@ class ObjectMixin(Base, BaseQuery):
             attrs += list(_flat_dict_attrs_generator(having))
 
         if selects:
-            if selects and not isinstance(selects, (list, tuple, set)):
+            if selects and not isinstance(selects, abc.Iterable):
                 selects = [selects]
             attrs += selects
         if order_by:
-            if order_by and not isinstance(order_by, (list, tuple, set)):
+            if order_by and not isinstance(order_by, abc.Iterable):
                 order_by = [order_by]
             attrs += list(map(lambda s: s.lstrip(DESC_PREFIX), order_by))
 
