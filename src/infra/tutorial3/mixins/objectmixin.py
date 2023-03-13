@@ -1139,9 +1139,10 @@ class ObjectMixin(Base, BaseQuery):
         return self._query.subquery()
 
     # for route에서 row별 table 데이터(json) 전달
-    def to_dict2(self, nested=False, hybrid_atts=False, exclude=None, include=None, session: Session = None):
+    def to_dict2(self, nested=False, relations=None, hybrid_atts=False, exclude=None, include=None, session: Session = None):
         """
-        < Department.to_dict2()> 도 가능하도록 처리 필요? classmethod 적용하기
+        *self메서드지만, session=을 인자로 가지는 이유:
+        => 같은session으로 *재귀를 돌려, eagerload없이도 children/relation에 접근 -> dict를 생성하고 반환
 
         1) 이미 mode_obj로 조회되어 session없는 순수model객체 상태(not session obj) -> has not _session
             ex> u = User.get(1) -> (O) no session 객체 1개
@@ -1150,14 +1151,42 @@ class ObjectMixin(Base, BaseQuery):
             => session종료와 함께, 순수model obj_init으로 생긴 [_session, served, _flatten_schema, _query, _loaded_rel_paths, _expression_based] attrs들 삭제해줘야, model obj 다시 메서드 호출시 동일 동작
                by self.close_model_obj() - 실행함수 session을 처리하는 self.close()를 포함하여 attr들 삭제
             ----
+            1-1) include할 것만 or 전체에서 exclude할 것만 선택하기
+                 그외  hybrid_atts= 도 선택해서 추가 가능하다.
             c = Category.get(2)
             c.to_dict2(exclude=['add_date', 'pub_date'])
             => {'id': 2, 'name': '337', 'icon': '12'}
-            *nested=True로 관계객체도 불러오기 + *공통exclude 추가하기
+
+            1-2) relation을 nested하기
+            #    포함시킬 relation을 relations=에 명시하고, nested=True(1)
+            #    * self-relational인 경우, nested=6 과 같이 join_depth를 명시한다.
+
+            *nested=True(depth=1)로 관계객체도 불러오기
             c.to_dict2(nested=True, exclude=['add_date', 'pub_date'])
             => {'id': 2, 'name': '337', 'icon': '12',
                 'posts': [{'id': 2, 'title': '444444444', 'desc': '444444444444444444444444', 'content': '<p>4444444</p>', 'has_type': 2, 'category_id': 2}]
                 }
+
+            *self-relation의 nested라면, 정해진 max_depth를 nested에 주면,
+             -> nested에 준 값보다 data의 depth가 얕으면 알아서 children:[]로 반환하며 재귀를 멈춘다.
+            d = Department.get(3)
+            d.to_dict(nested=Department._DEPTH_LIMIT, relations='children', include=['id', 'name'])
+            {
+                'id':3,
+                'name':'44',
+                'children':[
+                    {
+                        'id':14,
+                        'name':'11111',
+                        'children':[]
+                    },
+                    {
+                        'id':15,
+                        'name':'1111112',
+                        'children':[]
+                    }
+                ]
+            }
 
         2) filter_by 등으로 session obj상태이나, 아직 조회안된 상황 -> _session + not _expression_based
             ex> User.filter_by() -> (X) 몇개 나오는지 모름
@@ -1166,7 +1195,7 @@ class ObjectMixin(Base, BaseQuery):
             ----
             *filter_by()로 to_dict2()시 list로 반환됨.
             *relation필드도 exclude에 넣어서 필요한 관계객체만 만들기
-            User.filter_by(id__lt=3).to_dict2(nested=True, exclude=['password_hash', 'add_date', 'pub_date', 'inviters', 'invitees', 'role'])
+            User.filter_by(id__lt=3).to_dict2(nested=True, relations='employee', exclude=['password_hash', 'add_date', 'pub_date', 'inviters', 'invitees', 'role'])
             => [
                 {'id': 1, 'username': 'admin', 'email': 'tingstyle1@gmail.com', 'last_seen': '2023-03-02 05:10', 'is_active': True, 'avatar': None, 'sex': 0, 'address': None, 'phone': None, 'role_id': 6,
                     'employee': [{'id': 1, 'user_id': 1, 'name': '관리자', 'sub_name': 'Administrator', 'birth': '9910101918111', 'join_date': '2023-02-15', 'job_status': 1, 'resign_date': None, 'leave_date': None, 'reference': '관리자 계정'}]
@@ -1193,10 +1222,11 @@ class ObjectMixin(Base, BaseQuery):
           =>  {'id': 1, 'name': '상위부서'}
         """
         # 배제할 것이 list가 아니더라도 list로 처리
-        if exclude and not isinstance(exclude, abc.Iterable):
+        #-> abc.Iterable로 주면, string 1개를 iterable로 인식함.
+        if exclude and not isinstance(exclude, (list, tuple, set)):
             exclude = [exclude]
         # 포함할 것만 주어질 수도 있다.
-        if include and not isinstance(include, abc.Iterable):
+        if include and not isinstance(include, (list, tuple, set)):
             include = [include]
 
         #### 1. model obj 1개
@@ -1239,12 +1269,25 @@ class ObjectMixin(Base, BaseQuery):
 
             # 4) 관계객체의 데이터를 dict형태로 포함하여 넣고 싶다면, 재귀로 얻어낸 dict를 최종dict에 포함시킨다.
             if nested:
-                # 배제 확인
-                view_relation_names = self.filter_include_and_exclude(self.relation_names, include, exclude)
+                if not relations:
+                    raise KeyError('nested obj를 원한다면, relations=에 relationship property를 명시해주세요')
+                if not isinstance(relations, (list, tuple, set)):
+                    relations = [relations]
 
-                for relation_name in view_relation_names:
+                if not all(relation in self.relation_names for relation in relations):
+                    raise KeyError(f'Invalid relationship : {relations} in depth {nested}')
+
+                # relation의 배제확인은 nested를 타야하므로 아예 검사 제외시킨다?!
+                # -> 어차피 relation이 칼럼명으로 나오긴하나, 명시되면 포함시켜야하는데,
+                # view_relation_names = self.filter_include_and_exclude(relations, include, exclude)
+                # for relation_name in view_relation_names:
+                for relation_name in relations:
 
                     obj = getattr(self, relation_name)
+                    # 추가1) relation(or 자식)이 비어있다면, 빈 list를 만들어 반환한다 -> view에서 돌아가게 함.
+                    if not obj:
+                        result[relation_name] = []
+                        continue
 
                     # 이 때, ObjectMixin을 상속한 model이 아니라, Iterable한 여러모델일 수 있다면,
                     # -> 해당하는 것만 모아서 변환 후 list로 넣어준다. hybrid_atts=False,
@@ -1253,13 +1296,13 @@ class ObjectMixin(Base, BaseQuery):
                     if isinstance(obj, ObjectMixin):
                         # 재귀를 돌릴 때, 같은 session을 활용하기 위해 self._session을 넣어준다.
                         # => 만약 안넣어준다면, relation obj가 다른 session(부모처럼 자체 내부새셩 생성)에 존재한다고 뜬다.
-                        result[relation_name] = obj.to_dict2(hybrid_atts=hybrid_atts, exclude=exclude,
+                        result[relation_name] = obj.to_dict2(nested=nested-1, relations=relations, hybrid_atts=hybrid_atts, include=include, exclude=exclude,
                                                              session=self._session
                                                              )
                     # 여기는 relation obj에 접근 Many라서  경우다. 순회하면서, 각각 돌려줘야한다.
                     elif isinstance(obj, Iterable):
                         result[relation_name] = [
-                            o.to_dict2(hybrid_atts=hybrid_atts, exclude=exclude, session=self._session) for o in obj
+                            o.to_dict2(nested=nested-1, relations=relations, hybrid_atts=hybrid_atts, include=include, exclude=exclude, session=self._session) for o in obj
                             if isinstance(o, ObjectMixin)
                         ]
 
