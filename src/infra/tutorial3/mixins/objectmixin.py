@@ -495,11 +495,11 @@ class ObjectMixin(Base, BaseQuery):
                 # print('self._session  >> ', self._session)
                 return self._session
 
-    def set_query(self, query=None, eagerload=None, filter_by=None, order_by=None, options=None, outerjoin=None,
+    def set_query(self, query=None, eagerload=None, where=None, order_by=None, options=None, outerjoin=None,
                   group_by=None, having=None, limit=None, offset=None):
         def _is_chaining():
             return not (
-                    eagerload is None and filter_by is None and order_by is None and options is None
+                    eagerload is None and where is None and order_by is None and options is None
                     and outerjoin is None and group_by is None and having is None and limit is None
                     and offset is None
             )
@@ -544,31 +544,44 @@ class ObjectMixin(Base, BaseQuery):
                     # .options(contains_eager(rel_path, alias=aliased_rel_model))
                 )
 
-            if filter_by:
+            if where:
+                if not isinstance(where, abc.Iterable):
+                    raise KeyError(
+                        f'입력할 조건 Clause는 list나 tuple에 싸서 입력해주세요. 조건절을 포장 없이 입력하면 True/False로 전달되어 제대로 작동하지 않습니다.'
+                    )
                 self._query = (
                     self._query
-                    .where(*filter_by)
+                    .where(*where)
                 )
 
             if order_by:
+                if not isinstance(order_by, abc.Iterable):
+                    order_by = [order_by]
                 self._query = (
                     self._query
                     .order_by(*order_by)
                 )
 
             if options:
+                if not isinstance(options, abc.Iterable):
+                    options = [options]
                 self._query = (
                     self._query
                     .options(*options)
                 )
 
             if group_by:
+                if not isinstance(group_by, abc.Iterable):
+                    group_by = [group_by]
                 self._query = (
                     self._query
                     .group_by(*group_by)
                 )
 
             if having:
+                raise KeyError(
+                    f'입력할 조건 Clause는 list나 tuple에 싸서 입력해주세요. 조건절을 포장 없이 입력하면 True/False로 전달되어 제대로 작동하지 않습니다.'
+                )
                 self._query = (
                     self._query
                     .having(*having)
@@ -687,7 +700,7 @@ class ObjectMixin(Base, BaseQuery):
             if filter_by:
                 # self._set_query_and_load_rel_paths(for_execute=False)
                 self.set_query(
-                    filter_by=self._create_conditional_exprs_with_alias_map(self.__class__, filter_by, self._alias_map))
+                    where=self._create_conditional_exprs_with_alias_map(self.__class__, filter_by, self._alias_map))
             if having:
                 # self._set_query_and_load_rel_paths(for_execute=True)
                 self.set_query(
