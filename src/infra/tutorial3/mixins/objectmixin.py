@@ -1139,7 +1139,10 @@ class ObjectMixin(Base, BaseQuery):
         return self._query.subquery()
 
     # for route에서 row별 table 데이터(json) 전달
-    def to_dict2(self, nested=False, relations=None, hybrid_atts=False, exclude=None, include=None, session: Session = None):
+    def to_dict2(self, nested=False, relations=None, hybrid_atts=False, exclude=None, include=None,
+                 session: Session = None,
+                 depth=0
+                 ):
         """
         *self메서드지만, session=을 인자로 가지는 이유:
         => 같은session으로 *재귀를 돌려, eagerload없이도 children/relation에 접근 -> dict를 생성하고 반환
@@ -1222,7 +1225,7 @@ class ObjectMixin(Base, BaseQuery):
           =>  {'id': 1, 'name': '상위부서'}
         """
         # 배제할 것이 list가 아니더라도 list로 처리
-        #-> abc.Iterable로 주면, string 1개를 iterable로 인식함.
+        # -> abc.Iterable로 주면, string 1개를 iterable로 인식함.
         if exclude and not isinstance(exclude, (list, tuple, set)):
             exclude = [exclude]
         # 포함할 것만 주어질 수도 있다.
@@ -1268,6 +1271,7 @@ class ObjectMixin(Base, BaseQuery):
                     result[hybrid_prop_name] = getattr(self, hybrid_prop_name)
 
             # 4) 관계객체의 데이터를 dict형태로 포함하여 넣고 싶다면, 재귀로 얻어낸 dict를 최종dict에 포함시킨다.
+            #    *여기서는 include/exclude상관없이 무조건 포함
             if nested:
                 if not relations:
                     raise KeyError('nested obj를 원한다면, relations=에 relationship property를 명시해주세요')
@@ -1296,21 +1300,25 @@ class ObjectMixin(Base, BaseQuery):
                     if isinstance(obj, ObjectMixin):
                         # 재귀를 돌릴 때, 같은 session을 활용하기 위해 self._session을 넣어준다.
                         # => 만약 안넣어준다면, relation obj가 다른 session(부모처럼 자체 내부새셩 생성)에 존재한다고 뜬다.
-                        result[relation_name] = obj.to_dict2(nested=nested-1, relations=relations, hybrid_atts=hybrid_atts, include=include, exclude=exclude,
-                                                             session=self._session
+                        result[relation_name] = obj.to_dict2(nested=nested - 1, relations=relations,
+                                                             hybrid_atts=hybrid_atts, include=include, exclude=exclude,
+                                                             session=self._session, depth=depth + 1
                                                              )
                     # 여기는 relation obj에 접근 Many라서  경우다. 순회하면서, 각각 돌려줘야한다.
                     elif isinstance(obj, Iterable):
                         result[relation_name] = [
-                            o.to_dict2(nested=nested-1, relations=relations, hybrid_atts=hybrid_atts, include=include, exclude=exclude, session=self._session) for o in obj
+                            o.to_dict2(nested=nested - 1, relations=relations, hybrid_atts=hybrid_atts, include=include,
+                                       exclude=exclude, session=self._session, depth=depth + 1) for o in obj
                             if isinstance(o, ObjectMixin)
                         ]
 
             # session없는 model_obj라도 예외처리.됨
             # nested 하려면, relations이 load되어있어야한다.
-            # self.close_model_obj() # session 등을 지우면, 외부session이 날아가버리는 부작용으로 취소
-            #### session close만
-            self.close()
+            # self.close_model_obj() # session 등을 지우면, 재귀로 외부session이 날아가버리는 부작용으로 취소
+            #### session close만 -> 최상층에서만..? 어차피 dict에 채우고 종료해도 상관없다?
+
+            if not depth:
+                self.close()
             return result
 
 
@@ -1331,9 +1339,10 @@ class ObjectMixin(Base, BaseQuery):
 
                 dict_list = []
                 for model_obj in results:
-                    model_dict = model_obj.to_dict2(nested=nested, hybrid_atts=hybrid_atts, include=include,
+                    model_dict = model_obj.to_dict2(nested=nested, relations=relations, hybrid_atts=hybrid_atts,
+                                                    include=include,
                                                     exclude=exclude,
-                                                    session=self._session)
+                                                    session=self._session, depth=depth)
                     dict_list.append(model_dict)
 
                 self.close()
