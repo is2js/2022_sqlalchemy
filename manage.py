@@ -24,6 +24,7 @@ def make_shell_context():
                 select=select, inspect=inspect, aliased=aliased, func=func, text=text,
                 User=User, Role=Role, Post=Post, Category=Category, Tag=Tag, posttags=posttags,
                 Banner=Banner,
+                PostPublishType=PostPublishType,
                 EmployeeDepartment=EmployeeDepartment,
                 Employee=Employee,
                 Department=Department,

@@ -18,7 +18,7 @@
     <nav class="breadcrumb is-small" aria-label="breadcrumbs">
         <ul>
             <li><a href="/">Home</a></li>
-            <li><a href="{{ url_for('main.category', id=category.id) }}">{{ category.name }}</a></li>
+            <li><a href="{{ url_for('main.category', id=post.category.id) }}">{{ post.category.name }}</a></li>
             <li class="is-active"><a href="#" aria-current="page">{{ post.title }}</a></li>
         </ul>
     </nav>

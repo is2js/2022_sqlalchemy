@@ -1,6 +1,7 @@
 import enum
 
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, Table, BigInteger
+from sqlalchemy.ext.hybrid import hybrid_property, hybrid_method
 from sqlalchemy.orm import relationship, backref
 
 from src.infra.tutorial3.common.base import BaseModel  # , IntEnum
@@ -19,7 +20,8 @@ class Category(BaseModel):
     name = Column(String(128), nullable=False, unique=True)
     icon = Column(String(128), nullable=True)
 
-    posts = relationship('Post', backref=backref('category', lazy='subquery'),
+    posts = relationship('Post', #backref=backref('category', lazy='subquery'),
+                         back_populates='category',
                          cascade="all, delete",  # 방법1)
                          passive_deletes=True,  # 해결책2 - 자식FK애 ondelete='CASCADE' 이후 부모relationshio에 이것을 주면, 부모만 삭제하고, 나머지는 DB가 수동적 삭제한다
                          # lazy=True
@@ -76,6 +78,7 @@ class PostPublishType(enum.IntEnum):
 
 class Post(BaseModel):
     __tablename__ = 'posts'
+    __repr_attrs__ = ['title']
     ko_NAME = '게시글'
 
 
@@ -102,6 +105,7 @@ class Post(BaseModel):
                          # nullable=False,
                          # name='post_category_id'
                          )
+    category = relationship('Category', foreign_keys=[category_id], back_populates='posts')
 
     tags = relationship('Tag', secondary=posttags,
                         # lazy='subquery',
@@ -110,10 +114,10 @@ class Post(BaseModel):
                         # backref=backref('posts', lazy='subquery'),  # tag -> (front) tag.posts 해결
                         )
 
-    def __repr__(self):
-        info: str = f"{self.__class__.__name__}" \
-                    f"[title={self.title!r}]"
-        return info
+    @hybrid_method
+    def type(cls, type_enum, mapper=None):
+        mapper = mapper or cls
+        return mapper.has_type == type_enum.value
 
 
 class Tag(BaseModel):
