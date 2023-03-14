@@ -1139,9 +1139,8 @@ class ObjectMixin(Base, BaseQuery):
         return self._query.subquery()
 
     # for route에서 row별 table 데이터(json) 전달
-    def to_dict2(self, nested=False, relations=None, hybrid_atts=False, exclude=None, include=None,
-                 session: Session = None,
-                 depth=0
+    def to_dict2(self, nested=False, relations=None, hybrid_attrs=False, exclude=None, include=None,
+                 session: Session = None, depth=0
                  ):
         """
         *self메서드지만, session=을 인자로 가지는 이유:
@@ -1263,7 +1262,7 @@ class ObjectMixin(Base, BaseQuery):
                 result[column_name] = _value
 
             # 3) 하이브리드칼럼을 넣기를 선택한다면, 순회하면서 넣는다.
-            if hybrid_atts:
+            if hybrid_attrs:
                 # 여기도 배제 확인
                 view_hybrid_prop_names = self.filter_include_and_exclude(self.hybrid_property_names, include, exclude)
 
@@ -1301,13 +1300,13 @@ class ObjectMixin(Base, BaseQuery):
                         # 재귀를 돌릴 때, 같은 session을 활용하기 위해 self._session을 넣어준다.
                         # => 만약 안넣어준다면, relation obj가 다른 session(부모처럼 자체 내부새셩 생성)에 존재한다고 뜬다.
                         result[relation_name] = obj.to_dict2(nested=nested - 1, relations=relations,
-                                                             hybrid_atts=hybrid_atts, include=include, exclude=exclude,
+                                                             hybrid_attrs=hybrid_attrs, include=include, exclude=exclude,
                                                              session=self._session, depth=depth + 1
                                                              )
                     # 여기는 relation obj에 접근 Many라서  경우다. 순회하면서, 각각 돌려줘야한다.
                     elif isinstance(obj, Iterable):
                         result[relation_name] = [
-                            o.to_dict2(nested=nested - 1, relations=relations, hybrid_atts=hybrid_atts, include=include,
+                            o.to_dict2(nested=nested - 1, relations=relations, hybrid_attrs=hybrid_attrs, include=include,
                                        exclude=exclude, session=self._session, depth=depth + 1) for o in obj
                             if isinstance(o, ObjectMixin)
                         ]
@@ -1339,7 +1338,7 @@ class ObjectMixin(Base, BaseQuery):
 
                 dict_list = []
                 for model_obj in results:
-                    model_dict = model_obj.to_dict2(nested=nested, relations=relations, hybrid_atts=hybrid_atts,
+                    model_dict = model_obj.to_dict2(nested=nested, relations=relations, hybrid_attrs=hybrid_attrs,
                                                     include=include,
                                                     exclude=exclude,
                                                     session=self._session, depth=depth)

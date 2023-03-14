@@ -12,16 +12,28 @@ dept_bp = Blueprint("department", __name__, url_prefix='/department')
 
 @dept_bp.route("/organization", methods=['GET'])
 def organization():
-    tree = Department.get_all_tree()
+
+
+    tree = Department.get_tree_of_roots()
+
 
     return render_template('department/organization.html',
                            tree=tree
                            )
 
+# @dept_bp.route("/organization", methods=['GET'])
+# def organization():
+#     tree = Department.get_all_tree()
+#
+#     return render_template('department/organization.html',
+#                            tree=tree
+#                            )
+
 
 @dept_bp.route("/management", methods=['GET'])
 def management():
-    tree = Department.get_all_tree(with_inactive=True)
+    tree = Department.get_tree_of_roots()
+    # tree = Department.get_all_tree()
 
     return render_template('department/component_test.html',
                            tree=tree)

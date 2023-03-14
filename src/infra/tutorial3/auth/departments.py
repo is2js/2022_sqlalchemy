@@ -141,9 +141,9 @@ class EmployeeDepartment(BaseModel):
     # lazy='joined', # fk가 nullable하지 않으므로, joined를 줘도 된다.
 
     department = relationship("Department", foreign_keys=[department_id],
-                              backref=backref("employee_departments", passive_deletes=True),
-
+                              # backref=backref("employee_departments", passive_deletes=True),
                               # lazy='joined', # fk가 nullable하지 않으므로, joined를 줘도 된다.
+                              back_populates='employee_departments'
                               )
 
     # 2. 고용일과 퇴직일은 없을 수 있다?! (퇴직일만 nullable=True인듯)
@@ -238,6 +238,7 @@ class EmployeeDepartment(BaseModel):
                     EmployeeDepartment.department_id == (self.department.id if self.department else self.department_id))
             ).first()
             return is_full
+
     #
     # def save(self):
     #
@@ -276,7 +277,6 @@ class EmployeeDepartment(BaseModel):
     #         db.session.commit()
     #
     #     return True, "새로운 부서취임 정보가 발생하였습니다."
-
 
     # refactor + save override( merge+commit 전 검증 추가)
     # -> crudmixin의 @clsmethod create가 받던 인자(session: Session = None, auto_commit: bool = True, **kwargs)를 그대로 가져온 뒤
@@ -531,6 +531,7 @@ class EmployeeDepartment(BaseModel):
 
 class Department(BaseModel):
     _N = 3
+    _MAX_DEPTH = 5
     ko_NAME = '부서'
 
     __tablename__ = 'departments'
@@ -545,15 +546,20 @@ class Department(BaseModel):
     parent_id = Column(Integer, ForeignKey('departments.id', ondelete='SET NULL'), comment="상위 부서 id",
                        nullable=True)  # 5 # parent_id에 fk입히기
     # 5 # one인 parent의 backref에게는 subquery를 줘서, .parent는 바로 얻을 수 있게 하기?!
-    children = relationship('Department', backref=backref(
-        'parent', remote_side=[id], lazy='subquery',
-        # cascade='all',  # 7
-        passive_deletes=True,
-        ), order_by='Department.path',
-        # join_depth=3 # eagerload의joinedload와는 무관하다. lazy='joined'에 연계된다.
-    )
+    children = relationship('Department',
+                            # backref=backref('parent', remote_side=[id],
+                            #                 #lazy='subquery',
+                            #                 # cascade='all',  # 7
+                            #                 passive_deletes=True,
+                            # ),
+                            order_by='Department.path',
+                            # join_depth=3 # eagerload의joinedload와는 무관하다. lazy='joined'에 연계된다.
+                            back_populates='parent'
+                            )
     # 8 # children + joined backref parent 대신, parent를 정의해줄 수 도 있다.
-    # parent = db.relationship('Department', remote_side=[id],  backref="subdepartment")
+    parent = relationship('Department', remote_side=[id],  # ,  backref="subdepartment"
+                          back_populates='children'
+                          )
 
     # 7 # cascade='all' 을 줘서, 삭제시 자식들도 다 같이 삭제되게 한다?!
     #  parent_id = db.Column(db.Integer, db.ForeignKey('department.id'))
@@ -602,6 +608,9 @@ class Department(BaseModel):
 
     #### EmployeeDepartment에 position을 남기기 위한, Type
     type = Column(IntEnum(DepartmentType), default=DepartmentType.팀, nullable=False, index=True)
+
+    # hyper_property에서 접근을 위한
+    employee_departments = relationship('EmployeeDepartment', back_populates='department')
 
     def __repr__(self):
         info: str = f"{self.__class__.__name__}" \
@@ -746,9 +755,9 @@ class Department(BaseModel):
 
             #### level은 self.path 완성후 사용할 수 있다.
             # [검증4] parent에 의해 결정되는 level이 7(depth8단계) 초과부터는 안받는다.
-            if self.level > 5:
+            if self.level > self._MAX_DEPTH:
                 db.session.rollback()
-                return False, "최대 깊이는 6단계 까지입니다."
+                return False, f"최대 깊이는 최상위부서로 부터 +{self._MAX_DEPTH}단계 까지입니다."
 
             db.session.commit()  # 검증(flush 이후 rollback) 통과시에만 commit
 
@@ -814,31 +823,78 @@ class Department(BaseModel):
             return [{'id': x.id, 'name': x.name} for x in depts]
 
     # root부서들부터 자식들 탐색할 수 있게 먼저 호출
-    @classmethod
-    def get_roots(cls, with_inactive=False):
-        with DBConnectionHandler() as db:
-            stmt = (
-                select(cls)
-                # .options(selectinload('employee').selectinload('user'))
-                .where(cls.parent_id.is_(None))
-                .order_by(cls.path)  # view에선 sort순이 중요함.
-            )
-            if not with_inactive:
-                stmt = stmt.where(cls.status)
+    # @classmethod
+    # def get_roots(cls, with_inactive=False):
+    #     with DBConnectionHandler() as db:
+    #         stmt = (
+    #             select(cls)
+    #             # .options(selectinload('employee').selectinload('user'))
+    #             .where(cls.parent_id.is_(None))
+    #             .order_by(cls.path)  # view에선 sort순이 중요함.
+    #         )
+    #         if not with_inactive:
+    #             stmt = stmt.where(cls.status)
+    #
+    #         return db.session.scalars(stmt).all()
 
-            return db.session.scalars(stmt).all()
+    # refactor
+    @classmethod
+    def get_roots(cls, active=False, session: Session = None):
+        """
+        Department.get_roots()
+        => [Department(id=1, name='1인부서', parent_id=None, sort=1, path='001'), Department(id=3, name='44', parent_id=None, sort=2, path='002')]
+
+        Department.get_roots(active=True)
+        => [Department(id=1, name='1인부서', parent_id=None, sort=1, path='001')]
+
+        """
+        obj = Department.filter_by(session=session, parent_id=None)
+        if active:
+            obj = obj.filter_by(status=True)
+
+        return obj.order_by('path').all()
 
     # dept_to_dict = lambda r: {c.name: getattr(r, c.name) for c in r.__table__.columns
     #                           if c.name not in ['pub_date', 'path', 'type', ]  # 필터링 할 칼럼 모아놓기
     #                           }
 
     @classmethod
-    def get_all_tree(cls, with_inactive=False):
-        root_departments = cls.get_roots(with_inactive=with_inactive)
+    def get_all_tree(cls, active=False, session: Session = None):
+        root_departments = cls.get_roots(active=active, session=session)
 
         tree_list = []
         for root in root_departments:
             tree_list.append(root.get_self_and_children_dict())
+
+        return dict(data=tree_list)
+
+    # refactor
+    @classmethod
+    def get_tree_of_roots(cls, active=False, session: Session = None):
+        """
+        *[내부에서 2번 조회]하므로, 외부 session이 안주어지면, 억지로라도 공용 session세션을 가져와
+         mixin 메서드들에 주입해서, 내부에서 공용세션에 session.add( self )가 안되도록 해야한다.
+         -> 1번재 조회이후, close되어도, 캐싱되어있어서, 2번재 조회에서 추가로 add하게 된다.
+         -> 같은 session이면, session.add( self )를 내부에서 안한다.
+
+        s = db.get_session()
+        Department.get_tree_of_roots(session=s)
+        """
+        # if not session:
+        #     session = cls.scoped_session
+
+        roots_of_department = cls.get_roots(active=active, session=session)
+
+        tree_list = []
+        for root in roots_of_department:
+            tree_list.append(
+                root.to_dict2(
+                    nested=cls._MAX_DEPTH, relations='children', hybrid_attrs=True,
+                    exclude=['path', 'pub_date'],
+                    session=session
+                )
+            )
+            # tree_list.append(root.get_self_and_children_dict())
 
         return dict(data=tree_list)
 
@@ -918,7 +974,6 @@ class Department(BaseModel):
                                          x.id not in self.get_self_and_children_id_list()]
         return selectable_parent_departments
 
-
     #### BaseModel의 to_dict는 inspect(self) 를 칠 때, 관계필드까지 다 조사하면서, DetachedInstanceError가 뜨니, 재귀에선 활용못한다.
     #### => 람다함수를 이용하여 객체.__table__.columns로 칼럼을 돌면서 만들어준다.
     # def to_dict(self):
@@ -934,6 +989,44 @@ class Department(BaseModel):
     #                          if c.name not in []  # 필터링 할 칼럼 모아놓기
     #                          }
 
+    # refactor for to_dict
+    # @hybrid_property # 직접적으로 to_dict에 반영안될 것이라면 일반 @property로 정의
+    @property
+    def leader_employee(self):
+        """
+        1. 현 부서와 연결된 취임정보에서, leader정보가 있는지 filter한다.
+        2. 있을 때는 .employee로 leader의 employee정보를 map한다
+        3. next(, None)으로 employee정보가 있다면 첫번째 것을, 없다면 None을 반환한다.
+
+        s = db.get_session()
+        d = Department.get(2, session=s)
+        d.leader_employee
+
+        """
+        leader_emp_depts = map(lambda x: x.employee,
+                               filter(lambda x: not x.dismissal_date and x.is_leader,
+                                      self.employee_departments)
+                               )
+
+        return next(leader_emp_depts, None)
+
+    # refactor for to_dict
+    @hybrid_property
+    def has_direct_leader(self):
+        """
+        required: load employee_departments or 조회가 안끝나고 session문 상태(ex> to_dict)
+        현재부서가 EmployeeDepartment에 팀장을 가지고 있는지
+
+        s = db.get_session()
+        d = Department.get(2, session=s)
+        d.has_direct_leader
+        => True
+
+        """
+        # @hybrid_property는 load or session에 물린 상태로서, relationship에 편하게 접근한다.
+        # ex> load or to_dict(세션만들어, 공유된 상태. 조회 끝난 객체X)
+        return True if self.leader_employee else False
+
     def to_dict(self, delete_columns: list = []):
         # to_dict를 r.__table__.columns로 하면 관계필드는 알아서 빠져있다.
         data = super().to_dict()
@@ -944,164 +1037,359 @@ class Department(BaseModel):
         # 커스텀 영역 ##########
         #### Organization ####
 
-        # 부서장 존재 확인용 -> 부서장이 있따면, 부서 전체 직원 - 1을 해서 [순수 부서원 수]만 내려보낸다.
-        direct_leader_id = self.get_leader_id()
-        if direct_leader_id:
-            data['has_direct_leader'] = True
-        else:
-            data['has_direct_leader'] = False
+        # [부서장 존재] 확인용 -> 부서장이 있따면, 부서 전체 직원 - 1을 해서 [순수 부서원 수]만 내려보낸다.
+        # direct_leader_id = self.get_leader_id()
+        # if direct_leader_id:
+        #     data['has_direct_leader'] = True
+        # else:
+        #     data['has_direct_leader'] = False
+        data['has_direct_leader'] = self.has_direct_leader
 
         # [순수 부서원 수] count_xxxx 메서드는 scalar()에서 알아서 없으면 0 처리된다.
-        data['employee_count'] = self.count_employee() - (1 if direct_leader_id else 0)
+        # data['employee_count'] = self.count_employee() - (1 if direct_leader_id  else 0)
+        data['employee_count'] = self.employee_count
+
         # [순수 하위 부서 수]만 카운팅 한다.
-        data['only_children_count'] = self.count_only_children()
+        # data['only_children_count'] = self.count_only_children()
+        data['only_children_count'] = self.count_only_children
         # [순수 부서원 + 하위 부서장과 부서원 수]
         # => view에선 부서장 외 N명이 됨.
-        data['all_employee_count'] = self.count_self_and_children_employee() - (1 if direct_leader_id else 0)
+        # data['all_employee_count'] = self.count_self_and_children_employee() - (1 if direct_leader_id else 0)
+        # data['all_employee_count'] = self.count_self_and_children_employee() - (1 if data['has_direct_leader'] else 0)
+        data['all_employee_count'] = self.all_employee_count
         # view에서 level별 color / offset 설정을 위한 변수
         data['level'] = self.level
 
         # [부서장이 있다면, 부서장을 / 없다면 상위부서 부서장의 정보 추출]
         from . import Employee
-        leader_id = self.get_leader_id_recursively()
-
-        if leader_id:
-
-            # refactor
-            leader: Employee = Employee.load({'user': 'selectin'}).filter_by(id=leader_id).first()
-
-            data['leader'] = {
-                'id': leader.id, 'name': leader.name, 'avatar': leader.user.avatar,
-                'position': leader.get_position_by_dept_id(self.id),
-                'job_status': leader.job_status.name,
-                'email': leader.user.email,
-            }
-        else:
-            data['leader'] = None
+        # leader_id = self.get_leader_id_recursively()
+        #
+        # if leader_id:
+        #
+        #     # refactor
+        #     leader: Employee = Employee.load({'user': 'selectin'}).filter_by(id=leader_id).first()
+        #
+        #     data['leader'] = {
+        #         'id': leader.id, 'name': leader.name, 'avatar': leader.user.avatar,
+        #         'position': leader.get_position_by_dept_id(self.id),
+        #         'job_status': leader.job_status.name,
+        #         'email': leader.user.email,
+        #     }
+        # else:
+        #     data['leader'] = None
+        data['leader'] = self.leader
 
         # [순수 부서원들의 정보만 추출]
-        employee_id_list = self.get_employee_id_list(except_leader=True)
-        if employee_id_list:
-            # refactor
-            employees = Employee.load({'user': 'selectin'}).all()
-
-            data['employees'] = []
-            for emp in employees:
-                data['employees'].append({
-                    'id': emp.id, 'name': emp.name, 'avatar': emp.user.avatar,
-                    'position': emp.get_position_by_dept_id(self.id),
-                    'job_status': emp.job_status.name,
-                })
-        else:
-            data['employees'] = None
+        # employee_id_list = self.get_employee_id_list(except_leader=True)
+        # if employee_id_list:
+        #     # refactor
+        #     employees = Employee.load({'user': 'selectin'}).all()
+        #
+        #     data['employees'] = []
+        #     for emp in employees:
+        #         data['employees'].append({
+        #             'id': emp.id, 'name': emp.name, 'avatar': emp.user.avatar,
+        #             'position': emp.get_position_by_dept_id(self.id),
+        #             'job_status': emp.job_status.name,
+        #         })
+        # else:
+        #     data['employees'] = None
+        data['employees'] = self.employees
 
         # [부모 부서의 sort]  부모색에 대한 명도만 다른 색을 입히기 위해, 색을 결정하는 부모의 sort도 추가
-        parent_id = self.parent_id
-        if parent_id:
-            data['parent_sort'] = Department.get_by_id(parent_id).sort
-        else:
-            data['parent_sort'] = None
+        # parent_id = self.parent_id
+        # if parent_id:
+        #     data['parent_sort'] = Department.get_by_id(parent_id).sort
+        # else:
+        #     data['parent_sort'] = None
+        data['parent_sort'] = self.parent_sort
 
         return data
 
-    def get_self_and_children_dict(self):
-        # result = self.row_to_dict
-        result = self.to_dict(delete_columns=['pub_date', 'path', ])
+    # def get_self_and_children_dict(self):
+    #     # result = self.row_to_dict
+    #     result = self.to_dict(delete_columns=['pub_date', 'path', ])
+    #
+    #     children = self.get_children()
+    #
+    #     #### view의 tree컴포넌트는 항상 children을 가지고 있고, children.length로 자식여부를 판단하므로
+    #     #### => 항상 children을 빈list라도 만들어서 반환하도록 수정
+    #     if len(children) > 0:
+    #         result['children'] = list()
+    #         for child in children:
+    #             # 내 자식들을 dict로 변환한 것을 내 dict의 chilren key로 관계필드 대신 넣되, 자식들마다 다 append로 한다.
+    #             result['children'].append(child.get_self_and_children_dict())
+    #
+    #     return result
 
-        children = self.get_children()
+    # def count_only_children(self):
+    #     total_count = 0
+    #
+    #     children = self.get_children()
+    #     if len(children) > 0:
+    #         total_count += len(children)
+    #         for child in children:
+    #             total_count += child.count_only_children()
+    #     return total_count
 
-        #### view의 tree컴포넌트는 항상 children을 가지고 있고, children.length로 자식여부를 판단하므로
-        #### => 항상 children을 빈list라도 만들어서 반환하도록 수정
-        if len(children) > 0:
-            result['children'] = list()
-            for child in children:
-                # 내 자식들을 dict로 변환한 것을 내 dict의 chilren key로 관계필드 대신 넣되, 자식들마다 다 append로 한다.
-                result['children'].append(child.get_self_and_children_dict())
-
-        return result
-
+    # refactor for to_dict
+    @hybrid_property
     def count_only_children(self):
+        """
+        [순수 하위 부서 수]
+        s = db.get_session()
+        d = Department.get(1, session=s)
+        d.count_only_children
+        => 5
+        """
         total_count = 0
 
-        children = self.get_children()
-        if len(children) > 0:
-            total_count += len(children)
-            for child in children:
-                total_count += child.count_only_children()
+        # 자식들 중 status true인 것만 필터링 -> 0개가 될 수 있음.
+        children = filter(lambda dept: dept.status, self.children)
+        # 자신의 처리: 자식들 갯수
+        # total_count += len(list(children))
+
+        # 자식들 처리 self (없으면 안돌아가서 종착역?)
+        for child in children:
+            total_count += 1  # filter돌리면 len을 못때려서, 자식진입시마다 +1
+            total_count += child.count_only_children
+
         return total_count
 
-    #### with other entity
-    def count_employee(self):
-        with DBConnectionHandler() as db:
-            stmt = (
-                select(func.count(distinct(EmployeeDepartment.employee_id)))  # 직원이 혹시나 중복됬을 수 있으니 중복제거하고 카운팅(양적 숫자X)
-                .where(EmployeeDepartment.dismissal_date.is_(None))
+    # #### with other entity
+    # def count_employee(self):
+    #     with DBConnectionHandler() as db:
+    #         stmt = (
+    #             select(func.count(distinct(EmployeeDepartment.employee_id)))  # 직원이 혹시나 중복됬을 수 있으니 중복제거하고 카운팅(양적 숫자X)
+    #             .where(EmployeeDepartment.dismissal_date.is_(None))
+    #
+    #             .where(EmployeeDepartment.department.has(Department.id == self.id))
+    #         )
+    #         return db.session.scalar(stmt)
 
-                .where(EmployeeDepartment.department.has(Department.id == self.id))
-            )
-            return db.session.scalar(stmt)
+    # refactor for to_dict
+    @hybrid_property
+    def employee_count(self):
+        """
+        [팀장을 제외한 직원 수]
+        s = db.get_session()
+        d = Department.get(2, session=s)
+        d.count_employee
+        => 2
+        """
+        filtered_emp_dept = filter(lambda x: not x.dismissal_date and not x.is_leader,
+                                   self.employee_departments)
+        employee_count = len(set(map(lambda x: x.employee_id, filtered_emp_dept)))
 
-    #### with other entity
-    #### 자식부서에 같은 사람이 취임할 수 있기 때문에, 개별count -> 단순 누적으로 하면 안된다.
-    #### => EmployeeDepartment상의 employee_id를 누적한 뒤, 중복제거해서 반환하는 것으로  처리해야한다.
-    def get_employee_id_list(self, except_leader=False):
-        with DBConnectionHandler() as db:
-            stmt = (
-                select(EmployeeDepartment.employee_id)  # id를 select한 뒤, scalars().all()하면 객체 대신 int  id list가 반환된다.
-                .where(EmployeeDepartment.dismissal_date.is_(None))
+        return employee_count
 
-                .where(EmployeeDepartment.department.has(Department.id == self.id))
-            )
-            if except_leader:
-                stmt = stmt.where(EmployeeDepartment.is_leader == False)
-            return db.session.scalars(stmt).all()
+    # #### with other entity
+    # #### 자식부서에 같은 사람이 취임할 수 있기 때문에, 개별count -> 단순 누적으로 하면 안된다.
+    # #### => EmployeeDepartment상의 employee_id를 누적한 뒤, 중복제거해서 반환하는 것으로  처리해야한다.
+    # def get_employee_id_list(self, except_leader=False):
+    #     with DBConnectionHandler() as db:
+    #         stmt = (
+    #             select(EmployeeDepartment.employee_id)  # id를 select한 뒤, scalars().all()하면 객체 대신 int  id list가 반환된다.
+    #             .where(EmployeeDepartment.dismissal_date.is_(None))
+    #
+    #             .where(EmployeeDepartment.department.has(Department.id == self.id))
+    #         )
+    #         if except_leader:
+    #             stmt = stmt.where(EmployeeDepartment.is_leader == False)
+    #         return db.session.scalars(stmt).all()
+    #
+    # #### with other entity
+    # def get_self_and_children_emp_id_list(self):
+    #     result = self.get_employee_id_list()
+    #
+    #     for child in self.get_children():
+    #         result += child.get_self_and_children_emp_id_list()
+    #
+    #     # 카운터를 세기 위해 len(set())으로 반환하고 싶지만, 자식들도 list로 건네줘야하기 때문에, 누적list를 반환해줘야한다.
+    #     return result
 
-    #### with other entity
-    def get_self_and_children_emp_id_list(self):
-        result = self.get_employee_id_list()
+    # #### with other entity
+    # def count_self_and_children_employee(self):
+    #     return len(set(self.get_self_and_children_emp_id_list()))
 
-        for child in self.get_children():
-            result += child.get_self_and_children_emp_id_list()
+    # refactor for to_dict
+    @hybrid_property
+    def all_employee_count(self):
+        """
+        [현재 순수부서원 + 하위부서(부서장 + 부서원들)원 수]
 
-        # 카운터를 세기 위해 len(set())으로 반환하고 싶지만, 자식들도 list로 건네줘야하기 때문에, 누적list를 반환해줘야한다.
-        return result
+        s = db.get_session()
+        d = Department.get(1, session=s)
+        d.all_employee_count
+        """
+        total_count = 0
 
-    #### with other entity
-    def count_self_and_children_employee(self):
-        return len(set(self.get_self_and_children_emp_id_list()))
+        # 순수 부서원 수
+        total_count += self.employee_count
 
-    #### with other entity
-    def get_leader_id(self):
-        # 양방향 순환참조를 해결하기 위해 메서드내에서 import
-        # from .users import Employee
+        # 하위부서 팀장 + 부서원 수
+        for child in self.children:
+            # [자식부터는 팀장 있으면 미리 + 1]
+            if child.has_direct_leader:
+                total_count += 1
+            total_count += child.employee_count
 
-        with DBConnectionHandler() as db:
-            stmt = (
-                # select(Employee)
-                # .join(EmployeeDepartment)
-                select(EmployeeDepartment.employee_id)
-                .where(EmployeeDepartment.dismissal_date.is_(None))
-                .where(EmployeeDepartment.department_id == self.id)
-                .where(EmployeeDepartment.is_leader == True)
-            )
-            return db.session.scalars(stmt).first()
+        return total_count
 
-    #### 부서장 id => 해당부서장 없으면 상사의 id 찾기
-    def get_leader_id_recursively(self):
-        # 1) 해당 부서의 팀장을 조회한 뒤, 있으면 그 유저를 반환한다
-        leader_id = self.get_leader_id()
-        if leader_id:
-            return leader_id
+    # #### with other entity
+    # def get_leader_id(self):
+    #     # 양방향 순환참조를 해결하기 위해 메서드내에서 import
+    #     # from .users import Employee
+    #
+    #     with DBConnectionHandler() as db:
+    #         stmt = (
+    #             # select(Employee)
+    #             # .join(EmployeeDepartment)
+    #             select(EmployeeDepartment.employee_id)
+    #             .where(EmployeeDepartment.dismissal_date.is_(None))
+    #             .where(EmployeeDepartment.department_id == self.id)
+    #             .where(EmployeeDepartment.is_leader == True)
+    #         )
+    #         return db.session.scalars(stmt).first()
+
+    # #### 부서장 id => 해당부서장 없으면 상사의 id 찾기
+    # def get_leader_id_recursively(self):
+    #     # 1) 해당 부서의 팀장을 조회한 뒤, 있으면 그 유저를 반환한다
+    #     leader_id = self.get_leader_id()
+    #     if leader_id:
+    #         return leader_id
+    #     # 2) (해당부서에 팀장X) 상위 부서가 있는지 확인한 뒤, 있으면, 재귀로 다시 돌린다.
+    #     if self.parent_id:
+    #         with DBConnectionHandler() as db:
+    #             parent = db.session.scalars(
+    #                 select(Department)
+    #                 .where(Department.id == self.parent_id)
+    #             ).first()
+    #             return parent.get_leader_id_recursively()
+    #     # 3) (팀장도X 상위부서도X) => 팀장정보가 아예 없으니 None반환
+    #     return None
+
+    # refactor for to_dict
+    # @hybrid_property
+    @property
+    def recursive_leader_employee(self):
+        """
+        부서장 id => 해당부서장 없으면 상사의 id 찾기
+
+        s = db.get_session()
+
+        d2 = Department.get(2, session=s)
+        d2.recursive_leader_employee
+        <Employee 2>
+
+        d9 = Department.get(9, session=s)
+        d9.recursive_leader_employee
+        <Employee 2>
+
+        """
+        # 1) 해당 부서의 팀장을 조회한 뒤, 있으면 그 employee를 반환한다
+        leader_employee = self.leader_employee
+        if leader_employee:
+            return leader_employee
+
         # 2) (해당부서에 팀장X) 상위 부서가 있는지 확인한 뒤, 있으면, 재귀로 다시 돌린다.
-        if self.parent_id:
-            with DBConnectionHandler() as db:
-                parent = db.session.scalars(
-                    select(Department)
-                    .where(Department.id == self.parent_id)
-                ).first()
-                return parent.get_leader_id_recursively()
+        parent_department = self.parent
+        if parent_department:
+            return parent_department.recursive_leader_employee
+
         # 3) (팀장도X 상위부서도X) => 팀장정보가 아예 없으니 None반환
         return None
+
+    # refactor for to_dict
+    @hybrid_property
+    def leader(self):
+        """
+        팀장이 없으면, 상위팀장의 종합 정보를 반환
+        leader의 employee정보가 있다면 -> employee정보 + user정보(email, avatar) + 취임정보(position) by property
+
+        s = db.get_session()
+        d2 = Department.get(2, session=s)
+        d2.leader
+        ----
+        {
+            'id':2,
+            'name':'관리자',
+            'job_status':'재직',
+            'avatar':None,
+            'email':'tingstyle1@gmail.com',
+            'position':'부서장'
+        }
+        """
+        leader_employee = self.recursive_leader_employee
+
+        if leader_employee:
+            return dict(
+                id=leader_employee.id,  # emp
+                name=leader_employee.name,
+                job_status=leader_employee.job_status.name,  # enum.name
+
+                avatar=leader_employee.user.avatar,  # user
+                email=leader_employee.user.email,
+
+                position=leader_employee.get_position(self)  # emp + dept -> emp_depts -> position
+            )
+
+        return None
+
+    # refactor for to_dict
+    @hybrid_property
+    def employees(self):
+        """
+        직원정보를 emp, user, emp_dept 종합해해서 dict list로 반환
+
+        s = db.get_session()
+        d = Department.get(2, session=s)
+        d.employees
+        =>
+        [
+            {
+                'id':5,
+                'name':'admib2',
+                'job_status': '재직',
+                'avatar':'avatar/546deab613d641ea97ffe7ad67d68a7b.png',
+                'email':'is2js@naver.com',
+                'position':'팀원'
+            }
+        ]
+        """
+
+        employees = map(lambda x: x.employee,
+                        filter(lambda x: not x.dismissal_date and not x.is_leader,
+                               self.employee_departments)
+                        )
+        employee_list = []
+        for employee in employees:
+            data = dict(
+                id=employee.id, # emp
+                name=employee.name,
+                job_status=employee.job_status.name, # enum.name
+
+                avatar=employee.user.avatar, # user
+                email=employee.user.email,
+
+                position=employee.get_position(self) # emp+dept-> emp_dept -> position
+            )
+            employee_list.append(data)
+
+        return employee_list
+
+    @hybrid_property
+    def parent_sort(self):
+        """
+        view에서 부모색에 따라, 비슷한 색을 배정하기 위함. 없으면 None 반환
+
+        s = db.get_session()
+        d = Department.get(2, session=s)
+        d.parent_sort
+        => 1
+        """
+        parent = self.parent
+        return parent.sort if parent else None
 
     @classmethod
     def delete_by_id(cls, dept_id):

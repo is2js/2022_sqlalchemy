@@ -621,8 +621,8 @@ if __name__ == '__main__':
     print(employee_count_in_dep)
 
     print('*' * 30, '메서드화', '*' * 30)
-    print(f"한방진료실.count_employee() => {한방진료실.count_employee()}")
-    print(f"병원장.count_employee() => {병원장.count_employee()}")
+    print(f"한방진료실.count_employee() => {한방진료실.employee_count()}")
+    print(f"병원장.count_employee() => {병원장.employee_count()}")
 
     print('*' * 30, '현 부서의 직원 수 대신 -> 자식들과 중복 검정을 위해 현 부서 소속의 직원_id 모으기 ', '*' * 30)
     print('*' * 30, '=> 바로 메서드화', '*' * 30)
@@ -1062,7 +1062,7 @@ if __name__ == '__main__':
     print("-"*4*1, "[재귀] .get_self_and_children_emp_id_list()")
     print("-"*4*2, ".get_employee_id_list() + .get_children()")
 
-    print(f"부서원 수:dept.count_employee()=>  {dept.count_employee()}")
+    print(f"부서원 수:dept.count_employee()=>  {dept.employee_count()}")
     print(f"부서장 제외 부서원 id 목록: dept.get_employee_id_list(except_leader=True)=>  {dept.get_employee_id_list(except_leader=True)}")
     print("-" * 4 * 1, f'부서원 id_list로 부서원들 객체 찾기: Employee.get_by_ids(dept.get_employee_ids(except_leader=True)) => {Employee.get_by_ids(dept.get_employee_id_list(except_leader=True))}')
 
@@ -1105,7 +1105,7 @@ if __name__ == '__main__':
     print('*' * 30, '모든 부서 조회 with 직원 수 + 부서장')
     for it in Department.get_all():
         print(it.level * '    ', '[', it.id,'-', it.name, '] ', '부서장:', Employee.get_by_id(it.get_leader_id()),
-              '직원 수:', it.count_employee(),
+              '직원 수:', it.employee_count(),
               '하위부서 모든 직원 수:', it.count_self_and_children_employee())
     print('*' * 30)
 

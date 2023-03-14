@@ -567,8 +567,6 @@ class Role(BaseModel):
             return role
 
 
-
-
 class JobStatusType(enum.IntEnum):
     대기 = 0
     재직 = 1
@@ -1779,7 +1777,7 @@ class Employee(BaseModel):
         # 이 때, fill될 데이터는 filter_by + create 둘다에서 쓸 것이니 -> 미리 변수로 만들어놓는다.
         # result, message_after_save = after_emp_dept.save()
         after_emp_dept_data = dict(
-            dismissal_date=None, # default 칼럼이지만, filter_by에 활용하기 위해, 직접 default값을 명시
+            dismissal_date=None,  # default 칼럼이지만, filter_by에 활용하기 위해, 직접 default값을 명시
             employee_id=self.id,
             department_id=after_dept_id,
             employment_date=target_date,
@@ -1809,7 +1807,7 @@ class Employee(BaseModel):
         # auto_commit=True로 줄 경우, 무조건 session.merge의 결과를 활용해야한다. False일 경우, session에 떠있어서, main obj 수정시 자동 반영 된다?
         after_emp_dept, msg = EmployeeDepartment_.create(
             **after_emp_dept_data,
-            auto_commit=False, # 중간 rel obj 생성이라 commit은 뒤에서
+            auto_commit=False,  # 중간 rel obj 생성이라 commit은 뒤에서
         )
 
         if after_emp_dept:
@@ -1964,6 +1962,30 @@ class Employee(BaseModel):
                 results.append(emp_dict)
 
             return results
+
+    # refactor for to_dict - @hybrid_property leader in Department
+    def get_position(self, department):
+        """
+        부서를 주면, 취임정보를 필터링하여 직원의 position을 확인
+        - 없으면 '공석'을 반환
+
+        s = db.get_session()
+        d2 = Department.get(2, session=s)
+
+        e = d2.leader_employee
+        e.get_position(d2)
+        => '부서장'
+
+        ee = Employee.get(3, session=s)
+        ee.get_position(d2)
+        => '공석'
+        """
+        positions_in_department = map(lambda x: x.position,
+                                      filter(lambda
+                                                 x: not x.dismissal_date and x.employee_id == self.id and x.department_id == department.id,
+                                             self.employee_departments))
+
+        return next(positions_in_department, '공석')
 
 
 # #### with other entity

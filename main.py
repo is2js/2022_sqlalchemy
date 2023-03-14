@@ -295,6 +295,6 @@ if __name__ == '__main__':
 
     for it in Department.get_all():
         print(it.level * '    ', '[', it.id, '-', it.name, '] ', '부서장:', Employee.get_by_id(it.get_leader_id()),
-              '직원 수:', it.count_employee(),
+              '직원 수:', it.employee_count(),
               '하위부서 모든 직원 수:', it.count_self_and_children_employee())
     print('*' * 30)
