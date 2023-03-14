@@ -143,8 +143,8 @@ class BaseQuery:
     ## agg types
     COUNT = 'count'
     SUM = 'sum'
-    LENGTH = 'length'
-    AGG_LIST = COUNT, SUM, LENGTH
+    LEN = 'length'
+    AGG_LIST = COUNT, SUM, LEN
     DISTINCT = 'distinct'
 
     ## expression create type
@@ -282,11 +282,11 @@ class BaseQuery:
                 else:
                     raise NotImplementedError(f'Invalid additional func_name: {additional_agg_name}')
 
-            if agg_name.startswith('count'):
+            if agg_name.startswith(cls.COUNT):
                 column_expr = func.count(column_expr)
-            elif agg_name.startswith('sum'):
+            elif agg_name.startswith(cls.SUM):
                 column_expr = func.sum(column_expr)
-            elif agg_name.startswith('length'):
+            elif agg_name.startswith(cls.LEN):
                 column_expr = func.length(column_expr)
             else:
                 raise NotImplementedError(f'Invalid column func_name: {agg_name}')
