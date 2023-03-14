@@ -143,7 +143,7 @@ class BaseQuery:
     ## agg types
     COUNT = 'count'
     SUM = 'sum'
-    LEN = 'length'
+    LEN = 'len'
     AGG_LIST = COUNT, SUM, LEN
     DISTINCT = 'distinct'
 
