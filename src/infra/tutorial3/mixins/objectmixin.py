@@ -963,10 +963,15 @@ class ObjectMixin(Base, BaseQuery):
         #    변경사항이 필요한 경우, close되더라도, 어차피 merge로 인해 session올라가서 처리된다.
         # * 내부 공용세션이라고 close안해주면 => sqlalchemy.exc.TimeoutError:
         #   QueuePool limit of size 5 overflow 10 reached, connection timed out, timeout 30.00
+
+        #  내부session이면, 조회한 객체들은 공용session의 identity_map에서 없애, 조회 후 obj 변화는 반영안된다.
         if not self.served:
             self._session.close()
+
         # 외부session이면 close할 필요없이 반영만  [외부 쓰던 session은 close 대신] -> [flush()로 db 반영시켜주기]
         # -> 외부session이면, 금방 사라지거나, 맨마지막 놈이 commit되어 자동close()되므로 flush()만 해준다.
+        # 외부session이면, 금방 사라지거나, 맨마지막 놈이 commit되어 자동close()되므로 flush()만 해준다.
+        #     # -> 이 때 조회된 객체들은 close()가 안되어, 외부session의 identity_map에 남아있다
         else:
             self._session.flush()
         #### => 공용세션 사용으로 바뀌면서, 조회시마다 close()할 필요없다?
@@ -1140,7 +1145,7 @@ class ObjectMixin(Base, BaseQuery):
 
     # for route에서 row별 table 데이터(json) 전달
     def to_dict2(self, nested=False, relations=None, hybrid_attrs=False, exclude=None, include=None,
-                 session: Session = None, depth=0
+                 session: Session = None, depth=0, enum_name=False
                  ):
         """
         *self메서드지만, session=을 인자로 가지는 이유:
@@ -1257,7 +1262,11 @@ class ObjectMixin(Base, BaseQuery):
                 # 객체(select(cls) + .first())에서 enum의 value를 뽑고 싶어한다.
                 # -> json으로 value가 넘어가야함.
                 elif isinstance(_value, enum.Enum):
-                    _value = _value.value
+                    # enum의 name을 추출하고 싶다면 enum_name=True로 주기
+                    if enum_name:
+                        _value = _value.name
+                    else:
+                        _value = _value.value
 
                 result[column_name] = _value
 
@@ -1301,13 +1310,13 @@ class ObjectMixin(Base, BaseQuery):
                         # => 만약 안넣어준다면, relation obj가 다른 session(부모처럼 자체 내부새셩 생성)에 존재한다고 뜬다.
                         result[relation_name] = obj.to_dict2(nested=nested - 1, relations=relations,
                                                              hybrid_attrs=hybrid_attrs, include=include, exclude=exclude,
-                                                             session=self._session, depth=depth + 1
+                                                             session=self._session, depth=depth + 1,enum_name=enum_name
                                                              )
                     # 여기는 relation obj에 접근 Many라서  경우다. 순회하면서, 각각 돌려줘야한다.
                     elif isinstance(obj, Iterable):
                         result[relation_name] = [
                             o.to_dict2(nested=nested - 1, relations=relations, hybrid_attrs=hybrid_attrs, include=include,
-                                       exclude=exclude, session=self._session, depth=depth + 1) for o in obj
+                                       exclude=exclude, session=self._session, depth=depth + 1, enum_name=enum_name) for o in obj
                             if isinstance(o, ObjectMixin)
                         ]
 
@@ -1341,7 +1350,7 @@ class ObjectMixin(Base, BaseQuery):
                     model_dict = model_obj.to_dict2(nested=nested, relations=relations, hybrid_attrs=hybrid_attrs,
                                                     include=include,
                                                     exclude=exclude,
-                                                    session=self._session, depth=depth)
+                                                    session=self._session, depth=depth, enum_name=enum_name)
                     dict_list.append(model_dict)
 
                 self.close()
