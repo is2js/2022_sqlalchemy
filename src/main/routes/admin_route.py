@@ -875,7 +875,7 @@ def category_delete(id):
 def article():
     page = request.args.get('page', 1, type=int)
 
-    pagination = Post.load({'tags': 'joined'}).order_by('-add_date').paginate(page, per_page=10)
+    pagination = Post.load({'category':'selectin', 'tags': 'joined'}).order_by('-add_date').paginate(page, per_page=10)
     # stmt = select(Post).order_by(Post.add_date.desc())
     # pagination = paginate(stmt, page=page, per_page=10)
     post_list = pagination.items
@@ -2180,7 +2180,8 @@ def get_selectable_departments():
     # 2. [현재부서]가 존재할 경우 => <모든 부서 - (현재부서 + 현재부서의 자식부서들)>을 반환해줘야한다.
     # if current_dept_id:
     else:
-        current_dept = Department.load({'children': ('joined', 6)}).filter_by(id=current_dept_id).first()
+        # current_dept = Department.load({'children': ('joined', 6)}).filter_by(id=current_dept_id).first()
+        current_dept = Department.filter_by(id=current_dept_id).first()
         not_allowed_dept_ids = [x.id for x in current_dept.flatten_children()]
         selectable_depts_infos = Department.filter_by(status=True, id__notin=not_allowed_dept_ids).order_by(
             'path').to_dict2(include=['id', 'name'])
