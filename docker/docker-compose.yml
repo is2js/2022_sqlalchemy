@@ -32,9 +32,9 @@ services:
       # 초기 자동실행스크립트 마운트 host -> docker
       - ./db/mysql/init:/docker-entrypoint-initdb.d
       # [권한 필요] 초기 설정파일 마운트 host -> docker
-      - ./db/mysql/config:/etc/mysql/conf.d
+#      - ./db/mysql/config:/etc/mysql/conf.d
       # [conf파일 필요] 로그 마운트 docker -> my.conf -> host
-      - ./db/mysql/logs:/var/log/mysql
+#      - ./db/mysql/logs:/var/log/mysql
     command:
       >
       bash -c "chmod 755 /etc/mysql/conf.d/*.cnf && /entrypoint.sh mysqld"

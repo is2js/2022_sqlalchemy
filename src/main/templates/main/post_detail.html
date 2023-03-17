@@ -30,9 +30,10 @@
         {{ post.title }}
     </h1>
     <p class="has-text-grey-light is-size-6 mt-1">
-        <span class="icon"><i class="mdi mdi-clipboard-text-clock-outline"></i></span>{{ post.add_date }}
         <span class="icon"><i class="mdi mdi-shape-outline"></i></span>{{ post.category.name }}
+        <span class="icon"><i class="mdi mdi-eye-outline"></i></span>조회수: {{ post.view_count }}
         <span class="icon"><i class="mdi mdi-tag-heart-outline"></i></span>{{ post.tags|join(',') }}
+        <span class="icon"><i class="mdi mdi-clipboard-text-clock-outline"></i></span>{{ post.add_date | feed_datetime(is_feed=True)}}
     </p>
     <!-- markdown 적용예정인 필드는 |safe를 달아준다.   -->
 <!--        <div class="content has-text-grey mt-1 ">{{ post.content | safe }}</div>-->

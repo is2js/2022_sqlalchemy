@@ -1257,22 +1257,35 @@ class Employee(BaseModel):
         User_ = mapper.user.mapper.class_
         return mapper.user.has((User_.role_id == role.id))
 
+    # refactor => @hybrid_method는 method(value, mapper)를 타기 때문에 __ne이 적용안된다.
+    # @hybrid_method
+    # def has_role_name(cls, role_name, mapper=None):
+    #     """
+    #     # Rel-Rel의 id or obj가 아닌, Role의 특정 필드(name)를 인자로 필터링 한다면,
+    #     # Re + Rel모두 class_를 뽑아낸 뒤, has ( has())로 2번 걸어줘야한다.
+    #     # has1개만 두면, EXIST 절이 casadian product from Rel1, Rel1로 잡히게 된다.
+    #
+    #     Employee.filter_by(has_role_name__ne='ADMINISTRATOR').all()
+    #     => [<Employee 2>, <Employee 3>, <Employee 4>, <Employee 5>]
+    #     """
+    #     mapper = mapper or cls
+    #     User_ = mapper.user.mapper.class_
+    #     Role_ = User_.role.mapper.class_
+    #
+    #     return mapper.user.has(User_.role.has(Role_.name == role_name))
+
     # refactor
     @hybrid_method
-    def has_role_name(cls, role_name, mapper=None):
+    def except_admin(cls, value, mapper=None):
         """
-        # Rel-Rel의 id or obj가 아닌, Role의 특정 필드(name)를 인자로 필터링 한다면,
-        # Re + Rel모두 class_를 뽑아낸 뒤, has ( has())로 2번 걸어줘야한다.
-        # has1개만 두면, EXIST 절이 casadian product from Rel1, Rel1로 잡히게 된다.
-
-        Employee.filter_by(has_role_name__ne='ADMINISTRATOR').all()
+        Employee.filter_by(except_admin=True).all()
         => [<Employee 2>, <Employee 3>, <Employee 4>, <Employee 5>]
         """
         mapper = mapper or cls
         User_ = mapper.user.mapper.class_
         Role_ = User_.role.mapper.class_
 
-        return mapper.user.has((User_.role.has(Role_.name == role_name)))
+        return mapper.user.has(User_.role.has(Role_.name == Roles.ADMINISTRATOR.name)) != value
 
     @hybrid_property
     def is_staff(self):

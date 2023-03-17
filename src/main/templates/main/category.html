@@ -28,12 +28,14 @@
         {% for post in post_list %}
         <div class="pl-2">
             <h1 class="is-size-4">
+                <span class="icon"><i class="mdi mdi-shape-outline"></i></span>{{ post.category.name }}
                 <a href="{{ url_for('main.post_detail', category_id=post.category_id, id=post.id) }}">{{ post.title
                     }}</a>
             </h1>
             <p class="has-text-grey-light is-size-6 mt-1">
-                <span class="icon"><i class="mdi mdi-clipboard-text-clock-outline"></i></span>{{ post.add_date }}
-                <span class="icon"><i class="mdi mdi-shape-outline"></i></span>{{ post.category.name }}
+                <span class="icon"><i class="mdi mdi-eye-outline"></i></span> 조회수: {{ post.view_count }}
+                <span class="icon"><i class="mdi mdi-clipboard-text-clock-outline"></i></span>{{ post.add_date | feed_datetime(is_feed=True) }}
+
                 <span class="icon"><i class="mdi mdi-tag-heart-outline"></i></span>{{ post.tags|join(',') }}
             </p>
             <div class="has-text-grey mt-1">{{ post.desc }}</div>

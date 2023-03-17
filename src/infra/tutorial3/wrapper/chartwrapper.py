@@ -186,6 +186,7 @@ class Chart:
         for model in models:
             filter_by = None
             if model in filter_by_per_model:
+
                 filter_by = filter_by_per_model[model]
 
             rows = model.count_for_interval(date_attr, end_date, interval, unit, srt_date=srt_date,

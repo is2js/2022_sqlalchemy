@@ -7,7 +7,9 @@ from sqlalchemy import select, and_, extract, or_
 
 from src.infra.config.connection import DBConnectionHandler
 from src.infra.tutorial3 import Post, Category, Tag, Banner, PostPublishType
+from src.infra.tutorial3.categories import PostCount
 from src.infra.tutorial3.common.pagination import paginate
+from src.main.utils.get_client_ip import get_client_ip
 
 main_bp = Blueprint("main", __name__, url_prefix='/main')
 
@@ -177,10 +179,25 @@ def category(id):
 # -> 단독 entity/id는 이미 admin_route에서 가지기 때문
 @main_bp.route("/category/<int:category_id>/<int:id>")
 def post_detail(category_id, id):
-    # 2) 타고 들어가는 하위의 경우, 부모도 먼저 찾고 -> 나 찾기
+    # 타고 들어가는 하위의 경우, 부모id -> 이전글/다음글을 찾을 수 있다.
+    # post = Post.load({'category': 'selectin', 'tags': 'joined', }) \
+    #     .filter_by(id=id).first()
 
-    post = Post.load({'category': 'selectin', 'tags': 'joined'}) \
-        .filter_by(id=id).first()
+    # post = Post.filter_by(id=id).first()
+
+    # 조회수 먼저 처리
+    ip = get_client_ip(request)
+    # 해당 post에 대해 ip로 등록된 데이터를 세서, count를 나타냄
+    # if 해당ip 데이터가 없을때만 등록후 조회수 + 1
+    count = PostCount.filter_by(post_id=id, ip=ip).count()
+    if count == 0:
+        PostCount.create(post_id=id, ip=ip)
+        # 조회 수 증가는 등록안된 ip(count==0)일 경우만
+        # post.view_count += 1
+        post = Post.get(id)
+        post.update(view_count=post.view_count + 1)
+        # load한 데이터가 그대로 남아있으려나? -> commit해서 없다
+
 
     # limit 이전 글의 갯수
     prev_post = Post.filter_by(
@@ -197,6 +214,10 @@ def post_detail(category_id, id):
     ).order_by('id') \
         .limit(1) \
         .first()
+
+    # post 다시 조회(업데이트 가능성때문에 load를 맨 마지막에)
+    post = Post.load({'category': 'selectin', 'tags': 'joined' }) \
+        .filter_by(id=id).first()
 
     return render_template('main/post_detail.html',
                            post=post,

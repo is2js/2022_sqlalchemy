@@ -233,7 +233,9 @@ def index():
     employee_count = Employee.filter_by(
         and_=dict(
             or_=dict(is_active=True, is_leaved=True),
-            has_role_name__ne=Roles.ADMINISTRATOR.name
+            # user___role___name__ne=Roles.ADMINISTRATOR.name,
+            # has_role_name__ne=Roles.ADMINISTRATOR.name,
+            except_admin=True
         )).count()
 
     employee_count_diff, employee_count_diff_rate = Employee.count_and_rate_between(
@@ -245,8 +247,8 @@ def index():
                 or_=dict(
                     is_active=True,
                     is_leaved=True),
-                # user___role___name__ne='ADMINISTRATOR'
-                has_role_name__ne=Roles.ADMINISTRATOR.name
+                # user___role___name__ne=Roles.ADMINISTRATOR.name
+                except_admin=True
             )),
     )
 
@@ -326,7 +328,7 @@ def index():
     # [{'name': '태그1', 'count': 1, 'sum': 2}, {'name': 'asdf', 'count': 0, 'sum': 0}]
 
     # 칼럼명_집계로 자동label을 잡으니, 템플릿에서 맞게 수정해준다.
-    tag_with_post_count = Tag.group_by('id', selects=['name', 'posts___id__count', 'posts___id__sum']) \
+    tag_with_post_count = Tag.group_by('id', selects=['name', 'posts___id__count', 'posts___view_count__sum']) \
         .limit(3).to_dict2()
     # print('tag_with_post_count [after]  >> ', tag_with_post_count)
     # [{'name': '태그1', 'id_count': 1, 'id_sum': 2}, {'name': 'asdf', 'id_count': 0, 'id_sum': 0}]
@@ -350,14 +352,15 @@ def index():
     #                                           )
     user_chart = chart.count_bars_for_interval(
         [User, Employee], 'add_date', 7, 'day', filter_by_per_model=dict(
-            User=dict(is_administrator=False),
+            User=dict(is_staff=False),
             Employee=dict(
                 and_=dict(
                     or_=dict(
                         is_active=True,
                         is_leaved=True
                     ),
-                    has_role_name__ne=Roles.ADMINISTRATOR.name,
+                    # has_role_name__ne=Roles.ADMINISTRATOR.name,
+                    except_admin=True,
                 )
             ))
     )
@@ -418,7 +421,8 @@ def index():
                                                            or_=dict(
                                                                is_active__eq=True,
                                                                is_leaved__eq=True),
-                                                           user___is_administrator=False
+                                                           # user___is_administrator=False,
+                                                           except_admin=True,
                                                        ))
                                                })
 
@@ -946,7 +950,7 @@ def article_add():
 @login_required
 @role_required(allowed_roles=[Roles.STAFF])
 def article_edit(id):
-    post = Post.filter_by(id=id).load({'tags': 'joined'}).first()
+    post = Post.filter_by(id=id).load({'category':'selectin','tags': 'joined'}).first()
     form = PostForm(post)
 
     if form.validate_on_submit():

@@ -132,7 +132,6 @@ class CRUDMixin(Base, ObjectMixin):
 
     # for create + for update  ## 실행메서드 ##
     def save(self, auto_commit: bool = True):
-        print('self._session before merge  >> ', self._session.identity_map.values())
 
         #### try/catch는 외부세션을 넣어주는데서 할 것이다?
         # print('self  >> ', self.__dict__)
@@ -144,7 +143,6 @@ class CRUDMixin(Base, ObjectMixin):
         # self._session.expunge_all() # 1) 기존의 조회시 들어간 캐쉬를 지우고
         # self._session.add(self) # 2) 현재 변화(fil)된 객체를 처음부터 새로 올린다.
         result = self._session.merge(self)
-        print('self._session after merge  >> ', self._session.identity_map.values())
         # self._session.refresh(self) #  다른sesion에서 db반영한 or "flush한 것"을 가져와서, 현재 수정내역을 반영하여 현재 session에 add
         # 현재세션에서 미리 조회 -> 다른 sesson작업 이후 flush or commit -> 현재 수정 -> refresh로 db최신버전의 user를 가져와서 현재 수정내역을 반영
         # => 즉, 현재수정내역을 타세션작업(commit/flush)끝난 것에  반영하기
@@ -178,7 +176,6 @@ class CRUDMixin(Base, ObjectMixin):
 
         if auto_commit:
             self._session.commit()
-        print('self._session after commit  >> ', self._session)
 
         return result # merge 사용 후, self merge결과물을 반환해서 session에 사용해야한다.
 

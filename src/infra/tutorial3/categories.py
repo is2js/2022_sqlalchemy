@@ -20,10 +20,11 @@ class Category(BaseModel):
     name = Column(String(128), nullable=False, unique=True)
     icon = Column(String(128), nullable=True)
 
-    posts = relationship('Post', #backref=backref('category', lazy='subquery'),
+    posts = relationship('Post',  # backref=backref('category', lazy='subquery'),
                          back_populates='category',
-                         cascade="all, delete",  # 방법1)
-                         passive_deletes=True,  # 해결책2 - 자식FK애 ondelete='CASCADE' 이후 부모relationshio에 이것을 주면, 부모만 삭제하고, 나머지는 DB가 수동적 삭제한다
+                         # cascade="all, delete",  # 방법1)
+                         passive_deletes=True,
+                         # 해결책2 - 자식FK애 ondelete='CASCADE' 이후 부모relationshio에 이것을 주면, 부모만 삭제하고, 나머지는 DB가 수동적 삭제한다
                          # lazy=True
                          )
 
@@ -34,8 +35,10 @@ class Category(BaseModel):
 
 
 posttags = Table('posttags', Base.metadata,
-                 Column('tag_id', Integer().with_variant(BigInteger, "postgresql"), ForeignKey('tags.id'), primary_key=True, nullable=False),
-                 Column('post_id', Integer().with_variant(BigInteger, "postgresql"), ForeignKey('posts.id'), primary_key=True, nullable=False),
+                 Column('tag_id', Integer().with_variant(BigInteger, "postgresql"), ForeignKey('tags.id'),
+                        primary_key=True, nullable=False),
+                 Column('post_id', Integer().with_variant(BigInteger, "postgresql"), ForeignKey('posts.id'),
+                        primary_key=True, nullable=False),
                  mysql_engine='InnoDB',
                  mysql_charset='utf8mb4',
                  comment='Post-Tag 관계테이블'
@@ -81,7 +84,6 @@ class Post(BaseModel):
     __repr_attrs__ = ['title']
     ko_NAME = '게시글'
 
-
     # id = Column(Integer, primary_key=True)
     id = Column(Integer().with_variant(BigInteger, "postgresql"), primary_key=True)
     title = Column(String(128), nullable=False)
@@ -105,6 +107,7 @@ class Post(BaseModel):
                          # nullable=False,
                          # name='post_category_id'
                          )
+
     category = relationship('Category', foreign_keys=[category_id], back_populates='posts')
 
     tags = relationship('Tag', secondary=posttags,
@@ -114,10 +117,41 @@ class Post(BaseModel):
                         # backref=backref('posts', lazy='subquery'),  # tag -> (front) tag.posts 해결
                         )
 
+    # 등록안된 ip일 때만 증가하는 조회수 칼럼 추가
+    view_count = Column(Integer().with_variant(BigInteger, "postgresql"), default=0)
+
+    # cascade delete 1: Fk에 DB레벨 제약조건을 on~ 으로 준다.
+    # cascade delete 2: one의 relationship에 passive_delets=True를 줘서, DB에게 cascade를 맞긴다.
+    post_counts = relationship('PostCount', passive_deletes=True)#, back_populates='post')
+
     @hybrid_method
     def type(cls, type_enum, mapper=None):
         mapper = mapper or cls
         return mapper.has_type == type_enum.value
+
+
+# Post Count 모델 작성
+class PostCount(BaseModel):
+    __tablename__ = 'postcounts'
+    __repr_attrs__ = ['post_id']
+    ko_NAME = '조회수'
+
+    id = Column(Integer().with_variant(BigInteger, "postgresql"), primary_key=True)
+    ip = Column(String(30), nullable=False)
+
+    # cascade delete 1: Fk에 DB레벨 제약조건을 on~ 으로 준다.
+    # cascade delete 2: one의 relationship에 passive_delets=True를 줘서, DB에게 cascade를 맞긴다.
+    post_id = Column(Integer().with_variant(BigInteger, "postgresql"),
+                     ForeignKey('posts.id', ondelete="CASCADE"), )
+
+    # one에 해당하는 post에 대한 relation을 추가해야, filter_by를 위한 @hybrid_method에서 연결할 수 있다.
+    # post = relationship('Post', back_populates='post_counts')
+    #
+    # @hybrid_method
+    # def is_belonged_to(cls, post, mapper=None):
+    #     mapper = mapper or cls
+    #     Post_ = mapper.post.mapper.class_
+    #     return mapper.post.has(Post_.id == post.id)
 
 
 class Tag(BaseModel):
