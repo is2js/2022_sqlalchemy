@@ -16,7 +16,7 @@ main_bp = Blueprint("main", __name__, url_prefix='/main')
 @main_bp.route("/")
 def index():
     # ip test
-    return f'{request.environ}'
+    return f'{request.headers}'
     client_ip = request.headers.get('X-Real-IP') or \
                 request.headers.get('X-Forwarded-For', '').split(',')[0] or\
                 request.remote_addr
