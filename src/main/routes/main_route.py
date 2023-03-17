@@ -15,14 +15,6 @@ main_bp = Blueprint("main", __name__, url_prefix='/main')
 
 @main_bp.route("/")
 def index():
-    # ip test
-    return f'{request.headers}'
-    client_ip = request.headers.get('X-Real-IP') or \
-                request.headers.get('X-Forwarded-For', '').split(',')[0] or\
-                request.remote_addr
-    return f'You Ip Address is {client_ip}'
-
-
     page = request.args.get('page', 1, type=int)
 
     pagination = Post.order_by('-add_date').paginate(page, per_page=9)
