@@ -8,7 +8,8 @@
 <script src="{{url_for('static', filename='js/department/tree-helper.js')}}"></script>
 
 <!-- axios js-->
-<script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+<!--<script src="https://unpkg.com/axios/dist/axios.min.js"></script>-->
+<script src="{{url_for('static', filename='js/axios.min.js')}}"></script>
 
 <!-- bulma list css -->
 <link href="https://cdn.jsdelivr.net/npm/bulma-list/css/bulma-list.css" rel="stylesheet"/>
@@ -255,7 +256,7 @@
                                  @dblclick.prevent.stop
                             >
                                 <small :class="dept.id !== idOfSelectedDept ? 'has-text-grey' : 'has-text-white'">
-                                    {$ dept.open ? '접기 ▶' : '열기(' + dept.only_children_count+ ') ▼' $}
+                                    {$ dept.open ? '접기 ▶' : '열기(' + dept.count_only_children+ ') ▼' $}
                                 </small>
                             </div>
                         </div>
@@ -490,24 +491,25 @@
                                     required
                             >
                                 <optgroup label="1인 부서">
-                                    <option value=0>~부/~장(ex> 병원장, 진료부, 간호부, 수련부)</option>
+                                    <option value=0>그룹명 or 1인부서(ex> 그룹/회장/사장/병원장/과장/부장)</option>
                                 </optgroup>
-                                <optgroup label="행정관련 부서">
-                                    <option value=1>~실(ex> 탕제실, 홍보실, 적정진료관리실)</option>
-                                    <option value=2>~팀(ex> 교육팀, 홍보팀, 총무팀, 기획홍보팀)</option>
-                                    <option value=3>~과(ex> 원무과, 행정과)</option>
+                                <optgroup label="2인이상 부서">
+                                    <option value=1>행정 부서(ex> 팀/실/과/부)</option>
+<!--                                    <option value=2>~팀(ex> 교육팀, 홍보팀, 총무팀, 기획홍보팀)</option>-->
+<!--                                    <option value=3>~과(ex> 원무과, 행정과)</option>-->
                                 </optgroup>
-                                <optgroup label="의료관련 부서">
-                                    <option value=4>~치료실(ex> 병동, 외래, 집중간호실)</option>
-                                    <option value=5>~원장단(ex> 한방원장단, 양방원장단)</option>
-                                    <option value=6>~과(ex> 재활의학과, 피부미용과, 안면마비과)</option>
-                                    <option value=7>의료센터(ex> 재활센터, 피부미용센터, 암센터)</option>
+                                <optgroup label="특수 부서">
+                                    <option value=2>원장단</option>
+<!--                                    <option value=4>~치료실(ex> 병동, 외래, 집중간호실)</option>-->
+<!--                                    <option value=5>~원장단(ex> 한방원장단, 양방원장단)</option>-->
+<!--                                    <option value=6>~과(ex> 재활의학과, 피부미용과, 안면마비과)</option>-->
+<!--                                    <option value=7>의료센터(ex> 재활센터, 피부미용센터, 암센터)</option>-->
                                 </optgroup>
-                                <optgroup label="연구/관리 부서">
-                                    <option value=8>~연구소(ex> 의학연구소, 교육연구소, 중앙연구소)</option>
-                                    <option value=9>~센터(ex> 임상연구윤리센터, 임상시험센터)</option>
-                                    <option value=10>~위원회(ex> 임상시험윤리위원회 등)</option>
-                                </optgroup>
+<!--                                <optgroup label="연구/관리 부서">-->
+<!--                                    <option value=8>~연구소(ex> 의학연구소, 교육연구소, 중앙연구소)</option>-->
+<!--                                    <option value=9>~센터(ex> 임상연구윤리센터, 임상시험센터)</option>-->
+<!--                                    <option value=10>~위원회(ex> 임상시험윤리위원회 등)</option>-->
+<!--                                </optgroup>-->
                             </b-select>
                         </b-field>
                     </div>

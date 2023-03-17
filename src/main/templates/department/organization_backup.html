@@ -6,7 +6,8 @@
 
     <script src="https://unpkg.com/vue2-org-tree/dist/index.js"></script>
 <!-- 부서변경시 부서정보 받아오기 위한 axios -->
-<script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+<!--<script src="https://unpkg.com/axios/dist/axios.min.js"></script>-->
+<script src="{{url_for('static', filename='js/axios.min.js')}}"></script>
 {% endblock extra_head_style %}
 
 {% block member %}

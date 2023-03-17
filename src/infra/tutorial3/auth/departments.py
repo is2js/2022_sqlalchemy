@@ -4,7 +4,7 @@ import enum
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, select, func, BigInteger, Date, Text, distinct, \
     case, and_, or_, delete
 from sqlalchemy.ext.hybrid import hybrid_property, hybrid_method
-from sqlalchemy.orm import relationship, backref, with_parent, selectinload, Session
+from sqlalchemy.orm import relationship, backref, with_parent, selectinload, Session, object_session
 from sqlalchemy.orm.exc import DetachedInstanceError
 
 from src.infra.config.connection import DBConnectionHandler
@@ -13,64 +13,76 @@ from src.infra.tutorial3.common.int_enum import IntEnum
 
 
 class DepartmentType(enum.IntEnum):
-    부장 = 0  # 부서명 ex> 병원장, 진료부장, 간호부 => 끝에 장이 없으면 [부서명 + 장]
+    일인부서 = 0  # 부서명 ex> 병원장, 진료부장, 간호부 => 끝에 장이 없으면 [부서명 + 장]
 
-    실 = 1  # 실원, 실장 ex> 탕제실, 홍보실, 기획관리실, 정보전산실,
-    팀 = 2  # 팀원, 팀장 ex> 총무팀
-    과 = 3  # 팀원, 과장 ex> 원무과, 행정과
+    다인부서 = 1  # 실원, 실장 ex> 탕제실, 홍보실, 기획관리실, 정보전산실,
+    원장단 = 2
+    # 팀 = 2  # 팀원, 팀장 ex> 총무팀
+    # 과 = 3  # 팀원, 과장 ex> 원무과, 행정과
 
-    치료실 = 4  # 치료사, 실장
-    원장단 = 5  # 원장, 대표원장
-    진료과 = 6  # 원장, 과장
-    의료센터 = 7  # 원장, 센터장
+    # 치료실 = 4  # 치료사, 실장
+    # 원장단 = 5  # 원장, 대표원장
+    # 진료과 = 6  # 원장, 과장
+    # 의료센터 = 7  # 원장, 센터장
 
-    연구소 = 8  # 연구원, 연구원장
-    센터 = 9  # 센터원, 센터장
+    # 연구소 = 8  # 연구원, 연구원장
+    # 센터 = 9  # 센터원, 센터장
 
-    위원회 = 10  # 위원, 위원장
+    # 위원회 = 10  # 위원, 위원장
 
     # form을 위한 choices에는, 선택권한을 안준다? -> 0을 value로 잡아서 제외시킴
     @classmethod
     def choices(cls):
         return [(choice.value, choice.name) for choice in cls]
 
+    # refactor
+    def get_position(self, is_leader):
+        if self == DepartmentType.일인부서:
+            return '부서장'
+        elif self == DepartmentType.다인부서:
+            return '팀장' if is_leader else '팀원'
+        elif self == DepartmentType.원장단:
+            return '대표원장' if is_leader else '원장'
+        else:
+            raise ValueError(f'Input valid Type {[(choice.value, choice.name) for choice in self.__class__]}')
     def find_position(self, is_leader, dep_name):
         # 1) 부/장부서 => ~장, ~부장
-        if self == DepartmentType.부장:
+        if self == DepartmentType.일인부서:
             if is_leader:
                 return dep_name + ('' if dep_name.endswith('장') else '장')  # 장으로 끝나지 않는 간호부 => 간호부 + 장이 되게 한다
             else:
                 raise ValueError('부/장 부서는 팀원 없이, 리더 1명만 입력해야합니다.')
-        # 2) 실 => 실장 - 실원
-        elif self == DepartmentType.실:
-            return '실장' if is_leader else '실원'
-        # 3) 팀 => 팀장 - 실원
-        elif self == DepartmentType.팀:
+
+        else:
             return '팀장' if is_leader else '팀원'
-        # 4) 과 => 과장 - 팀원
-        elif self == DepartmentType.과:
-            return '과장' if is_leader else '팀원'
-        # 5) 치료실 => 실장 - 치료사
-        elif self == DepartmentType.치료실:
-            return '실장' if is_leader else '치료사'
+        # 2) 실 => 실장 - 실원
+        # elif self == DepartmentType.다인부서:
+        #     return '팀장' if is_leader else '팀원'
+        # 3) 팀 => 팀장 - 실원
+        # elif self == DepartmentType.다인부서:
+        #     return '팀장' if is_leader else '팀원'
+
+        # # 5) 치료실 => 실장 - 치료사
+        # elif self == DepartmentType.다인부서:
+        #     return '실장' if is_leader else '치료사'
         # 6) 원장단 => 대표원장 - 원장
-        elif self == DepartmentType.원장단:
-            return '대표원장' if is_leader else '원장'
-        # 7) 진료과 => 과장 - 원장
-        elif self == DepartmentType.진료과:
-            return '과장' if is_leader else '원장'
+        # elif self == DepartmentType.다인부서:
+        #     return '대표원장' if is_leader else '원장'
+        # 7) 다인부서 => 과장 - 원장
+        # elif self == DepartmentType.진료과:
+        #     return '과장' if is_leader else '원장'
         # 8) 의료센터 => 센터장 - 원장
-        elif self == DepartmentType.의료센터:
-            return '센터장' if is_leader else '원장'
+        # elif self == DepartmentType.의료센터:
+        #     return '센터장' if is_leader else '원장'
         # 9) 연구소 => 연구소장 - 연구원
-        elif self == DepartmentType.연구소:
-            return '연구소장' if is_leader else '연구원'
+        # elif self == DepartmentType.연구소:
+        #     return '연구소장' if is_leader else '연구원'
         # 10) 센터 => 센터장 - 센터원
-        elif self == DepartmentType.센터:
-            return '센터장' if is_leader else '센터원'
+        # elif self == DepartmentType.센터:
+        #     return '센터장' if is_leader else '센터원'
         # 11) 위원회 => 위원장 - 위원
-        elif self == DepartmentType.위원:
-            return '위원장' if is_leader else '위원'
+        # elif self == DepartmentType.위원:
+        #     return '위원장' if is_leader else '위원'
 
     # #### front에서 고르기 위해, 부서종류별로 내려주는 메서드
     # def get_positions(self, dep_name):
@@ -78,10 +90,10 @@ class DepartmentType(enum.IntEnum):
     #     if self == DepartmentType.부장:
     #         return dep_name + ('' if dep_name.endswith('장') else '장')  # 장으로 끝나지 않는 간호부 => 간호부 + 장이 되게 한다
     #     # 2) 실 => 실장 - 실원
-    #     elif self == DepartmentType.실:
+    #     elif self == DepartmentType.다인부서:
     #         return '실장', '실원'
     #     # 3) 팀 => 팀장 - 팀원
-    #     elif self == DepartmentType.팀:
+    #     elif self == DepartmentType.다인부서:
     #         return '팀장', '팀원'
     #     # 4) 과 => 과장 - 팀원
     #     elif self == DepartmentType.과:
@@ -89,11 +101,11 @@ class DepartmentType(enum.IntEnum):
     #     # 5) 치료실 => 실장 - 치료사
     #     elif self == DepartmentType.치료실:
     #         return '실장', '치료사'
-    #     # 6) 원장단 => 대표원장 - 원장
-    #     elif self == DepartmentType.원장단:
+    #     # 6) 다인부서 => 대표원장 - 원장
+    #     elif self == DepartmentType.다인부서:
     #         return '대표원장', '원장'
-    #     # 7) 진료과 => 과장 - 원장
-    #     elif self == DepartmentType.진료과:
+    #     # 7) 다인부서 => 과장 - 원장
+    #     elif self == DepartmentType.다인부서:
     #         return '과장', '원장'
     #     # 8) 의료센터 => 센터장 - 원장
     #     elif self == DepartmentType.의료센터:
@@ -228,7 +240,7 @@ class EmployeeDepartment(BaseModel):
                     .where(Department.id == self.department_id)
                 ).first().type
 
-            if dep_type != DepartmentType.부장:
+            if dep_type != DepartmentType.일인부서:
                 return False
             # (부/장급 부서인 경우) => 미리 데이터가 나오면 탈락
             is_full = db.session.scalars(
@@ -338,24 +350,31 @@ class EmployeeDepartment(BaseModel):
     def create(cls, session: Session = None, auto_commit: bool = True, **kwargs):
         # 검증1. 변경할 부서가 이미 소속된 부서인 경우, 탈락
         exists_after_emp_dept = cls.filter_by(
-            **{k: v for k, v in kwargs.items() if k not in ['is_leader', 'employee_date']}
+            **{k: v for k, v in kwargs.items() if k not in ['is_leader', 'employee_date']},
+            session=session
         ).exists()
         if exists_after_emp_dept:
             return False, '이미 소속 중인 부서입니다.'
 
         # 검증2. as_leader로 부서변경을 원했는데, 이미 해당 after부서에 leader로 취업한 사람이 있는 경우, 탈락
         if kwargs['is_leader'] and cls.filter_by(
-                **{k: v for k, v in kwargs.items() if k not in ['employee_id', 'employee_date']}
+                **{k: v for k, v in kwargs.items() if k not in ['employee_id', 'employee_date']},
+                session=session
         ).exists():
             return False, '해당 부서에는 이미 팀장이 존재합니다.'
 
         # 검증3. 해당 after dept가 1인부서(부/장급부서)인데, 이미 1명의 active한 취임정보가 존재하는 경우
         Department_ = cls.department.mapper.class_
-        after_dept = Department_.get(kwargs['department_id'])
-        if after_dept.type == DepartmentType.부장 and cls.filter_by(
-                **{k: v for k, v in kwargs.items() if k in ['dismissal_date', 'department_id']}
+        after_dept = Department_.get(kwargs['department_id'], session=session)
+        if after_dept.type == DepartmentType.일인부서 and cls.filter_by(
+                **{k: v for k, v in kwargs.items() if k in ['dismissal_date', 'department_id']},
+                session=session
         ).exists():
             return False, '해당 부서는 1인 부서로서, 이미 팀장이 존재합니다.'
+        
+        #### 검증 끝나고나서, 부서별 정해진 Position을 가져오기
+        position = after_dept.type.get_position(kwargs['is_leader'])
+        kwargs['position'] = position
 
         return super().create(session=session, auto_commit=auto_commit, **kwargs)
 
@@ -530,8 +549,9 @@ class EmployeeDepartment(BaseModel):
 
 
 class Department(BaseModel):
-    _N = 3
-    _MAX_DEPTH = 5
+    _N = 3  # path를 만들 때, 자를 단위
+    _MAX_LEVEL = 5  # 첫자식을 1로 보는 join_depth 개념
+    _MAX_COUNT_IN_SAME_LEVEL = 10
     ko_NAME = '부서'
 
     __tablename__ = 'departments'
@@ -558,7 +578,7 @@ class Department(BaseModel):
                             )
     # 8 # children + joined backref parent 대신, parent를 정의해줄 수 도 있다.
     parent = relationship('Department', remote_side=[id],  # ,  backref="subdepartment"
-                          back_populates='children'
+                          back_populates='children',
                           )
 
     # 7 # cascade='all' 을 줘서, 삭제시 자식들도 다 같이 삭제되게 한다?!
@@ -607,7 +627,7 @@ class Department(BaseModel):
     # => type을 Text말고, String(1000)으로 변경
 
     #### EmployeeDepartment에 position을 남기기 위한, Type
-    type = Column(IntEnum(DepartmentType), default=DepartmentType.팀, nullable=False, index=True)
+    type = Column(IntEnum(DepartmentType), default=DepartmentType.다인부서, nullable=False, index=True)
 
     # hyper_property에서 접근을 위한
     employee_departments = relationship('EmployeeDepartment', back_populates='department')
@@ -622,7 +642,7 @@ class Department(BaseModel):
             # f" level={self.level!r}]" # path를 채우기 전에 출력했더니 level써서 에러가 남.
         return info
 
-    def exists(self):
+    def exists2(self):
         with DBConnectionHandler() as db:
             department = db.session.scalars(
                 select(Department)
@@ -683,7 +703,7 @@ class Department(BaseModel):
 
             return self
 
-    def save(self):
+    def save2(self):
 
         # 검증1: 이미 존재하는 부서
         if self.exists():
@@ -755,9 +775,9 @@ class Department(BaseModel):
 
             #### level은 self.path 완성후 사용할 수 있다.
             # [검증4] parent에 의해 결정되는 level이 7(depth8단계) 초과부터는 안받는다.
-            if self.level > self._MAX_DEPTH:
+            if self.level > self._MAX_LEVEL:
                 db.session.rollback()
-                return False, f"최대 깊이는 최상위부서로 부터 +{self._MAX_DEPTH}단계 까지입니다."
+                return False, f"최대 깊이는 최상위부서로 부터 +{self._MAX_LEVEL}단계 까지입니다."
 
             db.session.commit()  # 검증(flush 이후 rollback) 통과시에만 commit
 
@@ -889,14 +909,51 @@ class Department(BaseModel):
         for root in roots_of_department:
             tree_list.append(
                 root.to_dict2(
-                    nested=cls._MAX_DEPTH, relations='children', hybrid_attrs=True,
+                    nested=cls._MAX_LEVEL, relations='children', hybrid_attrs=True,
                     exclude=['path', 'pub_date'],
                     session=session
                 )
             )
-            # tree_list.append(root.get_self_and_children_dict())
 
         return dict(data=tree_list)
+
+    # refactor
+    @classmethod
+    def create(cls, session: Session = None, auto_commit=True, **kwargs):
+        ## exists 검증
+        # 1) unique칼럼으로 존재검사
+        if cls.filter_by(name=kwargs['name']).exists():
+            return False, '이미 존재하는 부서입니다.'
+
+        # 2) 해당부모의 자식부서가 이미 10개를 채웠는지 확인
+        count_in_same_level = cls.filter_by(parent_id=kwargs['parent_id']).count()
+        if count_in_same_level >= cls._MAX_COUNT_IN_SAME_LEVEL:
+            return False, '자식부서는 10개를 초과할 수 없습니다.'
+
+        # 3) 최상위 부서의 생성라면, 이미 10개가 채워졌는지 확인
+        if not kwargs['parent_id'] and cls.filter_by(
+                parent_id=None).count() >= cls._MAX_COUNT_IN_SAME_LEVEL:
+            return False, '최상위 부서는 10개로 제한되어 있습니다.'
+
+        #### Create시 동적으로 만드는 fill data 2가지(sort, path) + 검증 1가지
+        # (1) 부모에 대한 <기존 자식들의 갯수 + 1> -> 나의 예비 [sort]
+        # (2) <부모의 path> -> path prefix
+        #    - 최상위 부서라 부모부서 없을 시 -> path prefix ''
+        # (3) path prefix + 나의 예비 [sort] + _N(자릿수.모자라면0으로채움) -> 나의 예비 [path]
+        # (4) [path] -> 예비 level -> 검증
+        kwargs['sort'] = sort = count_in_same_level + 1
+
+        parent = cls.filter_by(id=kwargs['parent_id']).first()
+        path_prefix = parent.path if parent else ''
+        kwargs['path'] = path = path_prefix + f'{sort:0{cls._N}d}'
+
+        level = len(path) // cls._N - 1
+        # 4) level은 정해진 것까지 허용
+        if level > cls._MAX_LEVEL:
+            return False, f'부서의 깊이는 {cls._MAX_LEVEL}단계까지만 허용합니다.'
+
+        # name, type, parent_id + 동적 sort, path -> Create
+        return super().create(**kwargs)
 
     @classmethod
     def exchange_sort_by_id(cls, id_a, id_b):
@@ -942,14 +999,26 @@ class Department(BaseModel):
             )
             return db.session.scalars(stmt).all()
 
+    # def get_self_and_children_id_list(self):
+    #     # (3-1) 재귀를 돌며 누적시킬 것을 현재부터 뽑아낸다? => 첫 입력인자에 계속 누적시킬 거면, return없이 list에 그대로 append만 해주면 된다.
+    #     result = [self.id]
+    #     # (3-1) 현재(부모)부서에서 자식들을 뽑아 순회시키며, id만 뽑아놓고, 이제 자신이 부모가 된다.
+    #     # => 자신처리+중간누적을 반환하는 메서드라면, 재귀호출후 반환값을 부모의 누적자료구조에 추가누적해준다.
+    #     # for child in parent.children:
+    #     for child in self.get_children():
+    #         result += child.get_self_and_children_id_list()
+    #     return result
+
+    # refactor - for update_sort_cross_level like to_dict()
+    # => session에 얹힌 상태에서 relation 접근하는 재귀
     def get_self_and_children_id_list(self):
         # (3-1) 재귀를 돌며 누적시킬 것을 현재부터 뽑아낸다? => 첫 입력인자에 계속 누적시킬 거면, return없이 list에 그대로 append만 해주면 된다.
         result = [self.id]
         # (3-1) 현재(부모)부서에서 자식들을 뽑아 순회시키며, id만 뽑아놓고, 이제 자신이 부모가 된다.
         # => 자신처리+중간누적을 반환하는 메서드라면, 재귀호출후 반환값을 부모의 누적자료구조에 추가누적해준다.
-        # for child in parent.children:
-        for child in self.get_children():
+        for child in self.children:
             result += child.get_self_and_children_id_list()
+
         return result
 
     def get_self_and_children_dept_info_tuple_list(self):
@@ -1051,7 +1120,7 @@ class Department(BaseModel):
 
         # [순수 하위 부서 수]만 카운팅 한다.
         # data['only_children_count'] = self.count_only_children()
-        data['only_children_count'] = self.count_only_children
+        data['count_only_children'] = self.count_only_children
         # [순수 부서원 + 하위 부서장과 부서원 수]
         # => view에선 부서장 외 N명이 됨.
         # data['all_employee_count'] = self.count_self_and_children_employee() - (1 if direct_leader_id else 0)
@@ -1330,11 +1399,26 @@ class Department(BaseModel):
 
                 avatar=leader_employee.user.avatar,  # user
                 email=leader_employee.user.email,
-
-                position=leader_employee.get_position(self)  # emp + dept -> emp_depts -> position
+                # 조회메서드에 session과 close=False옵션을 줘서, 공유세션 속 self가 close안되게
+                position=leader_employee.get_position(self, session=object_session(self), close=False)  # emp + dept -> emp_depts -> position
             )
 
         return None
+
+
+    # refactor for to_dict
+    @hybrid_property
+    def parent_sort(self):
+        """
+        view에서 부모색에 따라, 비슷한 색을 배정하기 위함. 없으면 None 반환
+
+        s = db.get_session()
+        d = Department.get(2, session=s)
+        d.parent_sort
+        => 1
+        """
+        parent = self.parent
+        return parent.sort if parent else None
 
     # refactor for to_dict
     @hybrid_property
@@ -1365,73 +1449,100 @@ class Department(BaseModel):
         employee_list = []
         for employee in employees:
             data = dict(
-                id=employee.id, # emp
+                id=employee.id,  # emp
                 name=employee.name,
-                job_status=employee.job_status.name, # enum.name
+                job_status=employee.job_status.name,  # enum.name
 
-                avatar=employee.user.avatar, # user
+                avatar=employee.user.avatar,  # user
                 email=employee.user.email,
 
-                position=employee.get_position(self) # emp+dept-> emp_dept -> position
+                position=employee.get_position(self, session=object_session(self), close=False)  # emp+dept-> emp_dept -> position
             )
             employee_list.append(data)
 
         return employee_list
 
-    @hybrid_property
-    def parent_sort(self):
+
+    # @classmethod
+    # def delete_by_id(cls, dept_id):
+    #     with DBConnectionHandler() as db:
+    #         #### 검증1: 존재해야한다. => `여기서 객체를 찾아 session.delete(  only객체만 )`에 활용한다
+    #         target_dept = db.session.get(cls, dept_id)
+    #
+    #         if not target_dept:
+    #             return False, "존재하지 않는 부서를 삭제할 순 없습니다."
+    #
+    #         #### 검증2. 자식이 있는지 검사
+    #         # stmt = (
+    #         #     select(func.count(cls.id))
+    #         #     .where(cls.parent_id == dept_id)
+    #         # )
+    #         # children_count = db.session.scalar(stmt)
+    #         # if children_count:
+    #         #     return False, "하위부서가 존재하면 삭제할 수 없습니다."
+    #         if len(target_dept.children) > 0:
+    #             return False, "하위부서가 존재하면 삭제할 수 없습니다."
+    #
+    #         #### 검증3. 해당부서에 취임된 직원이 있는지 확인
+    #         # => dept.count_employee(self)와 동일하지만, id + cls method로 처리하는 방식이 다른다.
+    #         stmt = (
+    #             select(func.count(
+    #                 distinct(EmployeeDepartment.employee_id)))  # 직원이 혹시나 중복됬을 수 있으니 중복제거하고 카운팅(양적 숫자X)
+    #             .where(EmployeeDepartment.dismissal_date.is_(None))
+    #             .where(EmployeeDepartment.department.has(cls.id == dept_id))
+    #         )
+    #
+    #         employee_count = db.session.scalar(stmt)
+    #         # print(employee_count)
+    #         if employee_count:
+    #             return False, "재직 중인 직원이 존재하면 삭제할 수 없습니다."
+    #
+    #         #### 검증1, 2, 3  통과시 [존재검사시 사용했던 객체]로 삭제
+    #         # db.session.execute(delete(cls).where(cls.id == dept_id))
+    #         db.session.delete(target_dept)
+    #         # db.session.execute(delete(cls).where(cls.id == dept_id))
+    #         db.session.commit()
+    #
+    #         return True, "부서를 삭제했습니다."
+
+    # refactor for delete exists rel filter with noload
+    @hybrid_method
+    def has_employee(cls, value, mapper=None):
         """
-        view에서 부모색에 따라, 비슷한 색을 배정하기 위함. 없으면 None 반환
+        해당부서(#Department)에 취임 중(#EmployeeDepartment)인 직원(or팀장)이 있는지
 
-        s = db.get_session()
-        d = Department.get(2, session=s)
-        d.parent_sort
-        => 1
+        Department.filter_by(has_employee=True).all()
+        => [Department(id=2, name='팀1', parent_id=1, sort=1, path='001001')]
+
         """
-        parent = self.parent
-        return parent.sort if parent else None
+        mapper = mapper or cls
+        EmployeeDepartment_ = mapper.employee_departments.mapper.class_
+        return mapper.employee_departments.any(EmployeeDepartment_.dismissal_date.is_(None)) == value
 
-    @classmethod
-    def delete_by_id(cls, dept_id):
-        with DBConnectionHandler() as db:
-            #### 검증1: 존재해야한다. => `여기서 객체를 찾아 session.delete(  only객체만 )`에 활용한다
-            target_dept = db.session.get(cls, dept_id)
+    # refactor override delete
+    def delete(self, session: Session = None, auto_commit: bool = True):
+        """
+         d = Deparment.filter_by(name='11111').first()
+         d.delete()
+         => (False, '하위부서가 존재하면 삭제할 수 없습니다.')
 
-            if not target_dept:
-                return False, "존재하지 않는 부서를 삭제할 순 없습니다."
+        """
+        # # 1) 존재 검증
+        # if not self:
+        #     return  False, "존재하지 않는 부서를 삭제할 순 없습니다."
 
-            #### 검증2. 자식이 있는지 검사
-            # stmt = (
-            #     select(func.count(cls.id))
-            #     .where(cls.parent_id == dept_id)
-            # )
-            # children_count = db.session.scalar(stmt)
-            # if children_count:
-            #     return False, "하위부서가 존재하면 삭제할 수 없습니다."
-            if len(target_dept.children) > 0:
-                return False, "하위부서가 존재하면 삭제할 수 없습니다."
+        cls = self.__class__
 
-            #### 검증3. 해당부서에 취임된 직원이 있는지 확인
-            # => dept.count_employee(self)와 동일하지만, id + cls method로 처리하는 방식이 다른다.
-            stmt = (
-                select(func.count(
-                    distinct(EmployeeDepartment.employee_id)))  # 직원이 혹시나 중복됬을 수 있으니 중복제거하고 카운팅(양적 숫자X)
-                .where(EmployeeDepartment.dismissal_date.is_(None))
-                .where(EmployeeDepartment.department.has(cls.id == dept_id))
-            )
+        # 2) 자식 존재 검증
+        if cls.filter_by(parent_id=self.id).exists():
+            return False, "하위부서가 존재하면 삭제할 수 없습니다."
 
-            employee_count = db.session.scalar(stmt)
-            # print(employee_count)
-            if employee_count:
-                return False, "재직 중인 직원이 존재하면 삭제할 수 없습니다."
+        # 3) 취임된 직원 존재 검증
+        # -> [rel model]에 noload로 필터 -> rel obj 인자없는 경우라도 (T/F로 필터링 + [cls] 정의) @hybrid_method로 정의
+        if cls.filter_by(id=self.id, has_employee=True).exists():
+            return False, "재직 중인 직원이 존재하면 삭제할 수 없습니다."
 
-            #### 검증1, 2, 3  통과시 [존재검사시 사용했던 객체]로 삭제
-            # db.session.execute(delete(cls).where(cls.id == dept_id))
-            db.session.delete(target_dept)
-            # db.session.execute(delete(cls).where(cls.id == dept_id))
-            db.session.commit()
-
-            return True, "부서를 삭제했습니다."
+        return super().delete(session=session, auto_commit=auto_commit)
 
     @classmethod
     def change_sort(cls, dept_id, after_sort):
@@ -1510,6 +1621,255 @@ class Department(BaseModel):
                 #### 여러가지가 동시에 업뎃되므로 실패시 rollback까지
                 db.sesssion.rollback()
                 return False, f"순서변경에 실패하였습니다."
+
+    # refactor
+    def update_sort(self, after_sort, session:Session=None, auto_commit=True):
+        if not session:
+            #### Mutli 1. [외부주입 조회를 할 session]
+            # 1개의 객체로 attrs처리, auto close/commit하는 상황이 아니라 [여러객체를 수정 후 마지막에 직접 commit]한다면
+            # 여러객체 조회(외부주입으로 not close) -> fill -> add_all() -> 마지막에 직접 commit
+            # => [공용세션]만 땡겨온 뒤, [조회하여 close/commit 전까지 이미 add(identity_map]에 올라가 변화 반영중 임을 이용한다
+            session = self.get_scoped_session()
+        # 뒤에서 조회후 add_all( [self + @ ] )를 해줄 것이기 때문에, 지금 session을 add하진 않는다.
+        # 같은 외부 세션 조회면, 조회된 객체를 추가 add도 가능해서 상관없다.
+        # session.add(self)
+
+        # 검증1) 정수
+        if not isinstance(after_sort, int):
+            raise ValueError('sort가 정수여야 합니다.')
+
+        # 검증2) 기존 sort와 같으면 탈락
+        before_sort = self.sort
+        if before_sort == after_sort:
+            return False, "변경되는 전/후 순서가 같을 순 없습니다."
+
+        cls = self.__class__
+        ## before sort  -> after sort 로 갈 때, 작은데서 큰데로 VS 큰데서 작은데로 갈때 로직이 달라진다.
+        # case1: 2->4 번째로 간다면,
+        #   1) 2< (3, 4) <=4 번을 == and_(before_sort < cls.sort, cls.sort <= after_sort)
+        #   2) 위에서부터 순서대로 == order_by .path
+        #   3) 위로 1칸 씩 (sort -1) 올려야한다
+        # case2: 4->2 번째로 간다면,
+        #   1) 2<= (2, 3) < 4 번을 == and_(after_sort <= cls.sort, cls.sort < before_sort)
+        #   2) 밑에서부터 역순으로 (order_by .path.desc() )
+        #   3) 아래로 1칸 씩 (sort + 1) 내려야한다
+        if before_sort < after_sort:
+            # condition = and_(before_sort < cls.sort, cls.sort <= after_sort)
+            related_filters = dict(parent_id=self.parent_id, sort__gt=before_sort, sort__le=after_sort)
+            added_value_for_new_sort = - 1
+            order_by = 'path'
+        else:
+            # condition = and_(after_sort <= cls.sort, cls.sort < before_sort)
+            related_filters = dict(parent_id=self.parent_id, sort__ge=after_sort, sort__lt=before_sort)
+            added_value_for_new_sort = 1  # 위로 올라올땐, 중간것들이 내려간다.
+            order_by = '-path'  # 위로 올라와, 한칸씩 내려갈땐, 큰 것부터 내려지게 역순으로 진행하게 한다.
+
+        try:
+            #### Mutli 2. [ 조회시 외부session을 주입하여 close안된 상태로 수정이 반영되는 상태 BUT 명시적 add/add_all ]
+            ## [공용 session을 외부session으로 주입하여 조회]시 -> 조회실행메서드들이 close()없이 flush()만 하여
+            #   조회된 객체들이 identity_map에 올라가 [변화가 반영되고 있는 상태] + [추가로 조회해도 identity_map에서 튀어나가는 상태]
+            # 순서를 업뎃할 땐, 미리 select 해놓아야, 정해진 순서대로 업뎃해도 영향을 안준다.
+            # (1) 2->4번으로 가는 [target_dept + 자식]와  3,4한칸씩 올라가는 [related_depts]를 나눠서, 미리 select해둔다
+            target_and_children = cls.filter_by(path__like=self.path + '%', session=session).order_by('path').all()
+            related_departments = cls.filter_by(**related_filters, session=session).order_by(order_by).all()
+
+            # (2) 대상부서 update전에, 관련부서들은 -> 자식들과 [조회 + 덮어쓰기 업뎃]을 동시에 해야해서, [대상부서를 뺀 순서가 중요]하다
+            #     순회하면서 각 dept마다 자식들을 1칸씩 내려주거나 올려줄 때,
+            #   -> 위로 올라갈경우, path(sort)정순 / 내려갈 경우, 밑에서부터 path(sort)역순으로 조회 + update해야한다.
+            #      (만약, 올라가는데, 아래것부터 올리면, 아래1칸 올린 것 + 바로 윗칸의 조회가 겹치게 된다.
+            #   -> 조회 + 업뎃을 순차적으로 할 땐, 덮어쓰기를 대비해서, [마지막에 하는 대상부서에 가까운 순으로] 순차적 [조회+덮어쓰기업뎃]
+            for rel_dept in related_departments:
+                rel_dept_and_children = cls.filter_by(path__like=rel_dept.path + '%', session=session).order_by('path').all()
+                rel_dept = rel_dept_and_children[0]
+                rel_dept_children = rel_dept_and_children[1:]
+
+                #### Mutli 3. [ 개별 수정시 fill만 해놓고 나중에 add + commit ]
+                # (3) 자신의 sort업뎃 (fill만)
+                new_sort = rel_dept.sort + added_value_for_new_sort
+                rel_dept.sort = new_sort  # sort업뎃은 자신만 => 자식들은 path업뎃만
+
+                # (4) 자신 + 자식의 path업뎃  ( 각각 update )
+                # path_prefix = dept.parent.path if dept.parent else ''
+                path_prefix = rel_dept.path[:-3] if rel_dept.parent_id else ''
+                new_path = path_prefix + f'{new_sort:0{cls._N}d}'
+
+                for dept in [rel_dept] + rel_dept_children:
+                    dept.path = new_path + dept.path[len(new_path):]
+                    # dept.update(session=session, auto_commit=False)
+
+            # (5) 관련부서들이 한칸씩 다 땡겼으면, 미리 select해둔 대상부서 옮기기
+            target_dept = target_and_children[0]
+            target_children = target_and_children[1:]
+
+            target_dept.sort = after_sort
+            prefix = target_dept.path[:-3] if target_dept.parent_id else ''
+            new_path = prefix + f'{after_sort:0{cls._N}d}'
+
+            for dept in [target_dept] + target_children:
+                # new_path + 자식들은 그만큼 기존path를 짜르고 나머지 자신 path를 이어붙임
+                dept.path = new_path + dept.path[len(new_path):]
+                # dept.update(session=session, auto_commit=False)
+
+            #### Mutli 4. [ 이미 close되지 않는 객체는 변화가 반영되지만, add/add_all로 명시 후 commit or flush]
+            # 각각 update하지 않고, 외부주입조회 -> identity_map에 올라옴 -> 이미 commit만 해도 반영되는 상황
+            # -> add_all()로 명시한 뒤, commit하여 update
+            session.add_all(target_and_children + related_departments)
+
+            # update(auto_commit=auto_commit) 대신, 직접 외부sesion 상황에 따라 해주기
+            # -> 실제 외부sesion이 들어와 더 이어갈 수 도 있다.
+            if auto_commit:
+                session.commit()
+            else:
+                session.flush()
+
+            return True, "순서 변경에 성공하였습니다."
+
+        except Exception as e:
+            session.rollback()
+            # raise e
+            return False, f"순서변경에 실패하였습니다. {e}"
+
+    # refactor
+    def update_sort_cross_level(self, after_parent_id, after_sort, session: Session=None, auto_commit=True):
+        try:
+            # mutli obj 처리를 위한 외부주입용 세션 보급
+            # -> multi obj: 하위부서로의 이동확인을 위해 자식들(relation)에 접근해야함.
+            if not session:
+                session = self.get_scoped_session()
+            # 1개의 객체로부터 이어나갈 것이므로 먼저 add -> close or commit는 끝나기 전에 해줘야한다.
+            # 현재 self는 [공용세션으로 조회후 close안된 상태]가 아니므로, 추가해야한다
+            session.add(self)
+
+
+            # 검증1) 같은 부서내에서 sort만 변경한다면, self.update_sort() 메서드 이용
+            if self.parent_id == after_parent_id:
+                # 같은 부서내 이동은 change_sort를 이용. 로직이 다름(제거/추가가 아닌 삽입/삭제)
+                # -> 마지막 처리기 때문에 auto_commit = True로 가서 알아서 종료되도록
+                return self.update_sort(after_sort, session=session, auto_commit=auto_commit)
+
+
+            # 검증2) 하위 부서로의 이동을 제한
+            # => 자식부서에 접근하는데, session이 없는 상태고, 값을 원하니 to_dict()로 session을 물면서 찾기
+            if self.parent_id in self.get_self_and_children_id_list():
+                # 수정(C/U/D)없이 종료(마지막)이라면, commit 대신 close
+                # 외부 세션이 더 이어갈 수 있으니..  외부에서 끝맺음 표시를 주면, close() / 조회는 flush할 필요 없음.
+                # => 마지막이 아닌데, close()로 이전내용들을 다 없애버릴 수 있다.
+                # => 근데.. raise라서 마지막인 듯.
+                # if auto_commit:
+                #     session.close()
+                session.close()
+                raise ValueError('하위 부서로 이동은 불가능 합니다.')
+
+            if (after_parent_id and not isinstance(after_parent_id, int)) or not isinstance(after_sort, int):
+                raise ValueError('level, sort는 정수여야 합니다.')
+
+            # (1) 대상부서 + 자식들 미리 select
+            cls = self.__class__
+            target_and_children = cls.filter_by(
+                path__like=self.path + '%',
+                session=session)\
+                .order_by('path').all()
+
+            # (2) `이동 전` 부모들 아래 나보다 sort가 뒤에있는 것들 미리 select
+            # -> before level[앞에가 제거]에서 (대상의 부모의 아이들 중)대상부서 sort보다 뒤에 있는 것들 셀렉
+            before_related_departments = cls.filter_by(
+                parent_id=self.parent_id, # 나와 동레벨
+                sort__gt=self.sort, # 나보다 뒤에 것들 -> 먼저(before) 수정할 예정
+                session=session
+            ).order_by('path').all()
+
+            # (3) `이동 후` 부모들 아래 나보다 sort가 **같거나** 뒤에있는 것들 미리 **역순** select
+            # -> afeter level[앞에서 추가]에서 after_sort부터 시작해서 더 뒤에있는 것 + 역순으로 업뎃예정 셀렉
+            after_related_departments = cls.filter_by(
+                parent_id=after_parent_id,  # **이동 후의 나와 동레벨**
+                sort__le=self.sort,  # 나와 나보다 앞에 것들 -> 있다가(after) 수정할 예정
+                session=session
+            ).order_by('-path').all()
+
+            # (4) before level의 앞으로(위로) 한칸씩 밀기
+            before_added_value = - 1
+            for rel_dept in before_related_departments:
+                new_sort = rel_dept.sort + before_added_value
+                rel_dept.sort = new_sort  # sort업뎃은 자신만 => 자식들은 path업뎃만
+
+                # path_prefix = rel_dept.parent.path if rel_dept.parent else ''
+                path_prefix = rel_dept.path[:-3] if rel_dept.parent_id else ''
+                new_path = path_prefix + f'{new_sort:0{cls._N}d}'
+
+                # self_and_children = db.session.scalars(
+                #     select(Department).where(Department.path.like(dept.path + '%'))).all()
+                rel_dept_and_children = cls.filter_by(path__like=rel_dept.path + '%', session=session).order_by('path').all()
+                # rel_dept = rel_dept_and_children[0]
+                # rel_dept_children = rel_dept_and_children[1:]
+
+                # 수정 fill in identity_map (not update)
+                # for dept in [rel_dept] + rel_dept_children:
+                for dept in rel_dept_and_children:
+                    dept.path = new_path + dept.path[len(new_path):]
+
+            # (5) after level의 뒤로(아래로) 역순으로 한칸씩 밀기
+            after_added_value = 1
+            for rel_dept in after_related_departments:
+                # before와 다른 부분 1
+                new_sort = rel_dept.sort + after_added_value
+                rel_dept.sort = new_sort  # sort업뎃은 자신만 => 자식들은 path업뎃만
+
+                path_prefix = rel_dept.path[:-3] if rel_dept.parent_id else ''
+                new_path = path_prefix + f'{new_sort:0{cls._N}d}'
+
+                rel_dept_and_children = cls.filter_by(path__like=rel_dept.path + '%', session=session).order_by(
+                    'path').all()
+                # rel_dept = rel_dept_and_children[0]
+                # rel_dept_children = rel_dept_and_children[1:]
+
+                # for dept in [rel_dept] + rel_dept_children:
+                for dept in rel_dept_and_children:
+                    dept.path = new_path + dept.path[len(new_path):]
+
+            # (6) 대상부서는 sort만 자신변경 + parent_id도 변경해야한다.
+            # (6-1) parent_id도 변경해줘야한다(같은 부모아래와 다른 점)
+            self.sort = after_sort
+            self.parent_id = after_parent_id
+
+            # (6-2) after parent_id로 parent객체를 찾아, 새로운 path_prefix를 찾아낸다.
+            # parent = db.session.get(Department, after_parent_id) if after_parent_id else None
+            after_parent = cls.filter_by(id=after_parent_id).first() if after_parent_id else None
+            new_path_prefix = after_parent.path if after_parent else ''
+            new_path = new_path_prefix + f'{after_sort:0{3}d}'
+
+            # (6-3) child 업뎃시, 부모의 path가 바뀌기 전 before_path 길이만큼, 미리 앞에를 잘라내야한다.
+            before_path = self.path
+            self.path = new_path
+
+            # (6-4) 대상부서.get_children()은, status == 1만 가져오는데 여기선 다 가져와야해서, status조건없이 불러낸 것을 가져온다.
+            for child in target_and_children[1:]:
+                # case 1)
+                #     before: 002 001    002(s) + 001
+                #      after: 001 001(s)        + 001  after_level이 before보다 작아지면, 그 차이만큼 뒷부분을 더 짤라내고 이어붙어ㅑㅇ햐ㅏㄴ다.
+                #                        [    ] => 자식들은 cls._N * (b - a)만큼 path를 짜르고 new_path와 붙여야한다.
+                # case 2) 만약, 반대상황이라면?
+                #     before: 001 001(s)        + 001
+                #      after: 002 001    002(s) + 001
+                #                        [    ] 만큼 new_path의 길이보다 덜 인덱싱 해서 , 기존 path와 붙여야한다.
+                #    => child 입장에서는, 부모의 new_path에 +  [부모의 before_path길이만큼 짜른 자신만의 path]만 있으면 된다.
+                child.path = new_path + child.path[len(before_path):]
+
+            ## not close상태 객체들을 commit만해도 반영되지만, add_all()로 명시
+            # -> self는 이미 add되었지만, 같은session일 땐 add추가 가능
+            session.add_all(target_and_children + before_related_departments + after_related_departments)
+
+            if auto_commit:
+                session.commit()
+            else:
+                session.flush()
+
+            return True, "부서의 위치가 변경되었습니다."
+
+        except Exception as e:
+            # raise e
+            #### 여러가지가 동시에 업뎃되므로 실패시 rollback
+            session.rollback()
+            return False, f"부서의 위치가 변경에 실패하였습니다. {e}"
 
     @classmethod
     def change_sort_cross_level(cls, dept_id, after_parent_id, after_sort):

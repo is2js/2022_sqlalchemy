@@ -96,14 +96,14 @@ if __name__ == '__main__':
     행정부 = Department(name='행정부', type=DepartmentType.부장, parent=병원장).save_backup()
 
     #### 진료부 하위 부서 - 팀장없이
-    한방진료실 = Department(name='한방진료실', type=DepartmentType.원장단, parent=진료부).save_backup()
-    탕전실 = Department(name='탕전실', type=DepartmentType.실, parent=진료부).save_backup()
+    한방진료실 = Department(name='한방진료실', type=DepartmentType.다인부서, parent=진료부).save_backup()
+    탕전실 = Department(name='탕전실', type=DepartmentType.다인부서, parent=진료부).save_backup()
     #### 간호부 하위 부서 - 팀장없이
-    외래 = Department(name='외래', type=DepartmentType.치료실, parent=간호부).save_backup()
-    병동 = Department(name='병동', type=DepartmentType.치료실, parent=간호부).save_backup()
+    외래 = Department(name='외래', type=DepartmentType.다인부서, parent=간호부).save_backup()
+    병동 = Department(name='병동', type=DepartmentType.다인부서, parent=간호부).save_backup()
     #### 행정부 하위 부서 - 팀장없이
-    원무 = Department(name='원무', type=DepartmentType.팀, parent=행정부).save_backup()
-    총무 = Department(name='총무', type=DepartmentType.팀, parent=행정부).save_backup()
+    원무 = Department(name='원무', type=DepartmentType.다인부서, parent=행정부).save_backup()
+    총무 = Department(name='총무', type=DepartmentType.다인부서, parent=행정부).save_backup()
 
     #### (2) 부서에 부임
     #### => 한 사람은 (다른)여러부서에 [user의 role과 상관없이 오로지 팀원으로만] 입사한다 & 팀장은 부서정보에서 수정해서 넣어줄 것이다.

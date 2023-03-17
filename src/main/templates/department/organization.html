@@ -69,7 +69,7 @@
                       <span class="icon"
                       >
                         <i class="mdi" :class="isOpen ? 'mdi-minus' : 'mdi-plus'"></i>
-                        {$ isOpen ? '' : item.only_children_count $}
+                        {$ isOpen ? '' : item.count_only_children $}
                       </span>
                 </button>
             </div>
@@ -158,7 +158,7 @@
                     </div>
 
                 </b-tooltip>
-                <!--                <div class="tag is-light is-rounded">하위 부서 수: {$ item.only_children_count $}</div>-->
+                <!--                <div class="tag is-light is-rounded">하위 부서 수: {$ item.count_only_children $}</div>-->
             </div>
 
 

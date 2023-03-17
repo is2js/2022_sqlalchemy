@@ -9,7 +9,7 @@ from flask import url_for, g
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, select, case, and_, exists, func, DateTime, \
     BigInteger, update, Date, desc, literal_column, column
 from sqlalchemy.ext.hybrid import hybrid_property, hybrid_method
-from sqlalchemy.orm import relationship, backref, aliased, selectinload
+from sqlalchemy.orm import relationship, backref, aliased, selectinload, Session, object_session
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from src.config import project_config
@@ -1016,7 +1016,7 @@ class Employee(BaseModel):
 
     # refactor
     def get_departments(self, as_leader=False, as_employee=False,
-                        min_level=False, exclude=None):
+                        min_level=False, exclude=None, session=None):
         """
         emp = Employee.get(2)
         emp.get_departments()
@@ -1079,7 +1079,7 @@ class Employee(BaseModel):
             # 6. 집계값을 filter_by에 동적으로 추가한다.
             filter_map.get('and_').update({'level': min_level_subq})
 
-        return Department_.filter_by(**filter_map).order_by('path').all()
+        return Department_.filter_by(**filter_map, session=session).order_by('path').all()
 
     #### with other entity
     # def is_leader_in(self, department: Department):
@@ -1099,7 +1099,7 @@ class Employee(BaseModel):
     #         return emp_dep.is_leader
 
     # refactor
-    def is_leader_in(self, department):
+    def is_leader_in(self, department, session=None):
         """
         dept = Department.get(1)
         emp = Employee.get(2)
@@ -1114,7 +1114,8 @@ class Employee(BaseModel):
             dismissal_date=None,
             is_leader=True,
             is_recorded_about=self,
-            is_recorded_in=department
+            is_recorded_in=department,
+            session=session
         ).exists()
 
         return is_leader
@@ -1307,15 +1308,15 @@ class Employee(BaseModel):
 
             return db.session.scalars(stmt).first()
 
-    @classmethod
-    def get_by_id(cls, id):
-        with DBConnectionHandler() as db:
-            stmt = (
-                select(cls)
-                .where(cls.id == id)
-            )
-
-            return db.session.scalars(stmt).first()
+    # @classmethod
+    # def get_by_id(cls, id):
+    #     with DBConnectionHandler() as db:
+    #         stmt = (
+    #             select(cls)
+    #             .where(cls.id == id)
+    #         )
+    #
+    #         return db.session.scalars(stmt).first()
 
     @classmethod
     def get_by_ids(cls, emp_ids: list):
@@ -1343,15 +1344,93 @@ class Employee(BaseModel):
     #         return db.session.scalars(stmt).first()
 
     # refactor
-    def update_job_status(self, job_status, target_date):
+    # def update_job_status(self, job_status, target_date):
+    #     """
+    #     EagerLoad required: User.Role + EmployeeDepartment
+    #     ----
+    #     employee = Employee.load({'user': ('selectin', {'role': 'selectin'}),
+    #                           'employee_departments': 'joined',
+    #                           }) \
+    #         .filter_by(id=employee_id).first()
+    #     """
+    #     #### 재직->퇴사로 변경하는 경우
+    #     # 1) job_status assign
+    #     # 2) resign_date assign
+    #     # 3) log(reference) append
+    #     # 4) #R.user.role -> default 'USER' assign if not default
+    #     # 5) #R Many EmployeeDepartment list -> dismissal_date assign
+    #     if JobStatusType.is_resign(job_status):
+    #         for emp_dept in self.employee_departments:
+    #             emp_dept.dismissal_date = target_date
+    #
+    #         if not self.user.role.default:
+    #             self.user.role = Role.filter_by(name='USER').first()
+    #
+    #         reference = f'퇴사({format_date(target_date)})'
+    #         if self.reference:
+    #             reference += '</br>' + self.reference
+    #
+    #         data = dict(job_status=job_status, resign_date=target_date, reference=reference)
+    #         return self.update(**data)
+    #
+    #     #### 재직->휴직으로 변경하는 경우
+    #     # 1) job_status assign
+    #     # 2) leave_date assign
+    #     # 3) log(reference) append
+    #     # 4) #R Many EmployeeDepartment list -> leave_date assign + (기존 최종복직일 비우기)reinstatement_date None assign
+    #     elif JobStatusType.is_leave(job_status):
+    #         for emp_dept in self.employee_departments:
+    #             emp_dept.leave_date = target_date
+    #             emp_dept.reinstatement_date = None
+    #
+    #         reference = f'휴직({format_date(target_date)})'
+    #         if self.reference:
+    #             reference += '</br>' + self.reference
+    #
+    #         data = dict(job_status=job_status, leave_date=target_date, reference=reference)
+    #         return self.update(**data)
+    #
+    #     #### 휴직->복직(재직)으로 변경하는 경우
+    #     # 1) job_status assign
+    #     # 2) (복직일 기록은 없고, EmployeeLeaveHistory가 target_date로 생성된다)
+    #     # 3) log(reference) append
+    #     # 4) #R Many EmployeeDepartment list -> reinstatement_date assign
+    #     # 5) EmployeeLeaveHistory create by emp, emp.leave_date + target_date(reinstatement_date)
+    #     elif JobStatusType.is_active(job_status):
+    #         for emp_dept in self.employee_departments:
+    #             emp_dept.reinstatement_date = target_date
+    #
+    #         reference = f'복직({format_date(target_date)})'
+    #         if self.reference:
+    #             reference += '</br>' + self.reference
+    #
+    #         # EmployeeLeaveHistory.create(employee=self, leave_date=self.leave_date,
+    #         #                             reinstatement_date=target_date)
+    #         #### class를 가져와서 연결하려면, self.관계가 아니라, self.__class__.관계로 접근해야RelationshipProperty가 나온다
+    #         # => self.로 접근하면, list가 나온다.
+    #         EmployeeLeaveHistory_ = self.__class__.employee_leave_histories.property.mapper.class_
+    #         EmployeeLeaveHistory_.create(employee=self, leave_date=self.leave_date,
+    #                                      reinstatement_date=target_date)
+    #
+    #         data = dict(job_status=job_status, reference=reference)
+    #         return self.update(**data)
+    #     else:
+    #         raise KeyError(f'Invalid job status : {job_status}')
+
+    # refactor 2 -  load없이도 호출되도록 변경
+    def update_job_status(self, job_status, target_date, session:Session=None, auto_commit=True):
         """
-        EagerLoad required: User.Role + EmployeeDepartment
+        EagerLoad required: User.Role + EmployeeDepartment -> X
         ----
         employee = Employee.load({'user': ('selectin', {'role': 'selectin'}),
                               'employee_departments': 'joined',
                               }) \
             .filter_by(id=employee_id).first()
         """
+        if not session:
+            session = self.get_scoped_session()
+        session.add(self)
+
         #### 재직->퇴사로 변경하는 경우
         # 1) job_status assign
         # 2) resign_date assign
@@ -1362,15 +1441,15 @@ class Employee(BaseModel):
             for emp_dept in self.employee_departments:
                 emp_dept.dismissal_date = target_date
 
-            if not self.user.role.default:
-                self.user.role = Role.filter_by(name='USER').first()
+            if not self.role.default:
+                self.role = Role.filter_by(name='USER', session=session).first()
 
             reference = f'퇴사({format_date(target_date)})'
             if self.reference:
                 reference += '</br>' + self.reference
 
             data = dict(job_status=job_status, resign_date=target_date, reference=reference)
-            return self.update(**data)
+            return self.update(**data, session=session, auto_commit=auto_commit)
 
         #### 재직->휴직으로 변경하는 경우
         # 1) job_status assign
@@ -1387,7 +1466,7 @@ class Employee(BaseModel):
                 reference += '</br>' + self.reference
 
             data = dict(job_status=job_status, leave_date=target_date, reference=reference)
-            return self.update(**data)
+            return self.update(**data, session=session, auto_commit=auto_commit)
 
         #### 휴직->복직(재직)으로 변경하는 경우
         # 1) job_status assign
@@ -1409,102 +1488,105 @@ class Employee(BaseModel):
             # => self.로 접근하면, list가 나온다.
             EmployeeLeaveHistory_ = self.__class__.employee_leave_histories.property.mapper.class_
             EmployeeLeaveHistory_.create(employee=self, leave_date=self.leave_date,
-                                         reinstatement_date=target_date)
+                                         reinstatement_date=target_date,
+                                         session=session,
+                                         auto_commit=False,
+                                         )
 
             data = dict(job_status=job_status, reference=reference)
-            return self.update(**data)
+            return self.update(**data, session=session, auto_commit=auto_commit)
         else:
             raise KeyError(f'Invalid job status : {job_status}')
 
-    ### with other entity
-    @classmethod
-    def change_job_status(cls, emp_id: int, job_status: int, target_date):
-        #### 퇴사상태로 변경하는 경우 -> job_stauts 외 resign_date 할당 + (other entity)role을 default인 USER로 변경
-        #     - 관계entity의 속성을 변경해야하므로, sql으로 하지 않고, 객체를 찾아서 변경하도록 변경한다.
-        #### 그외 EmployeDepartment에서 자신의 취임정보에 dismissal_date를 할당하여 비활성화 한다.
-        if job_status == JobStatusType.퇴사:
-            with DBConnectionHandler() as db:
-                emp: Employee = cls.get_by_id(emp_id)
-
-                emp.job_status = job_status
-                # emp.resign_date = datetime.date.today()
-                emp.resign_date = target_date
-
-                emp.fill_reference(f'퇴사({format_date(target_date)})')
-
-                #### 관계필드를 조회하는 순간 같은세션에서 같은 key의 객체를 가져오게 되므로
-                #### USER role이 아닌 경우에만, USER role을 찾아서 대입해준다.
-                if emp.user.role.default != True:
-                    emp.user.role = Role.get_by_name('USER')  # emp.role은 User의 role을 가져오는 식이므로 변경에 못쓴다.
-
-                db.session.add(emp)
-
-                #### 해당부서에 해임까지 시키기 => 내가 속한 모든 부서취임 정보list를 가져와서
-                # -> 모드 해임일을 입력하여 비활성화 시킨다.
-                emp_dept_list: list = EmployeeDepartment.get_by_emp_id(emp.id)
-                for emp_dept in emp_dept_list:
-                    emp_dept.dismissal_date = target_date
-
-                db.session.add_all(emp_dept_list)
-                db.session.commit()
-
-                return emp
-
-        #### 휴직은 job_status만 변경(퇴직일X, ROLE변화X)
-        #### emp_dept에 휴직일 기입
-        elif job_status == JobStatusType.휴직:
-            with DBConnectionHandler() as db:
-                emp: Employee = cls.get_by_id(emp_id)
-
-                emp.job_status = job_status
-                #### 휴직시, 최종 휴직일칼럼도 채운다 like 퇴직
-                emp.leave_date = target_date
-
-                emp.fill_reference(f'휴직({format_date(target_date)})')
-
-                db.session.add(emp)
-
-                ####  휴직시 기존 취임정보(들)에 휴직일을 찍었음.
-                emp_dept_list: list = EmployeeDepartment.get_by_emp_id(emp.id)
-                for emp_dept in emp_dept_list:
-                    emp_dept.leave_date = target_date
-                    ####  new) for leave history => 휴직시, 최종복직일을 비우는 로직 추가
-                    emp_dept.reinstatement_date = None
-
-                db.session.add_all(emp_dept_list)
-                db.session.commit()
-
-                return emp
-
-        #### 복직처리 => 기존 부서 그대로 복직한다. 필요하면 해임하고, 부서변경해야한다.
-        elif job_status == JobStatusType.재직:
-            with DBConnectionHandler() as db:
-                emp: Employee = cls.get_by_id(emp_id)
-
-                emp.job_status = job_status
-
-                emp.fill_reference(f'복직({format_date(target_date)})')
-
-                db.session.add(emp)
-
-                emp_dept_list: list = EmployeeDepartment.get_by_emp_id(emp.id)
-                for emp_dept in emp_dept_list:
-                    emp_dept.reinstatement_date = target_date
-
-                db.session.add_all(emp_dept_list)
-
-                #### new) 복직시, 휴-복직일이 완성되어, leave_history를 남긴다
-                leave_history = EmployeeLeaveHistory(employee=emp,
-                                                     # 휴직일을, 내가속한부서들에서 가져오지말고, emp에 만들어준 최종휴직일을 써보자.
-                                                     leave_date=emp.leave_date,
-                                                     # 복직일은, 당일이므로 toady를 취임정보에 넣듯이 today로 처리해보자.
-                                                     reinstatement_date=target_date,
-                                                     )
-                db.session.add(leave_history)
-
-                db.session.commit()
-
-                return emp
+    # ### with other entity
+    # @classmethod
+    # def change_job_status(cls, emp_id: int, job_status: int, target_date):
+    #     #### 퇴사상태로 변경하는 경우 -> job_stauts 외 resign_date 할당 + (other entity)role을 default인 USER로 변경
+    #     #     - 관계entity의 속성을 변경해야하므로, sql으로 하지 않고, 객체를 찾아서 변경하도록 변경한다.
+    #     #### 그외 EmployeDepartment에서 자신의 취임정보에 dismissal_date를 할당하여 비활성화 한다.
+    #     if job_status == JobStatusType.퇴사:
+    #         with DBConnectionHandler() as db:
+    #             emp: Employee = cls.get_by_id(emp_id)
+    #
+    #             emp.job_status = job_status
+    #             # emp.resign_date = datetime.date.today()
+    #             emp.resign_date = target_date
+    #
+    #             emp.fill_reference(f'퇴사({format_date(target_date)})')
+    #
+    #             #### 관계필드를 조회하는 순간 같은세션에서 같은 key의 객체를 가져오게 되므로
+    #             #### USER role이 아닌 경우에만, USER role을 찾아서 대입해준다.
+    #             if emp.user.role.default != True:
+    #                 emp.user.role = Role.get_by_name('USER')  # emp.role은 User의 role을 가져오는 식이므로 변경에 못쓴다.
+    #
+    #             db.session.add(emp)
+    #
+    #             #### 해당부서에 해임까지 시키기 => 내가 속한 모든 부서취임 정보list를 가져와서
+    #             # -> 모드 해임일을 입력하여 비활성화 시킨다.
+    #             emp_dept_list: list = EmployeeDepartment.get_by_emp_id(emp.id)
+    #             for emp_dept in emp_dept_list:
+    #                 emp_dept.dismissal_date = target_date
+    #
+    #             db.session.add_all(emp_dept_list)
+    #             db.session.commit()
+    #
+    #             return emp
+    #
+    #     #### 휴직은 job_status만 변경(퇴직일X, ROLE변화X)
+    #     #### emp_dept에 휴직일 기입
+    #     elif job_status == JobStatusType.휴직:
+    #         with DBConnectionHandler() as db:
+    #             emp: Employee = cls.get_by_id(emp_id)
+    #
+    #             emp.job_status = job_status
+    #             #### 휴직시, 최종 휴직일칼럼도 채운다 like 퇴직
+    #             emp.leave_date = target_date
+    #
+    #             emp.fill_reference(f'휴직({format_date(target_date)})')
+    #
+    #             db.session.add(emp)
+    #
+    #             ####  휴직시 기존 취임정보(들)에 휴직일을 찍었음.
+    #             emp_dept_list: list = EmployeeDepartment.get_by_emp_id(emp.id)
+    #             for emp_dept in emp_dept_list:
+    #                 emp_dept.leave_date = target_date
+    #                 ####  new) for leave history => 휴직시, 최종복직일을 비우는 로직 추가
+    #                 emp_dept.reinstatement_date = None
+    #
+    #             db.session.add_all(emp_dept_list)
+    #             db.session.commit()
+    #
+    #             return emp
+    #
+    #     #### 복직처리 => 기존 부서 그대로 복직한다. 필요하면 해임하고, 부서변경해야한다.
+    #     elif job_status == JobStatusType.재직:
+    #         with DBConnectionHandler() as db:
+    #             emp: Employee = cls.get_by_id(emp_id)
+    #
+    #             emp.job_status = job_status
+    #
+    #             emp.fill_reference(f'복직({format_date(target_date)})')
+    #
+    #             db.session.add(emp)
+    #
+    #             emp_dept_list: list = EmployeeDepartment.get_by_emp_id(emp.id)
+    #             for emp_dept in emp_dept_list:
+    #                 emp_dept.reinstatement_date = target_date
+    #
+    #             db.session.add_all(emp_dept_list)
+    #
+    #             #### new) 복직시, 휴-복직일이 완성되어, leave_history를 남긴다
+    #             leave_history = EmployeeLeaveHistory(employee=emp,
+    #                                                  # 휴직일을, 내가속한부서들에서 가져오지말고, emp에 만들어준 최종휴직일을 써보자.
+    #                                                  leave_date=emp.leave_date,
+    #                                                  # 복직일은, 당일이므로 toady를 취임정보에 넣듯이 today로 처리해보자.
+    #                                                  reinstatement_date=target_date,
+    #                                                  )
+    #             db.session.add(leave_history)
+    #
+    #             db.session.commit()
+    #
+    #             return emp
 
     def fill_reference(self, text):
         if not self.reference:
@@ -1711,7 +1793,7 @@ class Employee(BaseModel):
     #             return False, message_after_save
 
     # refactor
-    def change_department(self, current_dept_id, after_dept_id, as_leader, target_date):
+    def change_department2(self, current_dept_id, after_dept_id, as_leader, target_date):
         """
         required : Employee.load({
                     'user': ('selectin', {'role':'selectin'}),
@@ -1845,6 +1927,164 @@ class Employee(BaseModel):
             # db.session.rollback()
             return False, msg
 
+    # refactor 2 - cls.가 아닌 model obj에서 relation을 접근해서 처리할 땐,
+    #              미리 load하지말고, session을 걸어놓고 처리하도도록
+    #              1) 외부session받고, 2) 없으면 공용세션가져와서 사용하고 3) 조회할거면 외부주입으로 미리 add안해도 되고
+    #              4) 추가 조회안하고, relation들 접근할거면 미리 add( self ) 하고
+    #              5) 중간 CUD는 모두 auto_commit=False로 주고, 중간 R도 외부세션으로서 close안되게 하고
+    #              6) 처리후 auto_commit여부에 따라 마지막은 auto_commit=auto_commit
+    #                 True면 close/commit or False면 flush만?
+    #
+    def change_department(self, current_dept_id, after_dept_id, as_leader, target_date,
+                          session: Session=None, auto_commit=True):
+        """
+        required(X) -> 공용세션 가져와 등록해놓고 relation 접근 or  공용세션으로 외부주입조회로 한번에 명시add + CUD
+        """
+        if not session:
+            session = self.get_scoped_session()
+            # self가 포함된 [외부주입 추가조회(not close, 변화반영상태)]없다면, self add하고 relation에 접근하게 한다
+        session.add(self)
+
+
+        data = dict()  # 한번에 fill = update의 인자로 주기 위해 모으기 용
+
+        Role_ = self.__class__.user.mapper.class_.role.mapper.class_
+        print('session.identity_map.values()  >> ', session.identity_map.values())
+
+        # 1. 승진여부 -> #Role 변화 : 부서변화(취임정보)의  [제거 or 변경/추가]와 무관하게 먼저 판단하기
+        if self.is_demote(current_dept_id, after_dept_id, as_leader, session=session):
+            # self.user.role = Role.filter_by(name='STAFF').first()
+            # self.fill(role =Role.filter_by(name='STAFF').first())
+            print('session.identity_map.values() is_demote >> ', session.identity_map.values())
+            session.identity_map.values()
+            data['role'] = Role_.filter_by(name='STAFF', session=session).first()
+
+        elif self.is_promote(after_dept_id, as_leader, session=session):
+            print('session.identity_map.values() is_promote >> ', session.identity_map.values())
+            # self.fill(role=Role.filter_by(name='CHIEFSTAFF').first())
+            data['role'] = Role_.filter_by(name='CHIEFSTAFF', session=session).first()
+
+        print('session.identity_map.values() after promote >> ', session.identity_map.values())
+
+        EmployeeDepartment_ = self.__class__.employee_departments.mapper.class_
+        # 2. 선택된 [현재부서]의 [취임정보#EmployeeDepartment 해임 표시] 할 상황 -> [부서변경]or[부서제거]을 찾아 처리
+        # (1) 현재부서가 선택되었다면, [부서추가]가 아닌 => [부서변경] OR [부서제거]상황  => 둘다 현재부서 [취임정보를 해임]시켜야한다.
+        if current_dept_id:
+            current_emp_dept = EmployeeDepartment_.filter_by(
+                dismissal_date=None,
+                employee_id=self.id,
+                department_id=current_dept_id,
+                session=session,
+            ).first()
+            # many relationship 객체인데, 1개를 수정해야하는 상황이면, fill/update에 list가 아닌 1개의 수정된 obj를 넣어주면
+            # -> fill내부에서 append로 반영되고, 기존에 존재하던 것도 merge에 의해 자동 수정 반영된다.
+            current_emp_dept.dismissal_date = target_date
+            # self.fill(employee_departments=current_emp_dept)
+            data['employee_departments'] = current_emp_dept
+
+        # (2) 다음 취임정보#EmployeeDepartment를 생성하지 않는 상황 -> [부서 제거] 먼저 처리하기
+        #    -> after 부서가 선택안되었다면 (current는 무조건 선택된) => [부서제거]의 상황으로 취임정보 생성 없이
+        #       현재 취임정보 해임된 상태를 commit하고 끝낸다.
+        #    (2-1) after부서가 없다면 -> [부서제거]로서 취임정보 생성 없이 바로 return해야한다.
+        #       =>  after부서가 없는 [부서제거] 상태 ( current는 무조건 있음 )를 처리한다.
+        #    (2-2) after부서가 있다면 -> [부서변경] or [부서추가]의 상황으로 취임정보 새로 생성되어야한ㄷ다
+        Department_ = self.__class__.departments.mapper.class_
+        # (2-1)
+        if not after_dept_id:
+            # 부서제거시, 부서제거 reference입력하고 add
+            print('session.identity_map.values()  >> ', session.identity_map.values())
+
+            current_dept = Department_.get(current_dept_id, session=session)
+            self.fill_reference(f"[{current_dept.name}]부서 해임({format_date(target_date)})")
+            # result, msg = self.update()
+            result, msg = self.update(**data, session=session, auto_commit=auto_commit)
+            print('session.identity_map.values()  >> ', session.identity_map.values())
+            if result:
+                return True, f"[{current_dept.name}]부서 제거를 성공하였습니다."
+            else:
+                return False, msg
+
+        # (2-2) 다음 취임정보#EmployeeDepartment를 생성하는 상황(부서 변경 or 부서 추가)
+        # (2-2-1) (after부서가 있는 상태): current O[부서변경] or current X [부서추가] -> after 부서 취임정보 생성
+        #### 추가. .save()에 검증을 통합하지말고, .create()위에 일단 정의하기
+
+        # 추가1. exists()는 create에 fill될 keyword를 가지고 미리 filter_by를 만든 뒤 호출한다.
+        # 이 때, fill될 데이터는 filter_by + create 둘다에서 쓸 것이니 -> 미리 변수로 만들어놓는다.
+        # result, message_after_save = after_emp_dept.save()
+        after_emp_dept_data = dict(
+            dismissal_date=None,  # default 칼럼이지만, filter_by에 활용하기 위해, 직접 default값을 명시
+            employee_id=self.id,
+            department_id=after_dept_id,
+            employment_date=target_date,
+            is_leader=as_leader,
+        )
+
+        # # 검증1. 변경할 부서가 이미 소속된 부서인 경우, 탈락
+        # exists_after_emp_dept = EmployeeDepartment_.filter_by(
+        #     **{k: v for k, v in after_emp_dept_data.items() if k not in ['is_leader', 'employee_date']}
+        # ).exists()
+        # if exists_after_emp_dept:
+        #     return False, '이미 소속 중인 부서입니다.'
+        #
+        # # 검증2. as_leader로 부서변경을 원했는데, 이미 해당 after부서에 leader로 취업한 사람이 있는 경우, 탈락
+        # if as_leader and EmployeeDepartment_.filter_by(
+        #         **{k: v for k, v in after_emp_dept_data.items() if k not in ['employee_id', 'employee_date']}
+        # ).exists():
+        #     return False, '해당 부서에는 이미 팀장이 존재합니다.'
+        #
+        # # 검증3. 해당 after dept가 1인부서(부/장급부서)인데, 이미 1명의 active한 취임정보가 존재하는 경우
+        # after_dept = Department_.get(after_dept_id)
+        # if after_dept.type == DepartmentType.부장 and EmployeeDepartment_.filter_by(
+        #         **{k: v for k, v in after_emp_dept_data.items() if k in ['dismissal_date', 'department_id']}
+        # ).exists():
+        #     return False, '해당 부서는 1인 부서로서, 이미 팀장이 존재합니다.'
+
+        # auto_commit=True로 줄 경우, 무조건 session.merge의 결과를 활용해야한다. False일 경우, session에 떠있어서, main obj 수정시 자동 반영 된다?
+
+        after_emp_dept, msg = EmployeeDepartment_.create(
+            **after_emp_dept_data,
+            session=session,
+            auto_commit=False,  # 중간 rel obj 생성이라 commit은 뒤에서
+        )
+
+        if after_emp_dept:
+            # result가 True라는 말은, after부서가 있어서 => 새로운 부서 취임정보 생성 완료
+            # after_dept = Department_.filter_by(status=True, id=after_dept_id).first()
+            # (3) current부서 O : 부서 변경 / current부서 X : 부서 추가
+            # (4) 취임정보.create()에서 나온 성공1/실패N 메세지 중 [취임정보 생성 성공1]에 대해
+            # => current O/X에 따라 부서변경/ 부서추가의 메세지 따로 반환
+            # if current_dept_id:
+            # current_dept = Department.get(current_dept_id)
+            after_dept = Department_.get(after_dept_id, session=session)
+            if current_dept_id:
+                current_dept = Department_.get(current_dept_id, session=session)
+                self.fill_reference(f"[{current_dept.name}→{after_dept.name}]부서 변경({format_date(target_date)})")
+                message = f"부서 변경[{current_dept.name}→{after_dept.name}]을 성공하였습니다."
+
+            else:
+                self.fill_reference(f"[{after_dept.name}]부서 취임({format_date(target_date)})")
+                message = f"부서 추가[{after_dept.name}]를 성공하였습니다."
+
+            # updated_data.update(dict(employee_departments=[current_emp_dept, after_emp_dept]))
+            # self.fill(employee_departments=after_emp_dept)
+            #### 이미 기존에 append할 employee_departments가 있는 상황인데,
+            #    list로 전달하면, 덮어쓰기 되어버리므로
+            #    추가적으로 append할 때는 1개는 fill로 처리하자.
+            
+            self.fill(employee_departments=after_emp_dept)  # data['employee_departments']가 이미 있으므로 미리 fill -> append
+            self.update(**data, session=session, auto_commit=auto_commit)
+
+            # session.commit()
+
+            return True, message
+
+        ## save에 실패하면 message_after_save의 이유로 실패했다고 rollback하고  반환한다.
+        # (5) 최종 저장여부를 결정하는 것은 부서변경여부다. .save()가 실패하여 result가 False로 올경우 rollback한다.
+        else:
+            # (2-2) 만약  after부서에 취임 실패한다면, 취임정보.save()에서 나온 에러메세지를 반환 => route에서 그대로 취임실패 메세지를 flash
+            # db.session.rollback()
+            return False, msg
+
     # #### with other entity
     # def is_promote(self, as_leader):
     #     #### (0) 팀장으로 가는 경우가 아니면 탈락이다.
@@ -1858,7 +2098,7 @@ class Employee(BaseModel):
     #     return len(depts_as_leader) == 0
 
     #### refactor
-    def is_promote(self, after_dept_id, as_leader):
+    def is_promote(self, after_dept_id, as_leader, session=None):
         # 추가 -> (1) 이미 직위가 CHIEFSTAFF이상이면 탈락이다.
         if self.is_chiefstaff:
             return False
@@ -1868,12 +2108,12 @@ class Employee(BaseModel):
             return False
         # 추가 -> (3) after부서가 부/장급일 땐, as_leader가 부서원으로 왔어도 True로 미리 바꿔놔야한다.
         # after_dept: Department = Department.get_by_id(after_dept_id)
-        after_dept: Department = Department.filter_by(status=True, id=after_dept_id)
+        after_dept: Department = Department.filter_by(status=True, id=after_dept_id, session=session)
         #            그 전에, active부서가 아니면 탈락이다.
         if not after_dept:
             return False
 
-        if after_dept.type == DepartmentType.부장:
+        if after_dept.type == DepartmentType.일인부서:
             as_leader = True
 
         # (4) (부서가있더라도) 팀장으로 가는 경우가 아니면 탈락이다.
@@ -1884,14 +2124,14 @@ class Employee(BaseModel):
         #### 승진: 만약, before_dept_id를 [포함]하여 팀장인 부서가 없으면서(아무도것도 팀장X) & as_leader =True(최초 팀장으로 가면) => 승진
         #### - 팀장인 부서가 1개도 없다면, 팀원 -> 팀장 최초로 올라가서, 승진
         # depts_as_leader = self.get_my_departments(as_leader=True)
-        depts_as_leader = self.get_departments(as_leader=True)
+        depts_as_leader = self.get_departments(as_leader=True, session=session)
         if depts_as_leader:
             return False
 
         return True
 
     #### refactor
-    def is_demote(self, current_dept_id, after_dept_id, as_leader):
+    def is_demote(self, current_dept_id, after_dept_id, as_leader, session=None):
         # (0) EXECUTIVE 이상인 사람은, 강등에 해당하지 않는다.(이사급, 관리자가 STAFF되어버리는 참사 방지)
         # => 애초에 강등은, CHIESTAFF <-> STAFF 사이에서만 일어난다.
         if self.is_executive:
@@ -1906,7 +2146,8 @@ class Employee(BaseModel):
             return False
 
         # (3) 현재부서가 있더라도, 조회시 active한 부서가 아니라면 강등 탈락이다.
-        current_dept = Department.filter_by(status=True, id=current_dept_id).first()
+        Department_ = self.__class__.departments.mapper.class_
+        current_dept = Department_.filter_by(status=True, id=current_dept_id, session=session).first()
         if not current_dept:
             return False
 
@@ -1914,21 +2155,21 @@ class Employee(BaseModel):
         #### 강등: 만약, before_dept_id를 [제외]하고 팀장인 부서가 없으면서(현재부서만 팀장) & as_leader =False(마지막 팀장자리 -> 팀원으로 내려가면) => 강등
         #### - 선택된 부서외 팀장인 다른 부서가 있다면, 현재부서만 팀장 -> 팀원으로 내려가서, 팀장 직책 유지
         # other_depts_as_leader = self.get_my_departments(as_leader=True, except_dept_id=current_dept_id)
-        other_depts_as_leader = self.get_departments(as_leader=True, exclude=current_dept_id)
+        other_depts_as_leader = self.get_departments(as_leader=True, exclude=current_dept_id, session=session)
 
         if other_depts_as_leader:
             return False
 
         # (5) (팀장인 또다른 부서X)현부서만 가지고 있더라도, 팀장이 아니라면 강등 탈락이다.
-        is_current_dept_leader = self.is_leader_in(current_dept)
+        is_current_dept_leader = self.is_leader_in(current_dept, session=session)
         if not is_current_dept_leader:
             return False
 
         # (6) after부서가 None이어도 되는데, 만약 있는데 부/장급 부서라면 as_leader True를 할당해야하며
         # -> as_leader 판단시 True면 [부서원or부서제거]의 상황이 아니므로 탈락이다.
         if after_dept_id:
-            after_dept: Department = Department.get(after_dept_id)
-            if after_dept.type == DepartmentType.부장:
+            after_dept: Department = Department.get(after_dept_id, session=session)
+            if after_dept.type == DepartmentType.일인부서:
                 as_leader = True
 
         # (7) as_leader가 True면 CHIEFSTAFF이상으로 가는 거라 탈락이다.
@@ -1963,11 +2204,41 @@ class Employee(BaseModel):
 
             return results
 
-    # refactor for to_dict - @hybrid_property leader in Department
-    def get_position(self, department):
+    # # refactor for to_dict - @hybrid_property leader in Department
+    # def get_position(self, department):
+    #     """
+    #     부서를 주면, 취임정보를 필터링하여 직원의 position을 확인
+    #     - 없으면 '공석'을 반환
+    #
+    #     s = db.get_session()
+    #     d2 = Department.get(2, session=s)
+    #
+    #     e = d2.leader_employee
+    #     e.get_position(d2)
+    #     => '부서장'
+    #
+    #     ee = Employee.get(3, session=s)
+    #     ee.get_position(d2)
+    #     => '공석'
+    #     """
+    #     positions_in_department = map(lambda x: x.position,
+    #                                   filter(lambda
+    #                                              x: not x.dismissal_date and x.employee_id == self.id and x.department_id == department.id,
+    #                                          self.employee_departments))
+    #
+    #     return next(positions_in_department, '공석')
+
+    # refactor 2 for to_dict - @hybrid_property leader in Department
+    #            + add_employee route에서 load 없이 position 획득
+    def get_position(self, department, session:Session=None, close=True):
         """
         부서를 주면, 취임정보를 필터링하여 직원의 position을 확인
         - 없으면 '공석'을 반환
+        d = Department.get(2)
+        e = Employee.get(2)
+        e.get_position(d)
+        => '부서장'
+
 
         s = db.get_session()
         d2 = Department.get(2, session=s)
@@ -1980,12 +2251,29 @@ class Employee(BaseModel):
         ee.get_position(d2)
         => '공석'
         """
+        if not session :
+            session = self.get_scoped_session()
+        session.add(self)
+
         positions_in_department = map(lambda x: x.position,
                                       filter(lambda
                                                  x: not x.dismissal_date and x.employee_id == self.id and x.department_id == department.id,
                                              self.employee_departments))
 
+        if close:
+            session.close()
+
         return next(positions_in_department, '공석')
+
+
+    # refactor for to_dict
+    @hybrid_property
+    def avatar(self):
+        return self.user.avatar
+
+    @hybrid_property
+    def email(self):
+        return self.user.email
 
 
 # #### with other entity

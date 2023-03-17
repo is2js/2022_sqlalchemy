@@ -1145,7 +1145,7 @@ class ObjectMixin(Base, BaseQuery):
 
     # for route에서 row별 table 데이터(json) 전달
     def to_dict2(self, nested=False, relations=None, hybrid_attrs=False, exclude=None, include=None,
-                 session: Session = None, depth=0, enum_name=False
+                 session: Session = None, depth=0, enum_name=False, close=True,
                  ):
         """
         *self메서드지만, session=을 인자로 가지는 이유:
@@ -1239,8 +1239,11 @@ class ObjectMixin(Base, BaseQuery):
         #### 1. model obj 1개
         # -> init_obj 후, session에 add하여, relation 조회가능한 상태 -> close_model_obj
         if not hasattr(self, '_session'):
-            self.init_obj(session=session)
-            self._session.add(self)
+        #     self.init_obj(session=session)
+        #     self._session.add(self)
+            if not session:
+                session = self.get_scoped_session()
+            session.add(self)
 
             result = dict()
 
@@ -1248,8 +1251,13 @@ class ObjectMixin(Base, BaseQuery):
             # + include도 같이 처리한다.
             view_column_names = self.filter_include_and_exclude(self.column_names, include, exclude)
 
+            # iterrator filter객체로 나온상태라 list로 써버리면 데이터 없음.
+            # print('list(view_column_names)  >> ', list(view_column_names))
+
+
             # 2) 일반칼럼데이터들을 집어넣는다. - 시간형식은 예외처리한다.
             for column_name in view_column_names:
+
                 _value = getattr(self, column_name)
 
                 if isinstance(_value, datetime.datetime):
@@ -1310,13 +1318,14 @@ class ObjectMixin(Base, BaseQuery):
                         # => 만약 안넣어준다면, relation obj가 다른 session(부모처럼 자체 내부새셩 생성)에 존재한다고 뜬다.
                         result[relation_name] = obj.to_dict2(nested=nested - 1, relations=relations,
                                                              hybrid_attrs=hybrid_attrs, include=include, exclude=exclude,
-                                                             session=self._session, depth=depth + 1,enum_name=enum_name
+                                                             session=session, depth=depth + 1,enum_name=enum_name,
+                                                             close=close
                                                              )
                     # 여기는 relation obj에 접근 Many라서  경우다. 순회하면서, 각각 돌려줘야한다.
                     elif isinstance(obj, Iterable):
                         result[relation_name] = [
                             o.to_dict2(nested=nested - 1, relations=relations, hybrid_attrs=hybrid_attrs, include=include,
-                                       exclude=exclude, session=self._session, depth=depth + 1, enum_name=enum_name) for o in obj
+                                       exclude=exclude, session=session, depth=depth + 1, enum_name=enum_name, close=close) for o in obj
                             if isinstance(o, ObjectMixin)
                         ]
 
@@ -1325,7 +1334,7 @@ class ObjectMixin(Base, BaseQuery):
             # self.close_model_obj() # session 등을 지우면, 재귀로 외부session이 날아가버리는 부작용으로 취소
             #### session close만 -> 최상층에서만..? 어차피 dict에 채우고 종료해도 상관없다?
 
-            if not depth:
+            if not depth and close:
                 self.close()
             return result
 
@@ -1350,7 +1359,7 @@ class ObjectMixin(Base, BaseQuery):
                     model_dict = model_obj.to_dict2(nested=nested, relations=relations, hybrid_attrs=hybrid_attrs,
                                                     include=include,
                                                     exclude=exclude,
-                                                    session=self._session, depth=depth, enum_name=enum_name)
+                                                    session=self._session, depth=depth, enum_name=enum_name, close=False)
                     dict_list.append(model_dict)
 
                 self.close()
@@ -1412,18 +1421,38 @@ class ObjectMixin(Base, BaseQuery):
     #####
     # load된 self-relational obj용
     #####
-    def flatten_children(self, attr_name='children'):
+    # refactor
+    # def flatten_children(self, attr_name='children'):
+    #     """
+    #     dept = Department.load({'children':('joined', 2)}).filter_by(id=1).first()
+    #     [Department(id=1, name='상위부서', parent_id=None, sort=1, path='001'), Department(id=2, name='하위부서1', parent_id=1, sort=1, path='001001'), Department(id=5, name='ㅋㅋㅋ', parent_id=2, sort=1, path='001001001'), Department(id=3, name='하위부
+    #     서2', parent_id=1, sort=2, path='001002')]
+    #     """
+    #     # 자신의 처리이자, 최종 data
+    #     result = [self]
+    #     try:
+    #         for child in getattr(self, attr_name):
+    #             result += child.flatten_children()
+    #     except DetachedInstanceError:
+    #         return result
+    #
+    #     return result
+
+    # refactor 2
+    def flatten_children(self, attr_name='children', session:Session=None, close=True, depth=0):
         """
-        dept = Department.load({'children':('joined', 2)}).filter_by(id=1).first()
-        [Department(id=1, name='상위부서', parent_id=None, sort=1, path='001'), Department(id=2, name='하위부서1', parent_id=1, sort=1, path='001001'), Department(id=5, name='ㅋㅋㅋ', parent_id=2, sort=1, path='001001001'), Department(id=3, name='하위부
-        서2', parent_id=1, sort=2, path='001002')]
         """
+        if not session:
+            session = self.get_scoped_session()
+        session.add(self)
+
         # 자신의 처리이자, 최종 data
         result = [self]
-        try:
-            for child in getattr(self, attr_name):
-                result += child.flatten_children()
-        except DetachedInstanceError:
-            return result
+
+        for child in getattr(self, attr_name):
+            result += child.flatten_children(session=session, close=False, depth=depth+1)
+
+        if close and not depth:
+            session.close()
 
         return result
