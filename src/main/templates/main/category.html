@@ -27,18 +27,54 @@
         {% block cate_box %}
         {% for post in post_list %}
         <div class="pl-2">
-            <h1 class="is-size-4">
-                <span class="icon"><i class="mdi mdi-shape-outline"></i></span>{{ post.category.name }}
-                <a href="{{ url_for('main.post_detail', category_id=post.category_id, id=post.id) }}">{{ post.title
-                    }}</a>
-            </h1>
-            <p class="has-text-grey-light is-size-6 mt-1">
-                <span class="icon"><i class="mdi mdi-eye-outline"></i></span> 조회수: {{ post.view_count }}
-                <span class="icon"><i class="mdi mdi-clipboard-text-clock-outline"></i></span>{{ post.add_date | feed_datetime(is_feed=True) }}
+            <!-- [좌측정렬] 프로필 | 이름 | 시간 -->
+            <div class="is-pulled-left">
+                <div class="has-text-grey-light is-size-7 mt-1 is-align-items-center is-flex">
+                    <figure class="image  mr-2 is-inline-block" style="border: none;">
+                        <img class="is-rounded" style="height: 30px; width: 30px;"
+                             src="
+                                 {% if post.author.user.avatar %}
+                                 {{url_for('download_file', filename=post.author.user.avatar)}}
+                                 {% else %}
+                                 {{url_for('static', filename='/img/user/default_avatar.svg')}}
+                                 {% endif %}
+                                "
+                             alt="{{ g.user.username }}">
+                    </figure>
+                    <span class="has-text-black has-text-weight-bold">
+                        {{ post.author.name }}
+                    </span>
+                    <span class="icon"><i class="mdi mdi-clipboard-text-clock-outline"></i></span>{{ post.add_date |
+                    feed_datetime(is_feed=True) }}
+                </div>
+            </div>
 
-                <span class="icon"><i class="mdi mdi-tag-heart-outline"></i></span>{{ post.tags|join(',') }}
-            </p>
-            <div class="has-text-grey mt-1">{{ post.desc }}</div>
+            <!-- [우측정렬] 조회수 + 태그 -->
+            <div class="is-pulled-right mr-2">
+                <div class="has-text-grey is-size-7">
+                    {% if post.tags %}
+                    <span class="icon"><i class="mdi mdi-tag-heart-outline"></i></span>{{ post.tags|join(',') }}
+                    {% endif %}
+                    <span class="icon"><i class="mdi mdi-eye-outline"></i></span> {{ post.view_count }}
+                </div>
+            </div>
+            <!-- [좌우정렬 후 cleaerfix] -->
+            <div class="is-clearfix"></div>
+
+            <!-- title + desc -->
+            <div class="mt-2 is-size-5 has-text-weight-bold">
+                <a href="{{ url_for('main.post_detail', category_id=post.category_id, id=post.id) }}">
+                    {{ post.title }}</a>
+            </div>
+            {% if post.desc %}
+            <div class="has-text-grey is-size-7 ">설명: {{ post.desc }}</div>
+            {% endif %}
+
+            <!-- 카테고리 -->
+            <span class="tag is-rounded my-3 is-{{post.category.icon}}">
+                    {{ post.category.name }}
+            </span>
+
         </div>
         <div class=" dropdown-divider mb-3"></div>
         {% endfor %}

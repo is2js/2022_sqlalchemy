@@ -879,7 +879,7 @@ def category_delete(id):
 def article():
     page = request.args.get('page', 1, type=int)
 
-    pagination = Post.load({'category':'selectin', 'tags': 'joined'}).order_by('-add_date').paginate(page, per_page=10)
+    pagination = Post.load({'category':'selectin', 'tags': 'joined', 'author': 'selectin' }).order_by('-add_date').paginate(page, per_page=10)
     # stmt = select(Post).order_by(Post.add_date.desc())
     # pagination = paginate(stmt, page=page, per_page=10)
     post_list = pagination.items
@@ -933,6 +933,11 @@ def article_add():
         #   먼저 Many쪽 객체들을 다 찾은 다음, 객체.관계 ( list)에 할당해줘야한다.
         data = form.data  # 따로 안빼놓으면 수정 안됨.
         data['tags'] = [Tag.get(tag_id) for tag_id in data.get('tags', [])]
+
+        # 글내용에서 작성자의 employee객체를 추가
+        # -> 생성시라면, 필드로 relation명으로 객체삽입 가능(relation있을 경우)
+        data['author'] = Employee.filter_by(user_id = g.user.id).first()
+
         result, msg = Post.create(**data)
         if result:
             flash(f'{result.title} Post 생성 성공!')
@@ -1546,8 +1551,11 @@ def employee_add(user_id):
 
         if user_data.get('avatar') and user.avatar != user_data.get('avatar'):
             avatar_file = user_data.get('avatar')
+
             avatar_path, filename = upload_file_path(directory_name='avatar', file=avatar_file)
+
             avatar_file.save(avatar_path)
+
             delete_uploaded_file(directory_and_filename=user.avatar)
             user_data['avatar'] = f'avatar/{filename}'
 

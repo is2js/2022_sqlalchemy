@@ -55,7 +55,7 @@
                 <b-navbar spaced shadow>
                     <!-- logo-->
                     <template #brand>
-                        <b-navbar-item>
+                        <b-navbar-item href="/">
                             <figure class="image  py-0 m-0" style="height: 32px; width: 128px;">
 
                                 <img class="" style="min-height: 32px; width: 100%;"
@@ -68,9 +68,10 @@
 
                     <template #start>
                         <!-- home 메뉴만 수동으로 href='/' 유지-->
-                        <b-navbar-item href="/">
-                            Home
-                        </b-navbar-item>
+<!--                        <b-navbar-item href="/">-->
+<!--                            Home-->
+<!--                        </b-navbar-item>-->
+
                         <!-- home 제외 메뉴는 전역 categories로 구성-->
                         <!-- base.html에 app_context로 넘어오는 category와, category(id) route에 진입했을 때넘겨주는category_id를 비교한다 -->
                         <!-- 1) 그렇다면, 평소에는 category_id는 None으로서 비교안되고, 해당route에 들어갓을때만 값이 넘어와서 비교되서 class를 표기 -->
@@ -108,7 +109,7 @@
                             <!-- avatar -->
                             <figure class="image is-32x32 mx-2" style="border: none;">
                                 <!--                                     style="height: 100%"-->
-                                <img class="is-rounded" style="min-height: 32px; width: 100%;"
+                                <img class="is-rounded" style="height: 100%; width: 100%;"
                                      src="
                                          {% if g.user.avatar %}
                                          {{url_for('download_file', filename=g.user.avatar)}}

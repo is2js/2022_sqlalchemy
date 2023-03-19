@@ -304,22 +304,29 @@ def userinfo_edit():
     # g.user는 Form내부에서 갖다쓴다.
     if form.validate_on_submit():
         data = form.data
+        print('form.data  >> ', form.data)
+
         # 정보 수정시에는 g.user가 아닌, 해당g.user의 id로 찾는 user객체로
         user = User.filter_by(id=g.user.id).first()
 
         data = {k:v for k, v in data.items() if
-                k in ['phone', 'sex', 'email', 'address']}
+                k in ['phone', 'sex', 'email', 'address', 'avatar']}
 
-        user.fill(**data)
+        # f = form.avatar.data
+        # print('f, user.avatar  >> ', f, user.avatar)
 
-        f = form.avatar.data
-        if f != user.avatar:
-            avatar_path, filename = upload_file_path(directory_name='avatar', file=f)
-            f.save(avatar_path)
+        if data.get('avatar') and data.get('avatar') != user.avatar:
+            avatar_file = data.get('avatar')
+
+            avatar_path, filename = upload_file_path(directory_name='avatar', file=avatar_file)
+            avatar_file.save(avatar_path)
 
             delete_uploaded_file(directory_and_filename=user.avatar)
 
-            user.fill(avatar=f'avatar/{filename}')
+            data['avatar'] =f'avatar/{filename}'
+            print('filename  >> ', filename)
+
+        user.fill(**data)
 
         result, msg = user.update()
 

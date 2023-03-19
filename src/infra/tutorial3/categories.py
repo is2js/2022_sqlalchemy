@@ -88,7 +88,7 @@ class Post(BaseModel):
     id = Column(Integer().with_variant(BigInteger, "postgresql"), primary_key=True)
     title = Column(String(128), nullable=False)
     desc = Column(String(200), nullable=False)
-    content = Column(Text().with_variant(String(100), 'mysql'), nullable=False)
+    content = Column(Text().with_variant(String(3000), 'mysql'), nullable=False)
     # has_type = Column(Enum(PostPublishType), server_default='show', nullable=False)
     # IntEnum을 TypeDecorator로 정의해놓고 그 타입으로 써야한다.
     # has_type = Column(Enum(PostPublishType), server_default=PostPublishType.show.value, nullable=False)
@@ -124,6 +124,11 @@ class Post(BaseModel):
     # cascade delete 2: one의 relationship에 passive_delets=True를 줘서, DB에게 cascade를 맞긴다.
     post_counts = relationship('PostCount', passive_deletes=True)#, back_populates='post')
 
+    # 글 작성자(직원) fk 칼럼 추가
+    author_id = Column(Integer().with_variant(BigInteger, "postgresql"), ForeignKey('employees.id', ondelete="CASCADE"))
+    # Many create시  one객체로 fill하려면, Many -> One의 relation 추가
+    author = relationship('Employee', foreign_keys=[author_id], back_populates='posts', uselist=False)
+
     @hybrid_method
     def type(cls, type_enum, mapper=None):
         mapper = mapper or cls
@@ -144,14 +149,15 @@ class PostCount(BaseModel):
     post_id = Column(Integer().with_variant(BigInteger, "postgresql"),
                      ForeignKey('posts.id', ondelete="CASCADE"), )
 
-    # one에 해당하는 post에 대한 relation을 추가해야, filter_by를 위한 @hybrid_method에서 연결할 수 있다.
-    # post = relationship('Post', back_populates='post_counts')
-    #
-    # @hybrid_method
-    # def is_belonged_to(cls, post, mapper=None):
-    #     mapper = mapper or cls
-    #     Post_ = mapper.post.mapper.class_
-    #     return mapper.post.has(Post_.id == post.id)
+# 작성자  유저 -> 해당그룹의 직원일 때만 -> 읽은사람에 추가
+# class PostReader(BaseModel):
+#     __tablename__ = 'postreaders'
+#
+#     id = Column(Integer().with_variant(BigInteger, "postgresql"), primary_key=True)
+#     post_id = Column(Integer().with_variant(BigInteger, "postgresql"),
+#                      ForeignKey('posts.id', ondelete="CASCADE"), )
+#     employee_id
+
 
 
 class Tag(BaseModel):

@@ -647,6 +647,8 @@ class Employee(BaseModel):
                                viewonly=True,  # one-Many + Many-one으로 id복사하고 있다고 뜨니, 그냥 조회용으로만
                                )
 
+    posts = relationship('Post', passive_deletes=True, back_populates='author')
+
     # qrcode, qrcode_img: https://github.com/prameshstha/QueueMsAPI/blob/85dedcce356475ef2b4b149e7e6164d4042ffffb/bookings/models.py#L92
 
     #### 특정 role의 사람들을 다 가져오기 위한 메서드

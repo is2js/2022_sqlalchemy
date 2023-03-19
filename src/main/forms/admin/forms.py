@@ -119,14 +119,15 @@ class PostForm(FlaskForm):
             super().__init__(*args, **kwargs)
 
         # 3) 생성/수정 무관하게 choices선택사항은 관계객체들로부터 전체가 준비되어있어야한다.
-        # -> 하지만, edit form 필드값 초기화 이후 넣어줘야, 정상적으로 selectize가 정상표기된다.
-        with DBConnectionHandler() as db:
-            categories = db.session.scalars(select(Category)).all()
-            tags = db.session.scalars(select(Tag)).all()
-
-            self.category_id.choices = [(category.id, category.name) for category in categories]
-            self.tags.choices = [(tag.id, tag.name) for tag in tags]
-
+        # # -> 하지만, edit form 필드값 초기화 이후 넣어줘야, 정상적으로 selectize가 정상표기된다.
+        # with DBConnectionHandler() as db:
+        #     categories = db.session.scalars(select(Category)).all()
+        #     tags = db.session.scalars(select(Tag)).all()
+        #
+        #     self.category_id.choices = [(category.id, category.name) for category in categories]
+        #     self.tags.choices = [(tag.id, tag.name) for tag in tags]
+        self.category_id.choices = [(category.id, category.name) for category in Category.all()]
+        self.tags.choices = [(tag.id, tag.name) for tag in Tag.all()]
 
 class TagForm(FlaskForm):
     name = StringField('name', validators=[

@@ -26,18 +26,51 @@
 
 {% block cate_box %}
 <div class="pl-2">
-    <h1 class="is-size-3">
-        {{ post.title }}
+    <h1 class="is-size-5">
+        <span class="tag is-rounded my-3 is-size-5 is-{{post.category.icon}}">
+            {{ post.category.name }}
+        </span>
+        <span class="has-text-weight-bold">
+            {{ post.title }}
+        </span>
     </h1>
-    <p class="has-text-grey-light is-size-6 mt-1">
-        <span class="icon"><i class="mdi mdi-shape-outline"></i></span>{{ post.category.name }}
-        <span class="icon"><i class="mdi mdi-eye-outline"></i></span>조회수: {{ post.view_count }}
-        <span class="icon"><i class="mdi mdi-tag-heart-outline"></i></span>{{ post.tags|join(',') }}
-        <span class="icon"><i class="mdi mdi-clipboard-text-clock-outline"></i></span>{{ post.add_date | feed_datetime(is_feed=True)}}
-    </p>
+            <!-- [좌측정렬] 프로필 | 이름 | 시간 -->
+            <div class="is-pulled-left">
+                <div class="has-text-grey-light is-size-6 mt-1 is-align-items-center is-flex">
+                    <figure class="image  mr-2 is-inline-block" style="border: none;">
+                        <img class="is-rounded" style="height: 36px; width: 36px;"
+                             src="
+                                 {% if post.author.user.avatar %}
+                                 {{url_for('download_file', filename=post.author.user.avatar)}}
+                                 {% else %}
+                                 {{url_for('static', filename='/img/user/default_avatar.svg')}}
+                                 {% endif %}
+                                "
+                             alt="{{ g.user.username }}">
+                    </figure>
+                    <span class="has-text-black has-text-weight-bold">
+                        {{ post.author.name }}
+                    </span>
+                    <span class="icon"><i class="mdi mdi-clipboard-text-clock-outline"></i></span>{{ post.add_date |
+                    feed_datetime(is_feed=True) }}
+                </div>
+            </div>
+
+            <!-- [우측정렬] 조회수 + 태그 -->
+            <div class="is-pulled-right mr-2">
+                <div class="has-text-grey is-size-6">
+                    {% if post.tags %}
+                    <span class="icon"><i class="mdi mdi-tag-heart-outline"></i></span>{{ post.tags|join(',') }}
+                    {% endif %}
+                    <span class="icon"><i class="mdi mdi-eye-outline"></i></span> {{ post.view_count }}
+                </div>
+            </div>
+            <!-- [좌우정렬 후 cleaerfix] -->
+            <div class="is-clearfix"></div>
+
     <!-- markdown 적용예정인 필드는 |safe를 달아준다.   -->
 <!--        <div class="content has-text-grey mt-1 ">{{ post.content | safe }}</div>-->
-        <div class="markdown-body mt-1">{{ post.content | safe }}</div>
+        <div class="markdown-body mt-4">{{ post.content | safe }}</div>
 </div>
 
 <hr>
