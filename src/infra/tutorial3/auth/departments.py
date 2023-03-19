@@ -45,6 +45,7 @@ class DepartmentType(enum.IntEnum):
             return '대표원장' if is_leader else '원장'
         else:
             raise ValueError(f'Input valid Type {[(choice.value, choice.name) for choice in self.__class__]}')
+
     def find_position(self, is_leader, dep_name):
         # 1) 부/장부서 => ~장, ~부장
         if self == DepartmentType.일인부서:
@@ -792,55 +793,55 @@ class Department(BaseModel):
         # 0 division 가능성이 있으면 = (cls.path / case([(cls._N == 0, null())], else_=cls.colC), /는 지원되나 //는 지원안됨. func.round()써던지 해야할 듯.?
         return func.length(cls.path) / cls._N - 1
 
-    @classmethod
-    def get_by_name(cls, name: str):
-        with DBConnectionHandler() as db:
-            dep = db.session.scalars(
-                select(cls)
-                .where(cls.status)
-                .where(cls.name == name)
-            ).first()
-            return dep
+    # @classmethod
+    # def get_by_name(cls, name: str):
+    #     with DBConnectionHandler() as db:
+    #         dep = db.session.scalars(
+    #             select(cls)
+    #             .where(cls.status)
+    #             .where(cls.name == name)
+    #         ).first()
+    #         return dep
 
-    @classmethod
-    def get_by_id(cls, id: int):
-        with DBConnectionHandler() as db:
-            dep = db.session.scalars(
-                select(cls)
-                .where(cls.status)
-                .where(cls.id == id)
-            ).first()
-            return dep
+    # @classmethod
+    # def get_by_id(cls, id: int):
+    #     with DBConnectionHandler() as db:
+    #         dep = db.session.scalars(
+    #             select(cls)
+    #             .where(cls.status)
+    #             .where(cls.id == id)
+    #         ).first()
+    #         return dep
 
-    @classmethod
-    def get_all(cls):
-        with DBConnectionHandler() as db:
-            depts = db.session.scalars(
-                select(cls)
-                .where(cls.status)
-                .order_by(cls.path)
-            ).all()
-            return depts
+    # @classmethod
+    # def get_all(cls):
+    #     with DBConnectionHandler() as db:
+    #         depts = db.session.scalars(
+    #             select(cls)
+    #             .where(cls.status)
+    #             .order_by(cls.path)
+    #         ).all()
+    #         return depts
 
-    @classmethod
-    def get_all_tuple_list(cls):
-        with DBConnectionHandler() as db:
-            depts = db.session.scalars(
-                select(cls)
-                .where(cls.status)
-                .order_by(cls.path)
-            ).all()
-            return [(x.id, x.name) for x in depts]
-
-    @classmethod
-    def get_all_infos(cls):
-        with DBConnectionHandler() as db:
-            depts = db.session.scalars(
-                select(cls)
-                .where(cls.status)
-                .order_by(cls.path)
-            ).all()
-            return [{'id': x.id, 'name': x.name} for x in depts]
+    # @classmethod
+    # def get_all_tuple_list(cls):
+    #     with DBConnectionHandler() as db:
+    #         depts = db.session.scalars(
+    #             select(cls)
+    #             .where(cls.status)
+    #             .order_by(cls.path)
+    #         ).all()
+    #         return [(x.id, x.name) for x in depts]
+    #
+    # @classmethod
+    # def get_all_infos(cls):
+    #     with DBConnectionHandler() as db:
+    #         depts = db.session.scalars(
+    #             select(cls)
+    #             .where(cls.status)
+    #             .order_by(cls.path)
+    #         ).all()
+    #         return [{'id': x.id, 'name': x.name} for x in depts]
 
     # root부서들부터 자식들 탐색할 수 있게 먼저 호출
     # @classmethod
@@ -868,7 +869,7 @@ class Department(BaseModel):
         => [Department(id=1, name='1인부서', parent_id=None, sort=1, path='001')]
 
         """
-        obj = Department.filter_by(session=session, parent_id=None)
+        obj = cls.filter_by(session=session, parent_id=None)
         if active:
             obj = obj.filter_by(status=True)
 
@@ -925,13 +926,15 @@ class Department(BaseModel):
         if cls.filter_by(name=kwargs['name']).exists():
             return False, '이미 존재하는 부서입니다.'
 
+        parent_id = kwargs.get('parent_id', None)
+
         # 2) 해당부모의 자식부서가 이미 10개를 채웠는지 확인
-        count_in_same_level = cls.filter_by(parent_id=kwargs['parent_id']).count()
+        count_in_same_level = cls.filter_by(parent_id=parent_id).count()
         if count_in_same_level >= cls._MAX_COUNT_IN_SAME_LEVEL:
             return False, '자식부서는 10개를 초과할 수 없습니다.'
 
         # 3) 최상위 부서의 생성라면, 이미 10개가 채워졌는지 확인
-        if not kwargs['parent_id'] and cls.filter_by(
+        if not parent_id and cls.filter_by(
                 parent_id=None).count() >= cls._MAX_COUNT_IN_SAME_LEVEL:
             return False, '최상위 부서는 10개로 제한되어 있습니다.'
 
@@ -943,7 +946,7 @@ class Department(BaseModel):
         # (4) [path] -> 예비 level -> 검증
         kwargs['sort'] = sort = count_in_same_level + 1
 
-        parent = cls.filter_by(id=kwargs['parent_id']).first()
+        parent = cls.filter_by(id=parent_id).first()
         path_prefix = parent.path if parent else ''
         kwargs['path'] = path = path_prefix + f'{sort:0{cls._N}d}'
 

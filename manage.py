@@ -9,6 +9,7 @@ from sqlalchemy.orm import aliased
 
 from src.infra.config.connection import db, DBConnectionHandler
 from src.infra.tutorial3 import *
+from src.infra.tutorial3.categories import Comment
 from src.infra.tutorial3.mixins.base_query import BaseQuery
 from src.infra.tutorial3.wrapper.chartwrapper import Chart
 from src.main.config import create_app
@@ -32,6 +33,7 @@ def make_shell_context():
                 EmployeeInvite=EmployeeInvite,
                 JobStatusType=JobStatusType,
                 Roles=Roles,
+                Comment=Comment,
                 BaseQuery=BaseQuery,
                 Chart=Chart,
                 today=datetime.date.today(),

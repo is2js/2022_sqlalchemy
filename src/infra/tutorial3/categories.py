@@ -1,8 +1,8 @@
 import enum
 
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, Table, BigInteger
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, Table, BigInteger, Boolean, func
 from sqlalchemy.ext.hybrid import hybrid_property, hybrid_method
-from sqlalchemy.orm import relationship, backref
+from sqlalchemy.orm import relationship, backref, Session
 
 from src.infra.tutorial3.common.base import BaseModel  # , IntEnum
 from src.infra.tutorial3.common.int_enum import IntEnum
@@ -122,17 +122,21 @@ class Post(BaseModel):
 
     # cascade delete 1: Fk에 DB레벨 제약조건을 on~ 으로 준다.
     # cascade delete 2: one의 relationship에 passive_delets=True를 줘서, DB에게 cascade를 맞긴다.
-    post_counts = relationship('PostCount', passive_deletes=True)#, back_populates='post')
+    post_counts = relationship('PostCount', passive_deletes=True)  # , back_populates='post')
 
     # 글 작성자(직원) fk 칼럼 추가
     author_id = Column(Integer().with_variant(BigInteger, "postgresql"), ForeignKey('employees.id', ondelete="CASCADE"))
     # Many create시  one객체로 fill하려면, Many -> One의 relation 추가
     author = relationship('Employee', foreign_keys=[author_id], back_populates='posts', uselist=False)
 
+    # 댓글(many)에 대한 relationship for passive_deletes
+    comments = relationship('Comment', passive_deletes=True,  back_populates='post')
+
     @hybrid_method
     def type(cls, type_enum, mapper=None):
         mapper = mapper or cls
         return mapper.has_type == type_enum.value
+
 
 
 # Post Count 모델 작성
@@ -149,6 +153,130 @@ class PostCount(BaseModel):
     post_id = Column(Integer().with_variant(BigInteger, "postgresql"),
                      ForeignKey('posts.id', ondelete="CASCADE"), )
 
+
+class Comment(BaseModel):
+    __tablename__ = 'comments'
+    _N = 3  # path를 만들 때, 자를 단위
+    _MAX_LEVEL = 2  # 첫자식을 1로 보는 join_depth 개념
+    id = Column(Integer().with_variant(BigInteger, "postgresql"), primary_key=True)
+
+    # 부모 글
+    post_id = Column(Integer().with_variant(BigInteger, "postgresql"), ForeignKey('posts.id', ondelete="CASCADE"))
+    post = relationship('Post', foreign_keys=[post_id], uselist=False, back_populates='comments')
+
+    # 글 작성자(직원) fk 칼럼 추가
+    author_id = Column(Integer().with_variant(BigInteger, "postgresql"),
+                       ForeignKey('employees.id', ondelete="SET NULL"),
+                       nullable=True
+                       )
+    # Many create시  one객체로 fill하려면, Many -> One의 relation 추가
+    author = relationship('Employee', foreign_keys=[author_id], uselist=False,
+                          # back_populates='comments',
+                          )
+
+    content = Column(Text().with_variant(String(3000), 'mysql'), nullable=False)
+
+    parent_id = Column(Integer, ForeignKey('comments.id', ondelete='cascade'),
+                       comment="상위 댓글 id",
+                       nullable=True)
+    parent = relationship('Comment', remote_side=[id], passive_deletes=True,
+                          back_populates='replies',
+                          )
+    replies = relationship('Comment', order_by='Comment.path', back_populates='parent')
+
+    status = Column(Boolean, comment='댓글 사용 상태(0 미사용, 1사용)', default=1)
+
+    # dynamic field
+    sort = Column(Integer, comment="댓글 순서", nullable=True)
+    path = Column(Text().with_variant(String(100), 'mysql'), index=True, nullable=True)
+
+    @hybrid_property
+    def level(self):
+        return len(self.path) // self._N - 1
+
+    @level.expression
+    def level(cls):
+        return func.length(cls.path) / cls._N - 1
+
+    @classmethod
+    def create(cls, session: Session = None, auto_commit=True, **kwargs):
+        parent_id = kwargs.get('parent_id', None)
+
+        # 현재 댓글의 순서
+        count_in_same_level = cls.filter_by(parent_id=parent_id).count()
+        # if count_in_same_level >= cls._MAX_COUNT_IN_SAME_LEVEL:
+        #     return False, '자식부서는 10개를 초과할 수 없습니다.'
+        kwargs['sort'] = sort = count_in_same_level + 1
+
+
+        # 부모기반 path만들기
+        parent = cls.filter_by(id=parent_id).first()
+        path_prefix = parent.path if parent else ''
+        kwargs['path'] = path = path_prefix + f'{sort:0{cls._N}d}'
+
+        # 레벨 제한
+        level = len(path) // cls._N - 1
+        if level > cls._MAX_LEVEL:
+            return False, f'댓글의 깊이는 {cls._MAX_LEVEL}단계까지만 허용합니다.'
+
+        return super().create(**kwargs)
+
+    @classmethod
+    def get_roots(cls, active=False, session:Session = None):
+        """
+        Comment.get_roots()
+
+        [<Comment#1>, <Comment#2>, <Comment#3>]
+        """
+        obj = cls.filter_by(session=session, parent_id=None, post_id=None)
+        if active:
+            obj = obj.filter_by(status=True)
+
+        return obj.order_by('path').all()
+
+    @classmethod
+    def get_tree_of_roots(cls, active=False, session: Session = None):
+
+        roots = cls.get_roots(active=active, session=session)
+
+        tree_list = []
+        for root in roots:
+            tree_list.append(
+                root.to_dict2(
+                    nested=cls._MAX_LEVEL, relations='replies', hybrid_attrs=True,
+                    exclude=['path', 'pub_date'],
+                    session=session
+                )
+            )
+
+        return dict(data=tree_list)
+
+    @classmethod
+    def get_tree_from(cls, post_id, active=False, session:Session=None):
+        # 최상위 comment - 특정 post_id에 소속된
+        obj = cls.filter_by(session=session, parent_id=None, post_id=post_id)
+        if active:
+            obj = obj.filter_by(status=True)
+
+        comments = obj.order_by('path').all()
+
+        # comment들을 to_dict를 돌려 replies 포함시키기
+        tree_list = []
+        for comment in comments:
+            tree_list.append(
+                comment.to_dict2(
+                    nested=cls._MAX_LEVEL, relations='replies', hybrid_attrs=True,
+                    exclude=['path', 'pub_date'],
+                    session=session
+                )
+            )
+
+        return dict(data=tree_list)
+
+
+
+
+
 # 작성자  유저 -> 해당그룹의 직원일 때만 -> 읽은사람에 추가
 # class PostReader(BaseModel):
 #     __tablename__ = 'postreaders'
@@ -157,7 +285,6 @@ class PostCount(BaseModel):
 #     post_id = Column(Integer().with_variant(BigInteger, "postgresql"),
 #                      ForeignKey('posts.id', ondelete="CASCADE"), )
 #     employee_id
-
 
 
 class Tag(BaseModel):
