@@ -2,26 +2,26 @@
 
 {% block extra_head_style %}
 <link
-  rel="stylesheet"
-  href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.1.0/github-markdown-light.min.css"
-  integrity="sha512-zb2pp+R+czM7GAemdSUQt6jFmr3qCo6ikvBgVU6F5GvwEDR0C2sefFiPEJ9QUpmAKdD5EqDUdNRtbOYnbF/eyQ=="
-  crossorigin="anonymous"
-  referrerpolicy="no-referrer"
+        rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.1.0/github-markdown-light.min.css"
+        integrity="sha512-zb2pp+R+czM7GAemdSUQt6jFmr3qCo6ikvBgVU6F5GvwEDR0C2sefFiPEJ9QUpmAKdD5EqDUdNRtbOYnbF/eyQ=="
+        crossorigin="anonymous"
+        referrerpolicy="no-referrer"
 />
 {% endblock extra_head_style %}
 
 {% block title %}
-    {{ post.title }}
+{{ post.title }}
 {% endblock title %}
 
 {% block breadcrumb %}
-    <nav class="breadcrumb is-small" aria-label="breadcrumbs">
-        <ul>
-            <li><a href="/">Home</a></li>
-            <li><a href="{{ url_for('main.category', id=post.category.id) }}">{{ post.category.name }}</a></li>
-            <li class="is-active"><a href="#" aria-current="page">{{ post.title }}</a></li>
-        </ul>
-    </nav>
+<nav class="breadcrumb is-small" aria-label="breadcrumbs">
+    <ul>
+        <li><a href="/">Home</a></li>
+        <li><a href="{{ url_for('main.category', id=post.category.id) }}">{{ post.category.name }}</a></li>
+        <li class="is-active"><a href="#" aria-current="page">{{ post.title }}</a></li>
+    </ul>
+</nav>
 {% endblock breadcrumb %}
 
 {% block cate_box %}
@@ -34,57 +34,308 @@
             {{ post.title }}
         </span>
     </h1>
-            <!-- [좌측정렬] 프로필 | 이름 | 시간 -->
-            <div class="is-pulled-left">
-                <div class="has-text-grey-light is-size-6 mt-1 is-align-items-center is-flex">
-                    <figure class="image  mr-2 is-inline-block" style="border: none;">
-                        <img class="is-rounded" style="height: 36px; width: 36px;"
-                             src="
+    <!-- [좌측정렬] 프로필 | 이름 | 시간 -->
+    <div class="is-pulled-left">
+        <div class="has-text-grey-light is-size-6 mt-1 is-align-items-center is-flex">
+            <figure class="image  mr-2 is-inline-block" style="border: none;">
+                <img class="is-rounded" style="height: 36px; width: 36px;"
+                     src="
                                  {% if post.author.user.avatar %}
                                  {{url_for('download_file', filename=post.author.user.avatar)}}
                                  {% else %}
                                  {{url_for('static', filename='/img/user/default_avatar.svg')}}
                                  {% endif %}
                                 "
-                             alt="{{ g.user.username }}">
-                    </figure>
-                    <span class="has-text-black has-text-weight-bold">
+                     alt="{{ g.user.username }}">
+            </figure>
+            <span class="has-text-black has-text-weight-bold">
                         {{ post.author.name }}
                     </span>
-                    <span class="icon"><i class="mdi mdi-clipboard-text-clock-outline"></i></span>{{ post.add_date |
-                    feed_datetime(is_feed=True) }}
-                </div>
-            </div>
+            <span class="icon"><i class="mdi mdi-clipboard-text-clock-outline"></i></span>{{ post.add_date |
+            feed_datetime(is_feed=True) }}
+        </div>
+    </div>
 
-            <!-- [우측정렬] 조회수 + 태그 -->
-            <div class="is-pulled-right mr-2">
-                <div class="has-text-grey is-size-6">
-                    {% if post.tags %}
-                    <span class="icon"><i class="mdi mdi-tag-heart-outline"></i></span>{{ post.tags|join(',') }}
-                    {% endif %}
-                    <span class="icon"><i class="mdi mdi-eye-outline"></i></span> {{ post.view_count }}
-                </div>
-            </div>
-            <!-- [좌우정렬 후 cleaerfix] -->
-            <div class="is-clearfix"></div>
+    <!-- [우측정렬] 조회수 + 태그 -->
+    <div class="is-pulled-right mr-2">
+        <div class="has-text-grey is-size-6">
+            {% if post.tags %}
+            <span class="icon"><i class="mdi mdi-tag-heart-outline"></i></span>{{ post.tags|join(',') }}
+            {% endif %}
+            <span class="icon"><i class="mdi mdi-eye-outline"></i></span> {{ post.view_count }}
+        </div>
+    </div>
+    <!-- [좌우정렬 후 cleaerfix] -->
+    <div class="is-clearfix"></div>
 
     <!-- markdown 적용예정인 필드는 |safe를 달아준다.   -->
-<!--        <div class="content has-text-grey mt-1 ">{{ post.content | safe }}</div>-->
-        <div class="markdown-body mt-4">{{ post.content | safe }}</div>
+    <!--        <div class="content has-text-grey mt-1 ">{{ post.content | safe }}</div>-->
+    <div class="markdown-body mt-4">{{ post.content | safe }}</div>
 </div>
 
 <hr>
 <!-- NEW 이전글 다음글을 div.level태그 안에 left/right로 만들어준다.-->
-<div class="level">
+<div class="level is-size-7">
     <div class="level-left">
         {% if prev_post %}
-            이전 글：<a href="{{ url_for('main.post_detail', category_id=prev_post.category_id, id=prev_post.id) }}">{{ prev_post.title }}</a>
+        이전 글：<a href="{{ url_for('main.post_detail', category_id=prev_post.category_id, id=prev_post.id) }}">
+            {{prev_post.title }}</a>
         {% endif %}
     </div>
     <div class="level-right">
         {% if next_post %}
-            다음 글：<a href="{{ url_for('main.post_detail', category_id=next_post.category_id, id=next_post.id) }}"> {{ next_post.title }} </a>
+        다음 글：<a href="{{ url_for('main.post_detail', category_id=next_post.category_id, id=next_post.id) }}">
+            {{next_post.title }} </a>
         {% endif %}
     </div>
 </div>
+<!-- 댓글 추가 -->
+<div>
+    <span class="is-size-6 has-text-weight-bold"> 댓글 </span>
+    <comments :comments="comments"/>
+</div>
 {% endblock cate_box %}
+
+
+<!-- 댓글 관련 소스 -->
+{% block extra_foot_script %}
+<script>
+    var username = 'jesuskinto'
+
+    var NewComment = {
+        delimiters: ['{$', '$}'],  // jinja와 같이 쓸 vue 변수
+        template: `
+<article class="media">
+    <!-- avatar -->
+    <figure class="media-left image is-32x32">
+        <img class="is-rounded" style="height: 100%; width: 100%" src="https://bulma.io/images/placeholders/128x128.png" />
+    </figure>
+    <!-- textarea + button -->
+    <div class="media-content">
+        <b-input type="textarea" class="is-rounded" size="is-small" rows="2" placeholder="댓글을 입력해주세요" />
+        <b-button class="mt-1 is-rounded" size="is-small"> 등록 </b-button>
+  </div>
+</article>
+   `
+    }
+
+    var Comment = {
+        delimiters: ['{$', '$}'],  // jinja와 같이 쓸 vue 변수
+        template: `
+<article class="media my-1">
+    <!-- avatar -->
+    <figure class="media-left image is-32x32">
+        <img class="is-rounded" style="height: 100% width: 100%" src="https://bulma.io/images/placeholders/96x96.png" />
+    </figure>
+    <div class="media-content">
+    <div class="content is-size-7">
+        <div class="level mb-1">
+            <div class="level-left m-0">
+                <!--  좌측 이름 | 시간  -->
+                <strong :class="author_name == '관리자' ? 'tag is-primary is-rounded' : ''">
+                    {$ author_name $}
+                </strong>
+                <span class="has-text-grey mx-1">
+                    {$ add_date $}
+                </span>
+            </div>
+            <div class="level-right m-0 has-text-weight-bold">
+                <small>
+                    <!--  우측 좋아요 -->
+                    <a @click="changeLike()" class="mx-1">
+                      <b-tooltip :label="cleanlikes" multilined type="is-black">
+                        <span class="icon" style="width: 10px"><i class="mdi mdi-thumb-up-outline"></i></span>
+                        좋아요
+                      </b-tooltip>
+                    </a>
+                    <!--  우측 댓글 -->
+                    <span v-show="level < LIMIT_OF_COMMENTS">
+                      <a @click="showReply = !showReply" class="mx-1">
+                        <span class="icon" style="width: 10px"><i class="mdi mdi-comment-outline"></i></span>
+                        댓글
+                       </a>
+                    </span>
+                    <!--  우측 dropdown -->
+                    <b-dropdown aria-role="list"
+                                position="is-bottom-left"
+                                mobile-modal="false">
+                        <template #trigger>
+                            <!--  dropdown icon -->
+                            <span class="icon" style="width: 10px">
+                                <i class="mdi mdi-dots-vertical" role="button"></i>
+                            </span>
+                        </template>
+
+                        <!--  dropdown list -->
+                        <b-dropdown-item aria-role="listitem">
+                            <b-icon class="media-left" icon="square-edit-outline" size="is-small"></b-icon>
+                            <small>수정</small>
+                        </b-dropdown-item>
+                        <b-dropdown-item aria-role="listitem">
+                            <b-icon class="media-left" icon="delete-outline" size="is-small"></b-icon>
+                            <small>삭제</small>
+                        </b-dropdown-item>
+                        <b-dropdown-item aria-role="listitem">
+                            <b-icon class="media-left" icon="alert" size="is-small"></b-icon>
+                            <small>신고</small>
+                        </b-dropdown-item>
+                    </b-dropdown>
+                  </small>
+            </div>
+        </div>
+        <p>
+          {$ content $}
+        </p>
+      </div>
+      <!-- toggle시 댓글 등록 창 -->
+      <new-comment v-show="showReply" />
+      <!-- 정해진 레벨검사 성공시      -->
+      <div v-if="level < LIMIT_OF_COMMENTS">
+        <comment v-for="(reply, i) in replies" :key="i" :level="level + 1" v-bind="reply" />
+      </div>
+    </div>
+</article>
+     `,
+        name: 'Comment',
+        components: {
+            NewComment
+        },
+        props: {
+            level: {
+                type: Number,
+                default: 0
+            },
+            author_name: {
+                type: String,
+                default: ''
+            },
+            content: {
+                type: String,
+                default: ''
+            },
+            replies: {
+                type: Array,
+                default: () => []
+            },
+            likes: {
+                type: Array,
+                default: () => []
+            },
+            add_date: {
+                type: String,
+                default: ''
+            }
+        },
+        data() {
+            return {
+                showReply: false,
+                LIMIT_OF_COMMENTS: 2
+            }
+        },
+        computed: {
+            isLike() {
+                return this.likes.includes(username)
+            },
+            cleanlikes() {
+                return this.likes.toString().replace(/,/g, ',\n')
+            }
+        },
+        methods: {
+            changeLike() {
+                if (this.likes.includes(username))
+                    this.likes = this.likes.filter((item) => item !== username)
+                else this.likes.push(username)
+            }
+        }
+    }
+
+    var Comments = {
+        delimiters: ['{$', '$}'],  // jinja와 같이 쓸 vue 변수
+        template: `
+        <div class="card-content is-small">
+            <new-comment />
+            <comment v-for="(comment, i) in comments" :key="i" :level="0" v-bind="comment" />
+        </div>
+      `,
+        components: {
+            Comment,
+            NewComment
+        },
+        props: {
+            comments: {
+                type: Array,
+                default: () => []
+            }
+        }
+    }
+</script>
+{% endblock extra_foot_script %}
+
+{% block vue_mixins %}
+<script>
+    // Vue.component('tree', DraggableTree);
+    const myMixin = {
+        components: {
+            // 'tree': DraggableTree
+            // -> <comments :comments="comments" />
+            Comments
+        },
+
+        data() {
+            return {
+                comments: [
+                    {
+                        avatar: 'https://bulma.io/images/placeholders/96x96.png',
+                        author_name: '킴성태',
+                        content:
+                            'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis porta eros lacus, nec ultricies elit blandit non. Suspendisse pellentesque mauris sit amet dolor blandit rutrum. Nunc in tempus turpis.',
+                        add_date: '3 hrs',
+                        likes: ['jesuskinto', 'julioLugo', 'gerardPaez'],
+                        replies: [
+                            {
+                                avatar: 'https://bulma.io/images/placeholders/96x96.png',
+                                author_name: '관리자',
+                                content:
+                                    'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis porta eros lacus, nec ultricies elit blandit non. Suspendisse pellentesque mauris sit amet dolor blandit rutrum. Nunc in tempus turpis.',
+                                add_date: '3 hrs',
+                                likes: ['jesuskinto', 'julioLugo', 'gerardPaez'],
+                                replies: [
+                                    {
+                                        avatar: 'https://bulma.io/images/placeholders/96x96.png',
+                                        author_name: 'Barbara Middleton',
+                                        content:
+                                            'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis porta eros lacus, nec ultricies elit blandit non. Suspendisse pellentesque mauris sit amet dolor blandit rutrum. Nunc in tempus turpis.',
+                                        add_date: '3 hrs',
+                                        likes: ['jesuskinto', 'julioLugo', 'gerardPaez']
+                                    }
+                                ]
+                            },
+                            {
+                                avatar: 'https://bulma.io/images/placeholders/96x96.png',
+                                author_name: 'Barbara Middleton',
+                                content:
+                                    'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis porta eros lacus, nec ultricies elit blandit non. Suspendisse pellentesque mauris sit amet dolor blandit rutrum. Nunc in tempus turpis.',
+                                add_date: '3 hrs',
+                                likes: ['jesuskinto', 'julioLugo', 'gerardPaez']
+                            }
+                        ]
+                    },
+                    {
+                        avatar: 'https://bulma.io/images/placeholders/96x96.png',
+                        author_name: 'Barbara Middleton',
+                        content:
+                            'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis porta eros lacus, nec ultricies elit blandit non. Suspendisse pellentesque mauris sit amet dolor blandit rutrum. Nunc in tempus turpis.',
+                        add_date: '3 hrs',
+                        likes: ['jesuskinto', 'julioLugo', 'gerardPaez']
+                    }
+                ]
+            }
+        }
+    };
+</script>
+{% endblock vue_mixins %}
+
+
+{% block vue_script %}
+
+{% endblock vue_script %}
