@@ -36,15 +36,50 @@ def edit():
     payload = request.get_json()
     comment = Comment.filter_by(id=payload['id']).first()
     if not comment:
-        return make_response(dict(message='해당 부서가 존재하지 않습니다'), 409)
+        return make_response(dict(message='해당 댓글이 존재하지 않습니다'), 409)
 
     result, msg = comment.update(content=payload['content'])
 
     if result:
         updated_comment = result.to_dict2(nested=Comment._MAX_LEVEL, relations='replies',
-                                               hybrid_attrs=True,
-                                               exclude=['path', 'sort'])
+                                          hybrid_attrs=True,
+                                          exclude=['path', 'sort'])
 
         return make_response(dict(updated_comment=updated_comment, message="댓글이 수정 완료."), 200)
     else:
         return make_response(dict(message="댓글 수정 실패"), 409)
+
+
+@comment_bp.route("/blind", methods=['PUT'])
+def blind():
+    payload = request.get_json()
+    comment = Comment.filter_by(id=payload['id']).first()
+    if not comment:
+        return make_response(dict(message='해당 부서가 존재하지 않습니다'), 409)
+
+    result, msg = comment.update(status=0)
+
+    if result:
+        updated_comment = result.to_dict2(nested=Comment._MAX_LEVEL, relations='replies',
+                                          hybrid_attrs=True,
+                                          exclude=['path', 'sort'])
+
+        return make_response(dict(updated_comment=updated_comment, message="대댓글이 존재하여 BLIND 처리."), 200)
+    else:
+        return make_response(dict(message="댓글 삭제 실패"), 409)
+
+
+@comment_bp.route("/remove", methods=['DELETE'])
+def remove():
+    payload = request.get_json()
+
+    comment = Comment.filter_by(id=payload['id']).first()
+    if not comment:
+        return make_response(dict(message='해당 부서가 존재하지 않습니다'), 409)
+
+    result, msg = comment.delete()
+
+    if result:
+        return make_response(dict(message='댓글 삭제 성공'), 200)
+    else:
+        return make_response(dict(message='댓글 삭제 실패'), 409)

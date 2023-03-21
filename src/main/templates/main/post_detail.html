@@ -179,10 +179,12 @@
 </article>
    `,
         data() {
-            return {}
+            return {
+                content: '',
+            }
         },
         props: {
-            content: {
+            parent_content: {
                 type: String,
                 default: ''
             },
@@ -199,6 +201,9 @@
             emitCancel() {
                 this.$emit('cancel-comment');
             }
+        },
+        created() {
+            this.content = this.parent_content;
         }
     }
 
@@ -223,7 +228,7 @@
             <div class="level-left m-0">
                 <!--  좌측 이름 | 시간  -->
                 <strong :class="child.author_name == '{{post.author.name}}' ? 'tag is-primary is-light is-rounded' : ''"
-                :style="child.author_name == '{{post.author.name}}' ? 'font-size: 0.6rem' : ''"
+                        :style="child.author_name == '{{post.author.name}}' ? 'font-size: 0.6rem' : ''"
                 >
                     {$ child.author_name $}
                 </strong>
@@ -272,7 +277,10 @@
                   </small>
             </div>
         </div>
-        <p style="white-space: pre-line;">{$ child.content $}</p>
+        <p style="white-space: pre-line;" v-if="child.status" >{$ child.content $}</p>
+        <p v-else class="has-text-grey has-text-weight-bold">
+            [삭제 처리된 댓글입니다.]
+        </p>
          <p class="is-size-7">
             <small>
                 <!--  좋아요 -->
@@ -301,7 +309,7 @@
       </div>
       <!-- toggle시 댓글 수정 창 -->
       <edit-comment v-show="showEditReply" @edit-comment="editComment" @cancel-comment="cancelComment"
-        :content="child.content"
+        :parent_content="child.content"
       />
 <!--      <new-comment v-show="showReply" />-->
       <!-- toggle시 대댓글 등록 창 -->
@@ -426,10 +434,6 @@
                 });
             },
 
-            deleteSubComment(obj) {
-                this.child.replies.splice(this.child.replies.indexOf(obj), 1);
-            },
-
             editComment(content) {
                 // axios
                 let payload = {
@@ -449,7 +453,12 @@
                         return;
                     }
 
-                    this.child = res.data.updated_comment
+                    // this.child = res.data.updated_comment;
+                    // 부모에게 받은 props를 통째로 할당하면 에러 난다
+                    // 바뀐 부분만 할당해주자.
+                    let updated_comment = res.data.updated_comment;
+                    this.child.content = updated_comment.content;
+                    this.child.pub_date = updated_comment.pub_date;
 
 
                     this.toast(res.data.message);
@@ -467,6 +476,68 @@
             },
             cancelComment() {
                 this.showEditReply = !this.showEditReply;
+            },
+
+            deleteSubComment(obj) {
+                if (obj.replies && obj.replies.length > 0) {
+                    this.blindComment(obj)
+                } else {
+                    this.removeComment(obj)
+                }
+            },
+            removeComment(obj) {
+                const payload = {
+                    id: obj.id
+                }
+                axios({
+                    url: '{{ url_for("comment.remove") }}',
+                    method: 'delete',
+                    data: payload,
+                    headers: {'Content-type': 'application/json;charset=utf-8'},
+                }).then(res => {
+                    if (res.status >= 300) {
+                        this.toast(res.data.message, 'is-danger');
+                        return;
+                    }
+                    // 통신 성공 + (status변경)로직 성공
+                    //tree에서 해당 node 삭제
+                    this.child.replies.splice(this.child.replies.indexOf(obj), 1);
+                    this.toast(res.data.message);
+
+                }).catch(err => {
+                    console.log(err)
+                    this.toast(err.response ? err.response.data.message : '서버와 연결이 올바르지 않습니다.');
+                }).finally(() => {
+                });
+            },
+            blindComment(obj){
+                 const payload = {
+                    id: obj.id
+                }
+                axios({
+                    url: '{{ url_for("comment.blind") }}',
+                    method: 'put',
+                    data: payload,
+                    headers: {'Content-type': 'application/json;charset=utf-8'},
+                }).then(res => {
+                    if (res.status >= 300) {
+                        this.toast(res.data.message, 'is-danger');
+                        return;
+                    }
+                    // 타겟을 찾고, 거기의 필드만 바꾼다(props는 통째로 변환 X)
+                    let targetComment = this.child.replies[this.child.replies.indexOf(obj)];
+                    let updatedComment = res.data.updated_comment;
+
+                    targetComment.status = updatedComment.status;
+                    targetComment.pub_date = updatedComment.pub_date;
+
+                    this.toast(res.data.message);
+
+                }).catch(err => {
+                    console.log(err)
+                    this.toast(err.response ? err.response.data.message : '서버와 연결이 올바르지 않습니다.');
+                }).finally(() => {
+                });
             }
         }
     }
@@ -541,7 +612,6 @@
                     }
 
                     // 통신 성공 + (DB 순서변경)로직
-                    console.log('res.data.new_comment >> ', res.data.new_comment);
                     this.comments.push(res.data.new_comment);
 
 
@@ -554,7 +624,67 @@
                 });
             },
             deleteComment(obj) {
-                this.comments.splice(this.comments.indexOf(obj), 1)
+                if (obj.replies && obj.replies.length > 0) {
+                    this.blindComment(obj)
+                } else {
+                    this.removeComment(obj)
+                }
+            },
+            removeComment(obj) {
+                const payload = {
+                    id: obj.id
+                }
+                axios({
+                    url: '{{ url_for("comment.remove") }}',
+                    method: 'delete',
+                    data: payload,
+                    headers: {'Content-type': 'application/json;charset=utf-8'},
+                }).then(res => {
+                    if (res.status >= 300) {
+                        this.toast(res.data.message, 'is-danger');
+                        return;
+                    }
+                    // 통신 성공 + (status변경)로직 성공
+                    //tree에서 해당 node 삭제
+                    this.comments.splice(this.comments.indexOf(obj), 1);
+                    this.toast(res.data.message);
+
+                }).catch(err => {
+                    console.log(err)
+                    this.toast(err.response ? err.response.data.message : '서버와 연결이 올바르지 않습니다.');
+                }).finally(() => {
+                });
+            },
+            blindComment(obj) {
+                const payload = {
+                    id: obj.id
+                }
+                axios({
+                    url: '{{ url_for("comment.blind") }}',
+                    method: 'put',
+                    data: payload,
+                    headers: {'Content-type': 'application/json;charset=utf-8'},
+                }).then(res => {
+                    if (res.status >= 300) {
+                        this.toast(res.data.message, 'is-danger');
+                        return;
+                    }
+
+                    // 타겟을 찾고, 거기의 필드만 바꾼다(props는 통째로 변환 X)
+                    let targetComment = this.comments[this.comments.indexOf(obj)];
+                    let updatedComment = res.data.updated_comment;
+
+                    targetComment.status = updatedComment.status;
+                    targetComment.pub_date = updatedComment.pub_date;
+
+
+                    this.toast(res.data.message);
+
+                }).catch(err => {
+                    console.log(err)
+                    this.toast(err.response ? err.response.data.message : '서버와 연결이 올바르지 않습니다.');
+                }).finally(() => {
+                });
             }
         }
     }
@@ -636,7 +766,6 @@
                         this.toast(res.data.message)
                         return;
                     }
-                    console.log('res.data.tree.data >> ', res.data.tree.data);
 
                     this.comments = res.data.tree.data;
                 }).catch(err => {

@@ -288,7 +288,7 @@ class Comment(BaseModel):
     # column내용과 일치하는 propery를 만들면 recursion에러난다.
     @hybrid_property
     def feed_date(self):
-        return feed_datetime(self.add_date, is_feed=True, k=365)
+        return feed_datetime(self.pub_date, is_feed=True, k=365)
 
     @hybrid_property
     def author_name(self):
