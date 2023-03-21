@@ -139,6 +139,10 @@ class Post(BaseModel):
         mapper = mapper or cls
         return mapper.has_type == type_enum.value
 
+    @hybrid_property
+    def comment_count(self):
+        return len(self.comments)
+
 
 # Post Count 모델 작성
 class PostCount(BaseModel):

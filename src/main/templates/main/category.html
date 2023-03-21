@@ -70,10 +70,21 @@
             <div class="has-text-grey is-size-7 ">설명: {{ post.desc }}</div>
             {% endif %}
 
-            <!-- 카테고리 -->
-            <span class="tag is-rounded my-3 is-{{post.category.icon}}">
-                    {{ post.category.name }}
-            </span>
+            <!-- 카테고리 + 댓글 갯수 -->
+            <div class="my-3 is-size-7 is-flex is-align-items-center">
+                <!-- 카테고리 -->
+                <span class="tag is-rounded is-{{post.category.icon}}">
+                        {{ post.category.name }}
+                </span>
+                <!-- 댓글 갯수 -->
+                {% if post.comment_count > 0 %}
+                <b-button class="is-rounded has-text-grey mx-2" size="is-small" style="font-size: 0.6rem"
+                >
+                    <span class="icon" style="width: 20px" ><i class="mdi mdi-comment-outline"></i></span>
+                    {{ post.comment_count }}
+                </b-button>
+                {% endif %}
+            </div>
 
         </div>
         <div class=" dropdown-divider mb-3"></div>

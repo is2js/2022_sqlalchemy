@@ -120,13 +120,15 @@ def category(id):
     # - 각각은 부모인 category 정보를(필터링 뿐만 아니라. post.category.name)을 사용함.
     # - 각각은 딸린 tags정보를
     pagination = Post.load({'category': 'selectin', 'tags': 'joined',
-                            'author': ('selectin', {'user': 'selectin'})
+                            'author': ('selectin', {'user': 'selectin'},),
+                            'comments' : 'joined' # 댓글 갯수 @h comment_count를 사용하기 위해
                             }) \
         .filter_by(category___id=id) \
         .order_by('-add_date') \
         .paginate(page, per_page=10)
 
     post_list = pagination.items
+    
 
     return render_template('main/category.html',
                            category=category,
@@ -218,16 +220,19 @@ def post_detail(category_id, id):
         .first()
 
     # post 다시 조회(업데이트 가능성때문에 load를 맨 마지막에)
-    post = Post.load({'category': 'selectin', 'tags': 'joined', 'author' : ('selectin', {'user': 'selectin'}) }) \
+    post = Post.load({'category': 'selectin', 'tags': 'joined', 'author' : ('selectin', {'user': 'selectin'}),
+
+                      }) \
         .filter_by(id=id).first()
 
     # 현재 post_id의 root comments -> 각각을 to_dict하는 메서드 호출
-    comments = Comment.get_tree_from(post.id)
+    # comments = Comment.get_tree_from(post.id)
+
 
     return render_template('main/post_detail.html',
                            post=post,
                            prev_post=prev_post, next_post=next_post,
-                           comments=comments
+                           # comments=comments
                            )
 
 
@@ -330,7 +335,9 @@ def archive(date):
     year, month = tuple(map(lambda x: int(x), yyyy_mm_compiler.findall(date)))
 
     # posts의 필터에 yyyy 필터 + mm필터를 각각 걸어서 해당하는 posts들만 추출한다.
-    pagination = Post.load({'category':'selectin', 'tags': 'joined', 'author': ('selectin', {'user': 'selectin'})}).filter_by(
+    pagination = Post.load({'category':'selectin', 'tags': 'joined', 'author': ('selectin', {'user': 'selectin'}),
+                            'comments': 'joined'  # 댓글 갯수 @h comment_count를 사용하기 위해
+                            }).filter_by(
         type=PostPublishType.SHOW,
         pub_date__year=year,
         pub_date__month=month
@@ -351,7 +358,9 @@ def tag(id):
     page = request.args.get('page', 1, type=int)
 
     tag = Tag.get(id)
-    pagination = Post.load({'category': 'selectin', 'tags': 'joined', 'author' : ('selectin', {'user': 'selectin'}) }).filter_by(tags___id=id).paginate(page, per_page=10)
+    pagination = Post.load({'category': 'selectin', 'tags': 'joined', 'author' : ('selectin', {'user': 'selectin'}),
+                            'comments': 'joined'  # 댓글 갯수 @h comment_count를 사용하기 위해
+                            }).filter_by(tags___id=id).paginate(page, per_page=10)
     post_list = pagination.items
 
     return render_template('main/tag.html', post_list=post_list, tag=tag,
@@ -362,7 +371,9 @@ def tag(id):
 def search():
     page = request.args.get('page', 1, type=int)
     word = request.args.get('word', '', type=str).strip()
-    pagination = Post.load({'category':'selectin', 'tags':'joined', 'author': ('selectin', {'user': 'selectin'})})\
+    pagination = Post.load({'category':'selectin', 'tags':'joined', 'author': ('selectin', {'user': 'selectin'}),
+                            'comments': 'joined'  # 댓글 갯수 @h comment_count를 사용하기 위해
+                            })\
         .filter_by(or_=dict(title__contains=word, content__contains=word))\
         .paginate(page, per_page=10)
 

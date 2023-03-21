@@ -8,6 +8,10 @@
         crossorigin="anonymous"
         referrerpolicy="no-referrer"
 />
+
+<!--<script src="https://unpkg.com/axios/dist/axios.min.js"></script>-->
+<script src="{{url_for('static', filename='js/axios.min.js')}}"></script>
+
 {% endblock extra_head_style %}
 
 {% block title %}
@@ -175,13 +179,12 @@
 </article>
    `,
         data() {
-            return {
-            }
+            return {}
         },
         props: {
             content: {
                 type: String,
-                default : ''
+                default: ''
             },
         },
 
@@ -193,7 +196,7 @@
                 // 보내고 비우기
                 this.content = ''
             },
-            emitCancel(){
+            emitCancel() {
                 this.$emit('cancel-comment');
             }
         }
@@ -353,7 +356,10 @@
             // },
             child: {},
             parent: {},
-            level:{},
+            level: {
+                type: Number,
+                default: 0,
+            },
 
         },
         data() {
@@ -380,19 +386,19 @@
             addComment(content) {
                 // axios
 
-               // axios 전 예시데이터
+                // axios 전 예시데이터
                 var newComment = {
-                    'content' : content,
-                    'feed_date' : '방금',
+                    'content': content,
+                    'feed_date': '방금',
                     'id': 10000,
-                    'post_id' : '{{post.id}}',
-                    'author_name' : '{{post.author.name}}',
-                    'parent_id' : this.id, // 현재 댓글id를, 새로추가될 친구의 부모id로
-                    'status' : true,
-                    'sort' : 100,
-                    'level' : this.level + 1,
+                    'post_id': '{{post.id}}',
+                    'author_name': '{{post.author.name}}',
+                    'parent_id': this.id, // 현재 댓글id를, 새로추가될 친구의 부모id로
+                    'status': true,
+                    'sort': 100,
+                    'level': this.level + 1,
                     'avatar': 'avatar/ca2c0d27fbc54111a6de0e8a724c6bcc.png',
-                    'replies' : []
+                    'replies': []
                 }
 
                 this.child.replies.push(newComment);
@@ -401,19 +407,19 @@
                 this.showReply = !this.showReply;
             },
             deleteSubComment(obj) {
-                this.child.replies.splice(this.child.replies.indexOf(obj),1);
-		    },
+                this.child.replies.splice(this.child.replies.indexOf(obj), 1);
+            },
 
-             editComment(content) {
+            editComment(content) {
                 // axios
 
-               // axios 전 예시데이터
+                // axios 전 예시데이터
                 this.child.content = content;
 
                 // 수정창 닫아주기
                 this.showEditReply = !this.showEditReply;
             },
-            cancelComment(){
+            cancelComment() {
                 this.showEditReply = !this.showEditReply;
             }
         }
@@ -445,17 +451,17 @@
             addComment(content) {
                 // axios
 
-               // axios 전 예시데이터
+                // axios 전 예시데이터
                 var newComment = {
-                    'content' : content,
-                    'feed_date' : '방금',
+                    'content': content,
+                    'feed_date': '방금',
                     'id': 999,
-                    'post_id' :' {{post.id}}',
-                    'author_name' : '{{post.author.name}}',
-                    'parent_id' : null, // 쌩 댓글 추가
-                    'status' : true,
-                    'sort' : 100,
-                    'level' : 0, // 쌩 댓글 추가
+                    'post_id': ' {{post.id}}',
+                    'author_name': '{{post.author.name}}',
+                    'parent_id': null, // 쌩 댓글 추가
+                    'status': true,
+                    'sort': 100,
+                    'level': 0, // 쌩 댓글 추가
                     'avatar': 'avatar/ca2c0d27fbc54111a6de0e8a724c6bcc.png',
                     'replies': [],
                 }
@@ -464,7 +470,7 @@
             }
             ,
             deleteComment(obj) {
-                this.comments.splice(this.comments.indexOf(obj),1)
+                this.comments.splice(this.comments.indexOf(obj), 1)
             }
         }
     }
@@ -483,7 +489,6 @@
 
         data() {
             return {
-                // comments: JSON.parse('{{ comments | tojson }}').data
                 comments: [],
                 // comments: [
                 //     {
@@ -538,7 +543,20 @@
         },
         methods: {
             getComments() {
-                this.comments = JSON.parse('{{ comments | tojson }}').data
+                axios({
+                    url: '{{ url_for("comment.all", post_id=post.id) }}',
+                    method: 'get',
+                    headers: {'Content-type': 'application/json;charset=utf-8'},
+                }).then(res => {
+                    if (res.status >= 300) {
+                        this.toast(res.data.message)
+                        return;
+                    }
+                    this.comments = res.data.tree.data;
+                }).catch(err => {
+                    this.toast(err.response ? err.response.data.message : '서버와 연결이 올바르지 않습니다.');
+                }).finally(() => {
+                });
             },
         }
     };

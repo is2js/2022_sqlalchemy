@@ -30,8 +30,6 @@ print(f"template_dir: {template_dir}\n"
 
 
 def create_app(config_name='default'):
-    print("config_name>>>", config_name)
-
     app = Flask(__name__,
                 template_folder=template_dir,
                 static_folder=static_dir,
@@ -41,7 +39,6 @@ def create_app(config_name='default'):
     # app.config["SECRET_KEY"] = app_config.SECRET_KEY
     # app_config.init_app(app)
     app.config.from_object(app_config)
-    print(app.config)
 
     ## extension객체들로 app객체 초기화
     CORS(app)
@@ -62,6 +59,7 @@ def create_app(config_name='default'):
         admin_bp,
         util_bp,
         dept_bp,
+        comment_bp,
     )
 
     app.register_blueprint(main_bp)
@@ -70,6 +68,7 @@ def create_app(config_name='default'):
     app.register_blueprint(admin_bp)
     app.register_blueprint(util_bp)
     app.register_blueprint(dept_bp)
+    app.register_blueprint(comment_bp)
 
     # 기본 / url 지정 in route.py의 function
     app.add_url_rule('/', endpoint='index', view_func=index)
