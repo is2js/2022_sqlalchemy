@@ -1,13 +1,13 @@
 import datetime
 
 
-def feed_datetime(feed_time, is_feed=True):
+def feed_datetime(feed_time, is_feed=True, k=1):
     weekdays = ['월', '화', '수', '목', '금', '토', '일']
     wd = weekdays[feed_time.weekday()]
     # ymd_format = "%Y.%m.%d %H:%M({})".format(wd)
     ymd_format = "%Y.%m.%d %H:%M".format(wd)
 
-    k = 1  # k일 이상부터는, 년월일, 그전에는 피드시간
+    # k = 1  # k일 이상부터는, 년월일, 그전에는 피드시간
 
     if not is_feed:
         formatted = feed_time.strftime(ymd_format.encode('unicode-escape').decode()).encode().decode('unicode-escape')

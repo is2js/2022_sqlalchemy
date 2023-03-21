@@ -43,7 +43,9 @@ def load_logged_in_user():
 
         #### g.user는 기본 one to one role을 이용하므로, load해서 불러온다.
         # 순서 중요. eagerload한 것을 넣어주고, update하면 eagerload안된 것이 반영됨.
-        user = User.load({'role': 'selectin'}).filter_by(id=user_id).first()
+        # user = User.load({'role': 'selectin'}).filter_by(id=user_id).first()
+        # -> 현재 접속유저의 직원명을 댓글에서 확인하기 위해 employee 추가
+        user = User.load({'role': 'selectin', 'employee' : 'selectin'}).filter_by(id=user_id).first()
         if user:
             user.update(last_seen=datetime.datetime.now())
         g.user = user

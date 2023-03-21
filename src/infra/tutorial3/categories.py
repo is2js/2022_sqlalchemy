@@ -1,3 +1,4 @@
+import datetime
 import enum
 
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, Table, BigInteger, Boolean, func
@@ -7,6 +8,7 @@ from sqlalchemy.orm import relationship, backref, Session
 from src.infra.tutorial3.common.base import BaseModel  # , IntEnum
 from src.infra.tutorial3.common.int_enum import IntEnum
 from src.infra.config.base import Base
+from src.main.templates.filters import feed_datetime
 
 
 class Category(BaseModel):
@@ -130,13 +132,12 @@ class Post(BaseModel):
     author = relationship('Employee', foreign_keys=[author_id], back_populates='posts', uselist=False)
 
     # 댓글(many)에 대한 relationship for passive_deletes
-    comments = relationship('Comment', passive_deletes=True,  back_populates='post')
+    comments = relationship('Comment', passive_deletes=True, back_populates='post')
 
     @hybrid_method
     def type(cls, type_enum, mapper=None):
         mapper = mapper or cls
         return mapper.has_type == type_enum.value
-
 
 
 # Post Count 모델 작성
@@ -208,7 +209,6 @@ class Comment(BaseModel):
         #     return False, '자식부서는 10개를 초과할 수 없습니다.'
         kwargs['sort'] = sort = count_in_same_level + 1
 
-
         # 부모기반 path만들기
         parent = cls.filter_by(id=parent_id).first()
         path_prefix = parent.path if parent else ''
@@ -222,7 +222,7 @@ class Comment(BaseModel):
         return super().create(**kwargs)
 
     @classmethod
-    def get_roots(cls, active=False, session:Session = None):
+    def get_roots(cls, active=False, session: Session = None):
         """
         Comment.get_roots()
 
@@ -252,7 +252,7 @@ class Comment(BaseModel):
         return dict(data=tree_list)
 
     @classmethod
-    def get_tree_from(cls, post_id, active=False, session:Session=None):
+    def get_tree_from(cls, post_id, active=False, session: Session = None):
         # 최상위 comment - 특정 post_id에 소속된
         obj = cls.filter_by(session=session, parent_id=None, post_id=post_id)
         if active:
@@ -266,14 +266,25 @@ class Comment(BaseModel):
             tree_list.append(
                 comment.to_dict2(
                     nested=cls._MAX_LEVEL, relations='replies', hybrid_attrs=True,
-                    exclude=['path', 'pub_date'],
+                    exclude=['path'],
                     session=session
                 )
             )
 
         return dict(data=tree_list)
 
+    # column내용과 일치하는 propery를 만들면 recursion에러난다.
+    @hybrid_property
+    def feed_date(self):
+        return feed_datetime(self.add_date, is_feed=True, k=365)
 
+    @hybrid_property
+    def author_name(self):
+        return self.author.name
+
+    @hybrid_property
+    def avatar(self):
+        return self.author.user.avatar
 
 
 

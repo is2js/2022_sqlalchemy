@@ -7,7 +7,7 @@ from sqlalchemy import select, and_, extract, or_
 
 from src.infra.config.connection import DBConnectionHandler
 from src.infra.tutorial3 import Post, Category, Tag, Banner, PostPublishType
-from src.infra.tutorial3.categories import PostCount
+from src.infra.tutorial3.categories import PostCount, Comment
 from src.infra.tutorial3.common.pagination import paginate
 from src.main.utils.get_client_ip import get_client_ip
 
@@ -221,9 +221,14 @@ def post_detail(category_id, id):
     post = Post.load({'category': 'selectin', 'tags': 'joined', 'author' : ('selectin', {'user': 'selectin'}) }) \
         .filter_by(id=id).first()
 
+    # 현재 post_id의 root comments -> 각각을 to_dict하는 메서드 호출
+    comments = Comment.get_tree_from(post.id)
+
     return render_template('main/post_detail.html',
                            post=post,
-                           prev_post=prev_post, next_post=next_post)
+                           prev_post=prev_post, next_post=next_post,
+                           comments=comments
+                           )
 
 
 # @main_bp.context_processor

@@ -79,13 +79,13 @@
     <div class="level-left">
         {% if prev_post %}
         이전 글：<a href="{{ url_for('main.post_detail', category_id=prev_post.category_id, id=prev_post.id) }}">
-            {{prev_post.title }}</a>
+        {{prev_post.title }}</a>
         {% endif %}
     </div>
     <div class="level-right">
         {% if next_post %}
         다음 글：<a href="{{ url_for('main.post_detail', category_id=next_post.category_id, id=next_post.id) }}">
-            {{next_post.title }} </a>
+        {{next_post.title }} </a>
         {% endif %}
     </div>
 </div>
@@ -94,6 +94,7 @@
     <span class="is-size-6 has-text-weight-bold"> 댓글 </span>
     <comments :comments="comments"/>
 </div>
+<pre>{$ comments $}</pre>
 {% endblock cate_box %}
 
 
@@ -107,16 +108,95 @@
         template: `
 <article class="media">
     <!-- avatar -->
-    <figure class="media-left image is-32x32">
-        <img class="is-rounded" style="height: 100%; width: 100%" src="https://bulma.io/images/placeholders/128x128.png" />
+    <figure class="media-left image">
+        <img class="is-rounded" style="height: 32px; width: 32px"
+            src="
+            {% if g.user.avatar %}
+             {{url_for('download_file', filename=g.user.avatar)}}
+             {% else %}
+             {{url_for('static', filename='/img/user/default_avatar.svg')}}
+             {% endif %}
+             "
+            alt="{{ g.user.username }}"/>
     </figure>
     <!-- textarea + button -->
     <div class="media-content">
-        <b-input type="textarea" class="is-rounded" size="is-small" rows="2" placeholder="댓글을 입력해주세요" />
-        <b-button class="mt-1 is-rounded" size="is-small"> 등록 </b-button>
+        <b-input type="textarea" size="is-small" rows="2" placeholder="댓글을 입력해주세요"
+        v-model="content"
+        rounded
+         />
+        <b-button class="mt-1 is-rounded" size="is-small" style="font-size: 0.6rem"
+            @click="emitContent"
+        >
+            등록
+        </b-button>
   </div>
 </article>
-   `
+   `,
+        data() {
+            return {
+                content: '',
+            }
+        },
+
+        methods: {
+            emitContent() {
+                // console.log(this.content)
+
+                // 부모가 자식 사용시 @add-comment 사용
+                this.$emit('add-comment', this.content)
+
+                // 보내고 비우기
+                this.content = ''
+            }
+        }
+    }
+
+    var EditComment = {
+        delimiters: ['{$', '$}'],  // jinja와 같이 쓸 vue 변수
+        template: `
+<article class="media">
+    <!-- textarea + button -->
+    <div class="media-content">
+        <b-input type="textarea" class="is-rounded" size="is-small" rows="2"
+            v-model="content"
+         />
+        <b-button class=" is-rounded" size="is-small" style="font-size: 0.6rem"
+            @click="emitContent"
+        >
+            수정
+        </b-button>
+        <b-button class=" is-rounded is-light" size="is-small" style="font-size: 0.6rem"
+            @click="emitCancel"
+        >
+            취소
+        </b-button>
+  </div>
+</article>
+   `,
+        data() {
+            return {
+            }
+        },
+        props: {
+            content: {
+                type: String,
+                default : ''
+            },
+        },
+
+        methods: {
+            emitContent() {
+                // 부모가 자식 사용시 @edit-comment 사용
+                this.$emit('edit-comment', this.content)
+
+                // 보내고 비우기
+                this.content = ''
+            },
+            emitCancel(){
+                this.$emit('cancel-comment');
+            }
+        }
     }
 
     var Comment = {
@@ -124,41 +204,39 @@
         template: `
 <article class="media my-1">
     <!-- avatar -->
-    <figure class="media-left image is-32x32">
-        <img class="is-rounded" style="height: 100% width: 100%" src="https://bulma.io/images/placeholders/96x96.png" />
+    <figure class="media-left image mr-4">
+<!--        <img class="is-rounded" style="height: 100% width: 100%" src="https://bulma.io/images/placeholders/96x96.png" />-->
+        <img class="is-rounded" style="height: 32px; width: 32px"
+            :src="child.avatar.length > 0
+                ? '/uploads/'+ child.avatar
+                : {{url_for('static', filename='img/user/default_avatar.svg')}}
+                "
+            :alt="child.author_name"
+        />
     </figure>
     <div class="media-content">
     <div class="content is-size-7">
-        <div class="level mb-1">
+        <div class="level mb-2">
             <div class="level-left m-0">
                 <!--  좌측 이름 | 시간  -->
-                <strong :class="author_name == '관리자' ? 'tag is-primary is-rounded' : ''">
-                    {$ author_name $}
+                <strong :class="child.author_name == '{{post.author.name}}' ? 'tag is-primary is-light is-rounded' : ''"
+                :style="child.author_name == '{{post.author.name}}' ? 'font-size: 0.6rem' : ''"
+                >
+                    {$ child.author_name $}
                 </strong>
                 <span class="has-text-grey mx-1">
-                    {$ add_date $}
+                    <small>
+                    {$ child.feed_date $}
+                    {$ child.add_date != child.pub_date ? '(수정됨)' : '' $}
+                    </small>
                 </span>
             </div>
             <div class="level-right m-0 has-text-weight-bold">
                 <small>
-                    <!--  우측 좋아요 -->
-                    <a @click="changeLike()" class="mx-1">
-                      <b-tooltip :label="cleanlikes" multilined type="is-black">
-                        <span class="icon" style="width: 10px"><i class="mdi mdi-thumb-up-outline"></i></span>
-                        좋아요
-                      </b-tooltip>
-                    </a>
-                    <!--  우측 댓글 -->
-                    <span v-show="level < LIMIT_OF_COMMENTS">
-                      <a @click="showReply = !showReply" class="mx-1">
-                        <span class="icon" style="width: 10px"><i class="mdi mdi-comment-outline"></i></span>
-                        댓글
-                       </a>
-                    </span>
                     <!--  우측 dropdown -->
                     <b-dropdown aria-role="list"
                                 position="is-bottom-left"
-                                mobile-modal="false">
+                                >
                         <template #trigger>
                             <!--  dropdown icon -->
                             <span class="icon" style="width: 10px">
@@ -167,14 +245,22 @@
                         </template>
 
                         <!--  dropdown list -->
-                        <b-dropdown-item aria-role="listitem">
+                        <b-dropdown-item aria-role="listitem"
+                            v-show="child.author_name == '{{g.user.employee.name}}'"
+                            @click="showEditReply = !showEditReply"
+                        >
                             <b-icon class="media-left" icon="square-edit-outline" size="is-small"></b-icon>
                             <small>수정</small>
                         </b-dropdown-item>
-                        <b-dropdown-item aria-role="listitem">
+
+                        <b-dropdown-item aria-role="listitem"
+                            v-show="child.author_name == '{{g.user.employee.name}}'"
+                            @click="$emit('delete-comment', child)"
+                        >
                             <b-icon class="media-left" icon="delete-outline" size="is-small"></b-icon>
-                            <small>삭제</small>
+                            <small>삭제 by {$ child.author_name $}</small>
                         </b-dropdown-item>
+
                         <b-dropdown-item aria-role="listitem">
                             <b-icon class="media-left" icon="alert" size="is-small"></b-icon>
                             <small>신고</small>
@@ -183,52 +269,97 @@
                   </small>
             </div>
         </div>
-        <p>
-          {$ content $}
+        <p style="white-space: pre-line;">{$ child.content $}</p>
+         <p class="is-size-7">
+            <small>
+                <!--  좋아요 -->
+                <a v-if="likes.length > 0" @click="changeLike()" class="mx-1 has-text-primary">
+                  <b-tooltip :label="cleanlikes" type="is-primary" position="is-right" size="is-small"
+                  >
+                    <span class="icon" style="width: 10px"><i class="mdi mdi-thumb-up-outline"></i></span>
+                    0
+                  </b-tooltip>
+                </a>
+                <a v-else @click="changeLike()" class="mx-1 has-text-primary">
+                  <span class="icon" style="width: 10px"><i class="mdi mdi-thumb-up-outline"></i></span>
+                  0
+                </a>
+
+                <!--  댓글 -->
+                <span v-show="child.level < LIMIT_OF_COMMENTS">
+                  <a @click="showReply = !showReply" class="mx-1 has-text-primary">
+                    <span class="icon" style="width: 10px"><i class="mdi mdi-comment-outline"></i></span>
+                    답글
+                   </a>
+                </span>
+
+            </small>
         </p>
       </div>
-      <!-- toggle시 댓글 등록 창 -->
-      <new-comment v-show="showReply" />
+      <!-- toggle시 댓글 수정 창 -->
+      <edit-comment v-show="showEditReply" @edit-comment="editComment" @cancel-comment="cancelComment"
+        :content="child.content"
+      />
+<!--      <new-comment v-show="showReply" />-->
+      <!-- toggle시 대댓글 등록 창 -->
+      <new-comment v-show="showReply" @add-comment="addComment"/>
       <!-- 정해진 레벨검사 성공시      -->
-      <div v-if="level < LIMIT_OF_COMMENTS">
-        <comment v-for="(reply, i) in replies" :key="i" :level="level + 1" v-bind="reply" />
+      <div v-if="child.level < LIMIT_OF_COMMENTS">
+        <comment v-for="(reply, i) in child.replies" :key="i" :level="child.level + 1"
+            :child="reply" :parent="child"
+            @delete-comment="deleteSubComment"
+         />
       </div>
     </div>
 </article>
      `,
         name: 'Comment',
         components: {
-            NewComment
+            NewComment,
+            EditComment
         },
         props: {
-            level: {
-                type: Number,
-                default: 0
-            },
-            author_name: {
-                type: String,
-                default: ''
-            },
-            content: {
-                type: String,
-                default: ''
-            },
-            replies: {
-                type: Array,
-                default: () => []
-            },
+            // level: {
+            //     type: Number,
+            //     default: 0
+            // },
+            // author_name: {
+            //     type: String,
+            //     default: ''
+            // },
+            // content: {
+            //     type: String,
+            //     default: ''
+            // },
+            // replies: {
+            //     type: Array,
+            //     default: () => []
+            // },
             likes: {
                 type: Array,
-                default: () => []
+                default: () => ['test']
             },
-            add_date: {
-                type: String,
-                default: ''
-            }
+            // feed_date: {
+            //     type: String,
+            //     default: ''
+            // },
+            // avatar: {
+            //     type: String,
+            //     default: ''
+            // },
+            // id: {
+            //     type: Number,
+            //     default: 0,
+            // },
+            child: {},
+            parent: {},
+            level:{},
+
         },
         data() {
             return {
                 showReply: false,
+                showEditReply: false,
                 LIMIT_OF_COMMENTS: 2
             }
         },
@@ -245,6 +376,45 @@
                 if (this.likes.includes(username))
                     this.likes = this.likes.filter((item) => item !== username)
                 else this.likes.push(username)
+            },
+            addComment(content) {
+                // axios
+
+               // axios 전 예시데이터
+                var newComment = {
+                    'content' : content,
+                    'feed_date' : '방금',
+                    'id': 10000,
+                    'post_id' : '{{post.id}}',
+                    'author_name' : '{{post.author.name}}',
+                    'parent_id' : this.id, // 현재 댓글id를, 새로추가될 친구의 부모id로
+                    'status' : true,
+                    'sort' : 100,
+                    'level' : this.level + 1,
+                    'avatar': 'avatar/ca2c0d27fbc54111a6de0e8a724c6bcc.png',
+                    'replies' : []
+                }
+
+                this.child.replies.push(newComment);
+
+                // 댓글창 닫아주기
+                this.showReply = !this.showReply;
+            },
+            deleteSubComment(obj) {
+                this.child.replies.splice(this.child.replies.indexOf(obj),1);
+		    },
+
+             editComment(content) {
+                // axios
+
+               // axios 전 예시데이터
+                this.child.content = content;
+
+                // 수정창 닫아주기
+                this.showEditReply = !this.showEditReply;
+            },
+            cancelComment(){
+                this.showEditReply = !this.showEditReply;
             }
         }
     }
@@ -253,8 +423,12 @@
         delimiters: ['{$', '$}'],  // jinja와 같이 쓸 vue 변수
         template: `
         <div class="card-content is-small">
-            <new-comment />
-            <comment v-for="(comment, i) in comments" :key="i" :level="0" v-bind="comment" />
+            <new-comment @add-comment="addComment"/>
+            <comment v-for="(comment, i) in comments" :key="i" :level="0"
+                :child="comment"
+                :parent="null"
+                @delete-comment="deleteComment"
+             />
         </div>
       `,
         components: {
@@ -265,6 +439,32 @@
             comments: {
                 type: Array,
                 default: () => []
+            }
+        },
+        methods: {
+            addComment(content) {
+                // axios
+
+               // axios 전 예시데이터
+                var newComment = {
+                    'content' : content,
+                    'feed_date' : '방금',
+                    'id': 999,
+                    'post_id' :' {{post.id}}',
+                    'author_name' : '{{post.author.name}}',
+                    'parent_id' : null, // 쌩 댓글 추가
+                    'status' : true,
+                    'sort' : 100,
+                    'level' : 0, // 쌩 댓글 추가
+                    'avatar': 'avatar/ca2c0d27fbc54111a6de0e8a724c6bcc.png',
+                    'replies': [],
+                }
+
+                this.comments.push(newComment);
+            }
+            ,
+            deleteComment(obj) {
+                this.comments.splice(this.comments.indexOf(obj),1)
             }
         }
     }
@@ -283,53 +483,63 @@
 
         data() {
             return {
-                comments: [
-                    {
-                        avatar: 'https://bulma.io/images/placeholders/96x96.png',
-                        author_name: '킴성태',
-                        content:
-                            'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis porta eros lacus, nec ultricies elit blandit non. Suspendisse pellentesque mauris sit amet dolor blandit rutrum. Nunc in tempus turpis.',
-                        add_date: '3 hrs',
-                        likes: ['jesuskinto', 'julioLugo', 'gerardPaez'],
-                        replies: [
-                            {
-                                avatar: 'https://bulma.io/images/placeholders/96x96.png',
-                                author_name: '관리자',
-                                content:
-                                    'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis porta eros lacus, nec ultricies elit blandit non. Suspendisse pellentesque mauris sit amet dolor blandit rutrum. Nunc in tempus turpis.',
-                                add_date: '3 hrs',
-                                likes: ['jesuskinto', 'julioLugo', 'gerardPaez'],
-                                replies: [
-                                    {
-                                        avatar: 'https://bulma.io/images/placeholders/96x96.png',
-                                        author_name: 'Barbara Middleton',
-                                        content:
-                                            'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis porta eros lacus, nec ultricies elit blandit non. Suspendisse pellentesque mauris sit amet dolor blandit rutrum. Nunc in tempus turpis.',
-                                        add_date: '3 hrs',
-                                        likes: ['jesuskinto', 'julioLugo', 'gerardPaez']
-                                    }
-                                ]
-                            },
-                            {
-                                avatar: 'https://bulma.io/images/placeholders/96x96.png',
-                                author_name: 'Barbara Middleton',
-                                content:
-                                    'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis porta eros lacus, nec ultricies elit blandit non. Suspendisse pellentesque mauris sit amet dolor blandit rutrum. Nunc in tempus turpis.',
-                                add_date: '3 hrs',
-                                likes: ['jesuskinto', 'julioLugo', 'gerardPaez']
-                            }
-                        ]
-                    },
-                    {
-                        avatar: 'https://bulma.io/images/placeholders/96x96.png',
-                        author_name: 'Barbara Middleton',
-                        content:
-                            'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis porta eros lacus, nec ultricies elit blandit non. Suspendisse pellentesque mauris sit amet dolor blandit rutrum. Nunc in tempus turpis.',
-                        add_date: '3 hrs',
-                        likes: ['jesuskinto', 'julioLugo', 'gerardPaez']
-                    }
-                ]
+                // comments: JSON.parse('{{ comments | tojson }}').data
+                comments: [],
+                // comments: [
+                //     {
+                //         avatar: 'https://bulma.io/images/placeholders/96x96.png',
+                //         author_name: '킴성태',
+                //         content:
+                //             'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis porta eros lacus, nec ultricies elit blandit non. Suspendisse pellentesque mauris sit amet dolor blandit rutrum. Nunc in tempus turpis.',
+                //         add_date: '3 hrs',
+                //         likes: ['jesuskinto', 'julioLugo', 'gerardPaez'],
+                //         replies: [
+                //             {
+                //                 avatar: 'https://bulma.io/images/placeholders/96x96.png',
+                //                 author_name: '관리자',
+                //                 content:
+                //                     'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis porta eros lacus, nec ultricies elit blandit non. Suspendisse pellentesque mauris sit amet dolor blandit rutrum. Nunc in tempus turpis.',
+                //                 add_date: '3 hrs',
+                //                 likes: ['jesuskinto', 'julioLugo', 'gerardPaez'],
+                //                 replies: [
+                //                     {
+                //                         avatar: 'https://bulma.io/images/placeholders/96x96.png',
+                //                         author_name: 'Barbara Middleton',
+                //                         content:
+                //                             'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis porta eros lacus, nec ultricies elit blandit non. Suspendisse pellentesque mauris sit amet dolor blandit rutrum. Nunc in tempus turpis.',
+                //                         add_date: '3 hrs',
+                //                         likes: ['jesuskinto', 'julioLugo', 'gerardPaez']
+                //                     }
+                //                 ]
+                //             },
+                //             {
+                //                 avatar: 'https://bulma.io/images/placeholders/96x96.png',
+                //                 author_name: 'Barbara Middleton',
+                //                 content:
+                //                     'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis porta eros lacus, nec ultricies elit blandit non. Suspendisse pellentesque mauris sit amet dolor blandit rutrum. Nunc in tempus turpis.',
+                //                 add_date: '3 hrs',
+                //                 likes: ['jesuskinto', 'julioLugo', 'gerardPaez']
+                //             }
+                //         ]
+                //     },
+                //     {
+                //         avatar: 'https://bulma.io/images/placeholders/96x96.png',
+                //         author_name: 'Barbara Middleton',
+                //         content:
+                //             'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis porta eros lacus, nec ultricies elit blandit non. Suspendisse pellentesque mauris sit amet dolor blandit rutrum. Nunc in tempus turpis.',
+                //         add_date: '3 hrs',
+                //         likes: ['jesuskinto', 'julioLugo', 'gerardPaez']
+                //     }
+                // ]
             }
+        },
+        created() {
+            this.getComments()
+        },
+        methods: {
+            getComments() {
+                this.comments = JSON.parse('{{ comments | tojson }}').data
+            },
         }
     };
 </script>
@@ -337,5 +547,7 @@
 
 
 {% block vue_script %}
-
+<script>
+    // console.log(app._data.comments)
+</script>
 {% endblock vue_script %}
