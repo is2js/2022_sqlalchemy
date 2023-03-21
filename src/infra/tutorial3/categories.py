@@ -203,6 +203,14 @@ class Comment(BaseModel):
     def level(cls):
         return func.length(cls.path) / cls._N - 1
 
+    @hybrid_property
+    def avatar(self):
+        return self.author.user.avatar
+
+    @hybrid_property
+    def author_name(self):
+        return self.author.name
+
     @classmethod
     def create(cls, session: Session = None, auto_commit=True, **kwargs):
         parent_id = kwargs.get('parent_id', None)
