@@ -266,7 +266,7 @@
                             @click="$emit('delete-comment', child)"
                         >
                             <b-icon class="media-left" icon="delete-outline" size="is-small"></b-icon>
-                            <small>삭제 by {$ child.author_name $}</small>
+                            <small>삭제(댓글 달리면 BLIND)</small>
                         </b-dropdown-item>
 
                         <b-dropdown-item aria-role="listitem">
@@ -278,8 +278,8 @@
             </div>
         </div>
         <p style="white-space: pre-line;" v-if="child.status" >{$ child.content $}</p>
-        <p v-else class="has-text-grey has-text-weight-bold">
-            [삭제 처리된 댓글입니다.]
+        <p v-else class="has-text-grey is-italic">
+            [ 삭제 처리된 댓글입니다 ]
         </p>
          <p class="is-size-7">
             <small>

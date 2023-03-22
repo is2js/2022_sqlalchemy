@@ -10,7 +10,7 @@ from sqlalchemy import select
 from src.config import app_config
 
 from src.infra.config.connection import DBConnectionHandler
-from src.infra.tutorial3 import Category, Setting, Permission, Roles
+from src.infra.tutorial3 import Category, Setting, Permission, Roles, Department
 
 ## Path.cwd()는 실행파일(root의 run.py)의 위치가 찍힌다 -> root부터 경로잡기
 # -> path는 joinpath시 끝이 디렉토리라면 / 까지 넣어줘야한다.
@@ -80,6 +80,7 @@ def create_app(config_name='default'):
     app.context_processor(inject_today_date)
     # app.context_processor(inject_permission_and_roles)
     app.context_processor(inject_permission)
+    app.context_processor(inject_root_department)
 
     ## [flask xxxx] 명령어 추가
     init_script(app)
@@ -100,10 +101,8 @@ def inject_category_and_settings():
         settings=settings,
     )
 
-
 def inject_today_date():
     return {'today_date': datetime.date.today}
-
 
 # def inject_permission_and_roles():
 ## role Roles이넘을 이용해 user객체의 hybrid_property로 다 정해줌
@@ -113,6 +112,11 @@ def inject_permission():
         # Roles=Roles,
     )
 
+def inject_root_department():
+    departments = Department.filter_by(parent_id=None).order_by('sort').all()
+    return dict(
+        departments=departments
+    )
 
 ## 에러 핸들링
 # def page_not_found(e):

@@ -133,8 +133,36 @@ def category(id):
     return render_template('main/category.html',
                            category=category,
                            post_list=post_list, pagination=pagination,
-                           category_id=id
+                           category_id=id # base.html의 메뉴 불들어오게 하는 용도
                            )
+
+
+@main_bp.route("/department/<int:id>")
+def department(id):
+    # 상위entity인 category 자체 설명
+    category = Category.get(id)
+
+    page = request.args.get('page', 1, type=int)
+
+    # category에 딸린 posts들
+    # - 각각은 부모인 category 정보를(필터링 뿐만 아니라. post.category.name)을 사용함.
+    # - 각각은 딸린 tags정보를
+    pagination = Post.load({'category': 'selectin', 'tags': 'joined',
+                            'author': ('selectin', {'user': 'selectin'},), # employee(author name) + user(for avatar)
+                            'comments': 'joined'  # 댓글 갯수 @h comment_count를 사용하기 위해
+                            }) \
+        .filter_by(category___id=id) \
+        .order_by('-add_date') \
+        .paginate(page, per_page=10)
+
+    post_list = pagination.items
+
+    return render_template('main/category.html',
+                           category=category,
+                           post_list=post_list, pagination=pagination,
+                           current_dept_id=id # base.html에서 메뉴 불들어오게 하는 용도
+                           )
+
 
 
 # # 1) 상위entity를 타고 들어가야하는 소속된 하위 entity의 url은 /상위entity/상위entity_id/ + /자신_id로 구성한다
