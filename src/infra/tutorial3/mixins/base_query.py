@@ -817,8 +817,10 @@ class BaseQuery:
 
         for attr, value in filters.items():
             # 2-1) 우선 적으로 hybrid_method인지 검사하여 다르게 처리
-            if attr in cls.get_hybrid_method_names(mapper):
-                method = getattr(cls, attr)
+            if attr in model.get_hybrid_method_names(mapper):
+                # print('cls, model, mapper  >> ', cls, model, mapper)
+                # method = getattr(cls, attr)
+                method = getattr(model, attr)
                 expressions.append(method(value, mapper=mapper))
                 continue
 
