@@ -13,7 +13,8 @@ services:
     ## build: 도커파일경로 -> 생략
     # build가 있으면 Dockerfile FROM image의 새로운 이미지명(docker build -t)이 되는데,
     #  - 여기선 image가 Dockerfile의 FROM 기반컨테이너:버전 을 대신하여 기반image 원본을 표기
-    image: mysql:8.0.28
+    #image: mysql:8.0.28 => 8.0.31 부터 union을 지원함
+    image: mysql:8.0.31
     platform: linux/x86_64
     restart: always
     ports:
@@ -32,9 +33,9 @@ services:
       # 초기 자동실행스크립트 마운트 host -> docker
       - ./db/mysql/init:/docker-entrypoint-initdb.d
       # [권한 필요] 초기 설정파일 마운트 host -> docker
-#      - ./db/mysql/config:/etc/mysql/conf.d
+      - ./db/mysql/config:/etc/mysql/conf.d
       # [conf파일 필요] 로그 마운트 docker -> my.conf -> host
-#      - ./db/mysql/logs:/var/log/mysql
+      - ./db/mysql/logs:/var/log/mysql
     command:
       >
       bash -c "chmod 755 /etc/mysql/conf.d/*.cnf && /entrypoint.sh mysqld"
