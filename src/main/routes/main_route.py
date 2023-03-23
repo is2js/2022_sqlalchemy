@@ -6,13 +6,13 @@ from flask import Blueprint, render_template, request, url_for
 from sqlalchemy import select, and_, extract, or_
 
 from src.infra.config.connection import DBConnectionHandler
-from src.infra.tutorial3 import Post, Category, Tag, Banner, PostPublishType
+from src.infra.tutorial3 import Post, Category, Tag, Banner, PostPublishType, Department
 from src.infra.tutorial3.categories import PostCount, Comment
 from src.infra.tutorial3.common.pagination import paginate
+from src.main.decorators.decorators import login_required
 from src.main.utils.get_client_ip import get_client_ip
 
 main_bp = Blueprint("main", __name__, url_prefix='/main')
-
 
 
 @main_bp.route("/")
@@ -121,34 +121,6 @@ def category(id):
     # - 각각은 딸린 tags정보를
     pagination = Post.load({'category': 'selectin', 'tags': 'joined',
                             'author': ('selectin', {'user': 'selectin'},),
-                            'comments' : 'joined' # 댓글 갯수 @h comment_count를 사용하기 위해
-                            }) \
-        .filter_by(category___id=id) \
-        .order_by('-add_date') \
-        .paginate(page, per_page=10)
-
-    post_list = pagination.items
-    
-
-    return render_template('main/category.html',
-                           category=category,
-                           post_list=post_list, pagination=pagination,
-                           category_id=id # base.html의 메뉴 불들어오게 하는 용도
-                           )
-
-
-@main_bp.route("/department/<int:id>")
-def department(id):
-    # 상위entity인 category 자체 설명
-    category = Category.get(id)
-
-    page = request.args.get('page', 1, type=int)
-
-    # category에 딸린 posts들
-    # - 각각은 부모인 category 정보를(필터링 뿐만 아니라. post.category.name)을 사용함.
-    # - 각각은 딸린 tags정보를
-    pagination = Post.load({'category': 'selectin', 'tags': 'joined',
-                            'author': ('selectin', {'user': 'selectin'},), # employee(author name) + user(for avatar)
                             'comments': 'joined'  # 댓글 갯수 @h comment_count를 사용하기 위해
                             }) \
         .filter_by(category___id=id) \
@@ -160,9 +132,33 @@ def department(id):
     return render_template('main/category.html',
                            category=category,
                            post_list=post_list, pagination=pagination,
-                           current_dept_id=id # base.html에서 메뉴 불들어오게 하는 용도
+                           category_id=id  # base.html의 메뉴 불들어오게 하는 용도
                            )
 
+
+@main_bp.route("/department/<int:id>")
+@login_required
+def department(id):
+    # 상위entity인 category 자체 설명
+    department = Department.get(id)
+
+    page = request.args.get('page', 1, type=int)
+
+    pagination = Post.load({'category': 'selectin', 'tags': 'joined',
+                            'author': ('selectin', {'user': 'selectin'},),  # employee(author name) + user(for avatar)
+                            'comments': 'joined'  # 댓글 갯수 @h comment_count를 사용하기 위해
+                            }) \
+        .filter_by(is_author_below_to=department) \
+        .order_by('-add_date') \
+        .paginate(page, per_page=5)
+
+    post_list = pagination.items
+
+    return render_template('main/department.html',
+                           department=department,  # post 전에 상위entity 정보 뿌리기용 ?
+                           post_list=post_list, pagination=pagination,
+                           current_dept_id=id  # base.html에서 메뉴 불들어오게 하는 용도
+                           )
 
 
 # # 1) 상위entity를 타고 들어가야하는 소속된 하위 entity의 url은 /상위entity/상위entity_id/ + /자신_id로 구성한다
@@ -230,7 +226,6 @@ def post_detail(category_id, id):
         post.update(view_count=post.view_count + 1)
         # load한 데이터가 그대로 남아있으려나? -> commit해서 없다
 
-
     # limit 이전 글의 갯수
     prev_post = Post.filter_by(
         category___id=category_id,
@@ -248,19 +243,65 @@ def post_detail(category_id, id):
         .first()
 
     # post 다시 조회(업데이트 가능성때문에 load를 맨 마지막에)
-    post = Post.load({'category': 'selectin', 'tags': 'joined', 'author' : ('selectin', {'user': 'selectin'}),
-
+    post = Post.load({'category': 'selectin', 'tags': 'joined', 'author': ('selectin', {'user': 'selectin'}),
+                      'comments': 'joined'  # 댓글 갯수 @h comment_count를 사용하기 위해
                       }) \
         .filter_by(id=id).first()
 
     # 현재 post_id의 root comments -> 각각을 to_dict하는 메서드 호출
     # comments = Comment.get_tree_from(post.id)
 
-
     return render_template('main/post_detail.html',
                            post=post,
                            prev_post=prev_post, next_post=next_post,
                            # comments=comments
+                           )
+
+
+@main_bp.route("/department/<int:department_id>/post/<int:id>")
+def department_post_detail(department_id, id):
+    # 조회수 먼저 처리
+    ip = get_client_ip(request)
+    # 해당 post에 대해 ip로 등록된 데이터를 세서, count를 나타냄
+    # if 해당ip 데이터가 없을때만 등록후 조회수 + 1
+    count = PostCount.filter_by(post_id=id, ip=ip).count()
+    if count == 0:
+        PostCount.create(post_id=id, ip=ip)
+        # 조회 수 증가는 등록안된 ip(count==0)일 경우만
+        # post.view_count += 1
+        post = Post.get(id)
+        post.update(view_count=post.view_count + 1)
+        # load한 데이터가 그대로 남아있으려나? -> commit해서 없다
+
+    department = Department.get(department_id)
+
+    # limit 이전 글의 갯수
+    prev_post = Post.filter_by(
+        is_author_below_to=department,
+        id__lt=id,
+    ).order_by('-id') \
+        .limit(1) \
+        .first()
+
+    # limit 다음 글의 갯수
+    next_post = Post.filter_by(
+        is_author_below_to=department,
+        id__gt=id,
+    ).order_by('id') \
+        .limit(1) \
+        .first()
+
+    # post 다시 조회(업데이트 가능성때문에 load를 맨 마지막에)
+    post = Post.load({'category': 'selectin', 'tags': 'joined',
+                      'author': ('selectin', {'user': 'selectin'},),  # employee(author name) + user(for avatar)
+                      'comments': 'joined'  # 댓글 갯수 @h comment_count를 사용하기 위해
+                      }) \
+        .filter_by(id=id) \
+        .first()
+    return render_template('main/department_post_detail.html',
+                           post=post,
+                           prev_post=prev_post, next_post=next_post,
+                           department=department, # breadcrumb 등
                            )
 
 
@@ -292,6 +333,7 @@ def post_detail(category_id, id):
 #     return dict(dates=dates, tags=tags, new_posts=new_posts)
 
 date_format = '%Y년 %m월'.encode('unicode-escape').decode()
+
 
 @main_bp.context_processor
 def inject_archive():
@@ -349,10 +391,10 @@ def inject_archive():
 #                            )
 
 
-
 # '2021년 03월' 에서 숫자4개짜리 + 숫자1~2개짜리를 각각 추출하는 yyyy_mm_compiler
 # -> yyyy_mm_compiler.findall( 대상 ) -> ['2021', '03']
 yyyy_mm_compiler = re.compile(r'\d{4}|\d{1,2}')
+
 
 @main_bp.route('/category/<string:date>')
 def archive(date):
@@ -363,7 +405,7 @@ def archive(date):
     year, month = tuple(map(lambda x: int(x), yyyy_mm_compiler.findall(date)))
 
     # posts의 필터에 yyyy 필터 + mm필터를 각각 걸어서 해당하는 posts들만 추출한다.
-    pagination = Post.load({'category':'selectin', 'tags': 'joined', 'author': ('selectin', {'user': 'selectin'}),
+    pagination = Post.load({'category': 'selectin', 'tags': 'joined', 'author': ('selectin', {'user': 'selectin'}),
                             'comments': 'joined'  # 댓글 갯수 @h comment_count를 사용하기 위해
                             }).filter_by(
         type=PostPublishType.SHOW,
@@ -381,12 +423,13 @@ def archive(date):
                            pagination=pagination
                            )
 
+
 @main_bp.route('/tag/<int:id>')
 def tag(id):
     page = request.args.get('page', 1, type=int)
 
     tag = Tag.get(id)
-    pagination = Post.load({'category': 'selectin', 'tags': 'joined', 'author' : ('selectin', {'user': 'selectin'}),
+    pagination = Post.load({'category': 'selectin', 'tags': 'joined', 'author': ('selectin', {'user': 'selectin'}),
                             'comments': 'joined'  # 댓글 갯수 @h comment_count를 사용하기 위해
                             }).filter_by(tags___id=id).paginate(page, per_page=10)
     post_list = pagination.items
@@ -399,10 +442,10 @@ def tag(id):
 def search():
     page = request.args.get('page', 1, type=int)
     word = request.args.get('word', '', type=str).strip()
-    pagination = Post.load({'category':'selectin', 'tags':'joined', 'author': ('selectin', {'user': 'selectin'}),
+    pagination = Post.load({'category': 'selectin', 'tags': 'joined', 'author': ('selectin', {'user': 'selectin'}),
                             'comments': 'joined'  # 댓글 갯수 @h comment_count를 사용하기 위해
-                            })\
-        .filter_by(or_=dict(title__contains=word, content__contains=word))\
+                            }) \
+        .filter_by(or_=dict(title__contains=word, content__contains=word)) \
         .paginate(page, per_page=10)
 
     post_list = pagination.items

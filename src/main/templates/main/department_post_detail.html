@@ -22,7 +22,7 @@
 <nav class="breadcrumb is-small" aria-label="breadcrumbs">
     <ul>
         <li><a href="/">Home</a></li>
-        <li><a href="{{ url_for('main.category', id=post.category.id) }}">{{ post.category.name }}</a></li>
+        <li ><a href="{{ url_for('main.department', id=department.id) }}" aria-current="page">{{ department.name }}</a></li>
         <li class="is-active"><a href="#" aria-current="page">{{ post.title }}</a></li>
     </ul>
 </nav>
@@ -30,14 +30,14 @@
 
 {% block cate_box %}
 <div class="pl-2">
-    <h1 class="is-size-5">
-        <span class="tag is-rounded my-3 is-size-5 is-{{post.category.icon}}">
+    <div class="is-size-5 is-flex is-align-items-center">
+        <div class="tag is-rounded is-size-6 is-{{post.category.icon}}">
             {{ post.category.name }}
-        </span>
-        <span class="has-text-weight-bold">
+        </div>
+        <div class="ml-2 has-text-weight-bold">
             {{ post.title }}
-        </span>
-    </h1>
+        </div>
+    </div>
     <!-- [좌측정렬] 프로필 | 이름 | 시간 -->
     <div class="is-pulled-left">
         <div class="has-text-grey-light is-size-6 mt-1 is-align-items-center is-flex">
@@ -82,17 +82,18 @@
 <div class="level is-size-7">
     <div class="level-left">
         {% if prev_post %}
-        이전 글：<a href="{{ url_for('main.post_detail', category_id=prev_post.category_id, id=prev_post.id) }}">
+        이전 글：<a href="{{ url_for('main.department_post_detail', department_id=department.id, id=prev_post.id) }}">
         {{prev_post.title }}</a>
         {% endif %}
     </div>
     <div class="level-right">
         {% if next_post %}
-        다음 글：<a href="{{ url_for('main.post_detail', category_id=next_post.category_id, id=next_post.id) }}">
+        다음 글：<a href="{{ url_for('main.department_post_detail', department_id=department.id, id=next_post.id) }}">
         {{next_post.title }} </a>
         {% endif %}
     </div>
 </div>
+
 <!-- 댓글 추가 -->
 {% if g.user %}
 <div>
@@ -305,7 +306,6 @@
                     답글
                    </a>
                 </span>
-
             </small>
         </p>
       </div>

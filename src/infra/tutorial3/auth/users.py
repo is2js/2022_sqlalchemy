@@ -7,7 +7,7 @@ from collections import abc
 from dateutil.relativedelta import relativedelta
 from flask import url_for, g
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, select, case, and_, exists, func, DateTime, \
-    BigInteger, update, Date, desc, literal_column, column
+    BigInteger, update, Date, desc, literal_column, column, any_
 from sqlalchemy.ext.hybrid import hybrid_property, hybrid_method
 from sqlalchemy.orm import relationship, backref, aliased, selectinload, Session, object_session
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -1433,7 +1433,7 @@ class Employee(BaseModel):
     #         raise KeyError(f'Invalid job status : {job_status}')
 
     # refactor 2 -  load없이도 호출되도록 변경
-    def update_job_status(self, job_status, target_date, session:Session=None, auto_commit=True):
+    def update_job_status(self, job_status, target_date, session: Session = None, auto_commit=True):
         """
         EagerLoad required: User.Role + EmployeeDepartment -> X
         ----
@@ -1951,7 +1951,7 @@ class Employee(BaseModel):
     #                 True면 close/commit or False면 flush만?
     #
     def change_department(self, current_dept_id, after_dept_id, as_leader, target_date,
-                          session: Session=None, auto_commit=True):
+                          session: Session = None, auto_commit=True):
         """
         required(X) -> 공용세션 가져와 등록해놓고 relation 접근 or  공용세션으로 외부주입조회로 한번에 명시add + CUD
         """
@@ -1959,7 +1959,6 @@ class Employee(BaseModel):
             session = self.get_scoped_session()
             # self가 포함된 [외부주입 추가조회(not close, 변화반영상태)]없다면, self add하고 relation에 접근하게 한다
         session.add(self)
-
 
         data = dict()  # 한번에 fill = update의 인자로 주기 위해 모으기 용
 
@@ -2085,7 +2084,7 @@ class Employee(BaseModel):
             #### 이미 기존에 append할 employee_departments가 있는 상황인데,
             #    list로 전달하면, 덮어쓰기 되어버리므로
             #    추가적으로 append할 때는 1개는 fill로 처리하자.
-            
+
             self.fill(employee_departments=after_emp_dept)  # data['employee_departments']가 이미 있으므로 미리 fill -> append
             self.update(**data, session=session, auto_commit=auto_commit)
 
@@ -2245,7 +2244,7 @@ class Employee(BaseModel):
 
     # refactor 2 for to_dict - @hybrid_property leader in Department
     #            + add_employee route에서 load 없이 position 획득
-    def get_position(self, department, session:Session=None, close=True):
+    def get_position(self, department, session: Session = None, close=True):
         """
         부서를 주면, 취임정보를 필터링하여 직원의 position을 확인
         - 없으면 '공석'을 반환
@@ -2266,7 +2265,7 @@ class Employee(BaseModel):
         ee.get_position(d2)
         => '공석'
         """
-        if not session :
+        if not session:
             session = self.get_scoped_session()
         session.add(self)
 
@@ -2280,7 +2279,6 @@ class Employee(BaseModel):
 
         return next(positions_in_department, '공석')
 
-
     # refactor for to_dict
     @hybrid_property
     def avatar(self):
@@ -2289,6 +2287,87 @@ class Employee(BaseModel):
     @hybrid_property
     def email(self):
         return self.user.email
+
+    # # refactor
+    # @hybrid_method
+    # def is_root_department(cls, root_dept, mapper=None):
+    #     mapper = mapper or cls
+    #     ED_ = mapper.employee_departments.mapper.class_
+    #     Department_ = ED_.department.mapper.class_
+    #
+    #     # a = Department_.get_top_department_query.scalar_subquery()
+    #     # level_expr = func.length(a.c.path) / Department_._N - 1
+    #     # parent_query = select(a.c.id).select_from(a)
+    #     # parent_ids = parent_query.scalar_subquery()
+    #
+    #     # filter_map.get('and_').update({'level': min_level_subq})
+    #
+    #     # ED_.department_id 가 2개인 순간 subquery 여러개 발생 -> 한 사람이 2개 부서일 경우, recusrvie_parent가 2개가 생겨서 에러 ->
+    #     # return mapper.employee_departments.any(ED_.dismissal_date.is_(None) & ED_.department.has(Department_.recursive_parent(ED_.department_id)) == root_dept.id)
+    #
+    #     # return mapper.employee_departments.any(ED_.dismissal_date.is_(None) & \
+    #     #     ED_.department.has(
+    #     #             Department_.recursive_parent(ED_.department_id).as_scalar() == root_dept.id
+    #     #     )
+    #     # )
+    #     return mapper.employee_departments.any(ED_.dismissal_date.is_(None) & \
+    #         ED_.department.has(
+    #                 Department_.recursive_parent(ED_.department_id).scalar_subquery() == root_dept.id
+    #         )
+    #     )
+    #
+    #     # query = select([ED_.id]). \
+    #     #     where(ED_.dismissal_date.is_(None)). \
+    #     #     join(Department_, and_(
+    #     #     Department_.id == ED_.department_id,
+    #     #     Department_.recursive_parent(Department_.id).correlate(Department_).scalar_subquery() == root_dept.id
+    #     # ))
+    #     #
+    #     # return mapper.employee_departments.any(ED_.id == query.as_scalar())
+    #
+    #     # root_dept_ids_subq = Department_.recursive_parent(ED_.department_id).subquery()
+    #     # return mapper.employee_departments.any(ED_.dismissal_date.is_(None) & # 나의 취임 기록 중
+    #     # ED_.department.has(
+    #     #     # 취임부서의 root Dept들 중에 [root_dept]가 포함되어있어야한다.
+    #     #         root_dept.id == Department_.recursive_parent(Department_.id).scalar_subquery()
+    #     # ) # 내 취임부서들 중, root부서들
+    #     #     exists().where(
+    #     #         and_(
+    #     #             (ED_.department_id == Department_.id),
+    #     #             root_dept.id == Department_.recursive_parent(
+    #     #                 Department_.id).scalar_subquery()
+    #     #         )
+    #     #     )
+    #     # ) # 내 취임부서들 중, root부서들
+    #
+    #     # return mapper.employee_departments.any(and_(
+    #     #     ED_.dismissal_date.is_(None),
+    #     #     # any_(
+    #     #             and_(
+    #     #                 (ED_.department_id == Department_.id),
+    #     #                 any_(
+    #     #                     Department_.id.in_(Department_.recursive_parent(Department_.id))
+    #     #                 )
+    #     #         )
+    #     #     # )
+    #     # ))
+
+    @hybrid_method
+    def is_below_to(cls, dept, mapper=None):
+        """
+        1번 부서에 속한 직원들 ( 1번 부서+자식부서들의 취임정보를 가지고 있는)
+
+        Employee.filter_by(is_below_to=Department.get(1)).all()
+        ----
+        [<Employee 1>, <Employee 2>, <Employee 3>]
+
+        """
+        mapper = mapper or cls
+        ED_ = mapper.employee_departments.mapper.class_
+
+        return mapper.employee_departments.any(
+            ED_.dismissal_date.is_(None) & ED_.is_below_to(dept)
+        )
 
 
 # #### with other entity

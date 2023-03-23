@@ -80,7 +80,7 @@ def create_app(config_name='default'):
     app.context_processor(inject_today_date)
     # app.context_processor(inject_permission_and_roles)
     app.context_processor(inject_permission)
-    app.context_processor(inject_root_department)
+    app.context_processor(inject_departments)
 
     ## [flask xxxx] 명령어 추가
     init_script(app)
@@ -112,8 +112,8 @@ def inject_permission():
         # Roles=Roles,
     )
 
-def inject_root_department():
-    departments = Department.filter_by(parent_id=None).order_by('sort').all()
+def inject_departments():
+    departments = Department.filter_by(level=1).order_by('sort').all()
     return dict(
         departments=departments
     )

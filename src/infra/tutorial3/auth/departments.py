@@ -2,9 +2,9 @@ import datetime
 import enum
 
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, select, func, BigInteger, Date, Text, distinct, \
-    case, and_, or_, delete
+    case, and_, or_, delete, null, exists
 from sqlalchemy.ext.hybrid import hybrid_property, hybrid_method
-from sqlalchemy.orm import relationship, backref, with_parent, selectinload, Session, object_session
+from sqlalchemy.orm import relationship, backref, with_parent, selectinload, Session, object_session, aliased
 from sqlalchemy.orm.exc import DetachedInstanceError
 
 from src.infra.config.connection import DBConnectionHandler
@@ -547,6 +547,27 @@ class EmployeeDepartment(BaseModel):
         mapper = mapper or cls
         Department_ = mapper.department.mapper.class_
         return mapper.department.has(Department_.id == department.id)
+
+    # refactor
+    @hybrid_method
+    def is_below_to(cls, department, mapper=None):
+        """
+        1번 부서 -> 1번부서의 자식부서들까지의 취임정보 획득
+
+        EmployeeDepartment.filter_by(
+            is_below_to=Department.get(1)
+        ).all()
+        ----
+        [<EmployeeDepartment#52>, <EmployeeDepartment#54>, <EmployeeDepartment#53>, <EmployeeDepartment#57>, <EmployeeDepartment#55>, <EmployeeDepartment#56>, <EmployeeDepartment#58>, <EmployeeDepartment#51>]
+
+        """
+        mapper = mapper or cls
+        Department_ = mapper.department.mapper.class_
+        self_and_children_ids_of_parent_dept = Department_.get_self_and_child_ids_scalar_subquery(department)
+
+        return mapper.department.has(
+            Department_.id.in_(self_and_children_ids_of_parent_dept)
+        )
 
 
 class Department(BaseModel):
@@ -1308,38 +1329,39 @@ class Department(BaseModel):
 
         return total_count
 
-    # #### with other entity
-    # def get_leader_id(self):
-    #     # 양방향 순환참조를 해결하기 위해 메서드내에서 import
-    #     # from .users import Employee
-    #
-    #     with DBConnectionHandler() as db:
-    #         stmt = (
-    #             # select(Employee)
-    #             # .join(EmployeeDepartment)
-    #             select(EmployeeDepartment.employee_id)
-    #             .where(EmployeeDepartment.dismissal_date.is_(None))
-    #             .where(EmployeeDepartment.department_id == self.id)
-    #             .where(EmployeeDepartment.is_leader == True)
-    #         )
-    #         return db.session.scalars(stmt).first()
+    # refactor
+    # parent 속성을 사용하여 최상위 부서를 찾는 재귀 CTE 쿼리를 작성합니다.
+    @classmethod
+    def get_self_and_child_ids_scalar_subquery(cls, department):
+        """
+        db.get_session().execute(
+            Department.get_self_and_child_ids_scalar_subquery(Department.get(1))
+            .select()
+        ).all()
+        => [(1,), (6,), (7,), (8,)]
 
-    # #### 부서장 id => 해당부서장 없으면 상사의 id 찾기
-    # def get_leader_id_recursively(self):
-    #     # 1) 해당 부서의 팀장을 조회한 뒤, 있으면 그 유저를 반환한다
-    #     leader_id = self.get_leader_id()
-    #     if leader_id:
-    #         return leader_id
-    #     # 2) (해당부서에 팀장X) 상위 부서가 있는지 확인한 뒤, 있으면, 재귀로 다시 돌린다.
-    #     if self.parent_id:
-    #         with DBConnectionHandler() as db:
-    #             parent = db.session.scalars(
-    #                 select(Department)
-    #                 .where(Department.id == self.parent_id)
-    #             ).first()
-    #             return parent.get_leader_id_recursively()
-    #     # 3) (팀장도X 상위부서도X) => 팀장정보가 아예 없으니 None반환
-    #     return None
+        """
+        # 1. 비재귀용어
+        parent = (
+            select(cls)
+            .where(cls.id == department.id)
+        )
+        # 2. 비재귀용어 부모1개 select절을 +  재귀 cte로 만들어 parent table화 시킨다.
+        parent = parent.cte('cte', recursive=True)
+
+        # 3. 비재귀+재귀cte의 union아래부분에, 사용할, 재귀용어용 자식alias를 만든다
+        child = aliased(cls)
+        child = (
+            select(child)
+            .join(parent, child.parent_id == parent.c.id)
+        )
+
+        # 5. parent와 child를 union all한다.
+        table = parent.union_all(child)
+
+        # 6. 전체 데이터에서 id만 select한 뒤, scalar_subquery로 만든다.
+        return select(table.c.id).scalar_subquery()
+
 
     # refactor for to_dict
     # @hybrid_property
@@ -2071,3 +2093,5 @@ class Department(BaseModel):
     def is_belonged_to_as_employee(cls, employee, mapper=None):
         """Department.filter_by(is_belonged_to_as_employee=emp2).order_by('path').all()"""
         return cls.is_belonged_to(employee, only_employee=True, mapper=mapper)
+
+

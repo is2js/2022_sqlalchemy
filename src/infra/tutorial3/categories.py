@@ -143,6 +143,25 @@ class Post(BaseModel):
     def comment_count(self):
         return len(self.comments)
 
+    # refactor
+    @hybrid_method
+    def is_author_below_to(cls, department, mapper=None):
+        """
+        1번 부서 -> 1번부서의 자식부서들에 속한 작성자들의 -> Post
+
+        Post.filter_by(
+            is_author_below_to=Department.get(1)
+        ).all()
+        ----
+        [<Post#1 'test'>, <Post#2 '오늘 업데이트 공지...'>, <Post#3 '오늘 재판 내용관련...'>, <Post#6 '질문입니다'>,
+        """
+        mapper = mapper or cls
+        Author_ = mapper.author.mapper.class_
+
+        return mapper.author.has(
+            Author_.is_below_to(department)
+        )
+
 
 # Post Count 모델 작성
 class PostCount(BaseModel):
@@ -297,7 +316,6 @@ class Comment(BaseModel):
     @hybrid_property
     def avatar(self):
         return self.author.user.avatar
-
 
 
 # 작성자  유저 -> 해당그룹의 직원일 때만 -> 읽은사람에 추가
