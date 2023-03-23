@@ -113,8 +113,11 @@ def inject_permission():
     )
 
 def inject_departments():
+    root_department = Department.filter_by(level=0).first()
     departments = Department.filter_by(level=1).order_by('sort').all()
+
     return dict(
+        root_department=root_department,
         departments=departments
     )
 

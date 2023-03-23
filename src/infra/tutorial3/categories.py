@@ -162,6 +162,13 @@ class Post(BaseModel):
             Author_.is_below_to(department)
         )
 
+    # refactor
+    @hybrid_method
+    def is_tagged_by(cls, tag, mapper=None):
+        mapper = mapper or cls
+        Tag_ = mapper.tags.mapper.class_
+        return mapper.tags.any(Tag_.id == tag.id)
+
 
 # Post Count 모델 작성
 class PostCount(BaseModel):
@@ -342,3 +349,5 @@ class Tag(BaseModel):
         # info: str = f"{self.__class__.__name__}" \
         info: str = f"{self.name}"
         return info
+
+

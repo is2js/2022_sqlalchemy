@@ -1,4 +1,4 @@
-{% extends 'main/category.html' %}
+{% extends 'main/department.html' %}
 
 {% block extra_head_style %}
 <link
@@ -11,11 +11,10 @@
 
 <!--<script src="https://unpkg.com/axios/dist/axios.min.js"></script>-->
 <script src="{{url_for('static', filename='js/axios.min.js')}}"></script>
-
 {% endblock extra_head_style %}
 
 {% block title %}
-{{ post.title }}
+    {{ post.title }}
 {% endblock title %}
 
 {% block breadcrumb %}
@@ -28,7 +27,7 @@
 </nav>
 {% endblock breadcrumb %}
 
-{% block cate_box %}
+{% block post_box %}
 <div class="pl-2">
     <div class="is-size-5 is-flex is-align-items-center">
         <div class="tag is-rounded is-size-6 is-{{post.category.icon}}">
@@ -44,19 +43,22 @@
             <figure class="image  mr-2 is-inline-block" style="border: none;">
                 <img class="is-rounded" style="height: 36px; width: 36px;"
                      src="
-                                 {% if post.author.user.avatar %}
-                                 {{url_for('download_file', filename=post.author.user.avatar)}}
-                                 {% else %}
-                                 {{url_for('static', filename='/img/user/default_avatar.svg')}}
-                                 {% endif %}
-                                "
+                         {% if post.author.user.avatar %}
+                         {{url_for('download_file', filename=post.author.user.avatar)}}
+                         {% else %}
+                         {{url_for('static', filename='/img/user/default_avatar.svg')}}
+                         {% endif %}
+                        "
                      alt="{{ g.user.username }}">
             </figure>
             <span class="has-text-black has-text-weight-bold">
                         {{ post.author.name }}
                     </span>
-            <span class="icon"><i class="mdi mdi-clipboard-text-clock-outline"></i></span>{{ post.pub_date |
-            feed_datetime(is_feed=True) }}
+            <span class="icon"><i class="mdi mdi-clipboard-text-clock-outline"></i></span>
+            {{ post.add_date | feed_datetime(is_feed=True) }}
+            {% if post.add_date != post.pub_date %}
+             (수정됨)
+            {% endif %}
         </div>
     </div>
 
@@ -82,14 +84,14 @@
 <div class="level is-size-7">
     <div class="level-left">
         {% if prev_post %}
-        이전 글：<a href="{{ url_for('main.department_post_detail', department_id=department.id, id=prev_post.id) }}">
-        {{prev_post.title }}</a>
+            이전 글：<a href="{{ url_for('main.department_post_detail', department_id=department.id, id=prev_post.id) }}">
+            {{prev_post.title }}</a>
         {% endif %}
     </div>
     <div class="level-right">
         {% if next_post %}
-        다음 글：<a href="{{ url_for('main.department_post_detail', department_id=department.id, id=next_post.id) }}">
-        {{next_post.title }} </a>
+            다음 글：<a href="{{ url_for('main.department_post_detail', department_id=department.id, id=next_post.id) }}">
+            {{next_post.title }} </a>
         {% endif %}
     </div>
 </div>
@@ -102,7 +104,7 @@
 </div>
 <pre>{$ comments $}</pre>
 {% endif %}
-{% endblock cate_box %}
+{% endblock post_box %}
 
 
 <!-- 댓글 관련 소스 -->

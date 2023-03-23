@@ -71,15 +71,27 @@
 <!--                        <b-navbar-item href="/">-->
 <!--                            Home-->
 <!--                        </b-navbar-item>-->
+                        <!-- 부서들( level=0 + level=1)  -->
+                        {% if root_department %}
+                        <b-navbar-item
+                            {% if root_department.id == current_dept_id %}
+                                class="has-text-weight-bold is-size-5 has-text-danger"
+                            {% else %}
+                                class="has-text-weight-bold is-size-5"
+                            {% endif %}
+                            href="{{ url_for('main.department', id=root_department.id) }}">
+                            {{ root_department.name }}
+                        </b-navbar-item>
+                        {% endif  %}
 
-
-                        <!-- 부서들 -->
                         {% for department in departments %}
                         <b-navbar-item
-                                {% if department.id == current_dept_id %}
-                                class="has-text-primary"
-                                {% endif %}
-                                href="{{ url_for('main.department', id=department.id) }}">
+                            {% if department.id == current_dept_id %}
+                                class="has-text-weight-bold has-text-primary"
+                            {% else %}
+                                class=""
+                            {% endif %}
+                            href="{{ url_for('main.department', id=department.id) }}">
                             {{department.name }}
                         </b-navbar-item>
                         {% endfor %}
@@ -186,7 +198,8 @@
                 {% block box %}
                 <div class="columns is-multiline">
                     {% for post in post_list %}
-                    <div class="column is-4-fullhd">
+<!--                    <div class="column is-4-fullhd">-->
+                    <div class="column is-4">
                         <div class="card">
                             <div class="card-image">
                                 <figure class="image is-4by3">
@@ -199,7 +212,7 @@
                             <div class="card-content">
                                 <div class="media">
                                     <div class="media-content">
-                                        <p class="title is-4"><a
+                                        <p class="title is-4 is-size-6"><a
                                                 href="{{url_for('main.post_detail', category_id=post.category_id, id=post.id) }}">{{
                                             post.title }}</a></p>
                                     </div>
@@ -209,7 +222,7 @@
                                     <p class="has-text-grey is-size-7">
                                         {{ post.desc | truncate(30)}}
                                     </p>
-                                    <time datetime="{{ post.add_date }}">{{ post.add_date }}</time>
+                                    <time datetime="{{ post.add_date }}">{{ post.add_date | format_date }}</time>
                                 </div>
                             </div>
                         </div>

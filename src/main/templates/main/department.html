@@ -6,9 +6,9 @@
 
 {% block box %}
 <div class="columns">
-    <div class="column is-9" style="border-right:solid 1px #eee ;">
-        <div class="box is-shadowless has-background-light">
-            <!-- new breadcrumb block  -->
+    <div class="column is-8" style="border-right:solid 1px #eee ;">
+        <div class="box is-shadowless has-background-light py-3">
+            <!-- [new block] 자식들이 내용다르게 돌려쓸 block -->
             {% block breadcrumb %}
             <nav class="breadcrumb is-small" aria-label="breadcrumbs">
                 <ul>
@@ -17,15 +17,16 @@
                     <!-- 이후로는 직접 객체로 걸어주는데, [현재]면 #으로 걸고 or href주되 is-active면 클릭안되는 상태
                          .name만 / [부모]도 껴있으면 부모객체 -->
                     <li class="is-active">
-                        <a href="{{ url_for('main.department', id=department.id) }}" aria-current="page">{{ department.name }}</a>
+                        <a href="{{ url_for('main.department', id=department.id) }}" aria-current="page">
+                            {{ department.name }}</a>
                     </li>
                 </ul>
             </nav>
             {% endblock breadcrumb %}
         </div>
 
-        <!-- new 해당domain_box block 안에서 하위들을 돌린다. -->
-        {% block cate_box %}
+        <!-- [new block] 자식들이 내용다르게 돌려쓸 block -->
+        {% block post_box %}
         {% for post in post_list %}
         <div class="pl-2">
             <!-- [좌측정렬] 프로필 | 이름 | 시간 -->
@@ -43,10 +44,13 @@
                              alt="{{ g.user.username }}">
                     </figure>
                     <span class="has-text-black has-text-weight-bold">
-                        {{ post.author.name }}
-                    </span>
-                    <span class="icon"><i class="mdi mdi-clipboard-text-clock-outline"></i></span>{{ post.add_date |
-                    feed_datetime(is_feed=True) }}
+                            {{ post.author.name }}
+                        </span>
+                    <span class="icon"><i class="mdi mdi-clipboard-text-clock-outline"></i></span>
+                    {{ post.add_date | feed_datetime(is_feed=True, k=7) }}
+                    {% if post.add_date != post.pub_date %}
+                     (수정됨)
+                    {% endif %}
                 </div>
             </div>
 
@@ -74,14 +78,15 @@
             <!-- 카테고리 + 댓글 갯수 -->
             <div class="my-3 is-size-7 is-flex is-align-items-center">
                 <!-- 카테고리 -->
-                <span class="tag is-rounded is-{{post.category.icon}}">
-                        {{ post.category.name }}
-                </span>
+                <a class="tag is-rounded is-size-7 is-{{post.category.icon}}"
+                   href="{{ url_for('main.department_category', department_id=department.id, id=post.category.id) }}">
+                    {{ post.category.name }}
+                </a>
                 <!-- 댓글 갯수 -->
                 {% if post.comment_count > 0 %}
                 <b-button class="is-rounded has-text-grey mx-2" size="is-small" style="font-size: 0.6rem"
                 >
-                    <span class="icon" style="width: 20px" ><i class="mdi mdi-comment-outline"></i></span>
+                    <span class="icon" style="width: 20px"><i class="mdi mdi-comment-outline"></i></span>
                     {{ post.comment_count }}
                 </b-button>
                 {% endif %}
@@ -120,91 +125,123 @@
                 <span class=pagination-ellipsis>&hellip;</span>
                 {% endif %}
                 {% endfor %}
-
             </ul>
         </nav>
         {% endblock pagination %}
 
-        {% endblock cate_box %}
+        {% endblock post_box %}
     </div>
 
-    <!-- new html -> block아니라서 상속한 자식들은 다 공유  -->
+    <!-- [new html] 자식들이 공유하는 데이터 없는 html  -->
     <div class="column">
 
         <!-- 검색 -->
-        <div class="box is-shadowless" style="border:solid 1px #eee ;">
-            <h1 class="is-size-6 icon-text">
-                <span class="icon"><i class="mdi mdi-search-web"></i></span>
-                검색
+<!--        <div class="box is-shadowless" style="border:solid 1px #eee ;">-->
+        <div class="box is-shadowless my-1 py-3 " >
+            <h1 class="icon-text is-size-6 has-text-weight-bold">
+                <span class="icon"><i class="mdi mdi-magnify"></i></span>
+                {{ department.name }} 검색
             </h1>
             <div class=" dropdown-divider"></div>
-            <form action="{{url_for('main.search')}}" method="get">
-                <div class="field has-addons">
-                    <div class="control">
-                        <input class="input" type="search" value="{{word}}" name="word" placeholder="검색keyword 입력">
-                    </div>
-                    <div class="control">
-                        <input type="submit" value="Search" class="button is-info">
-                    </div>
-                </div>
+            <form action="{{url_for('main.department_search', department_id=department.id)}}" method="get"
+                  class="pl-2"
+            >
+<!--                 <b-field label="{{department.name}} 검색" label-position="on-border" >-->
+                 <b-field >
+                    <b-input placeholder="검색..." type="search" size="is-small"
+                             value="{{word}}" name="word"
+                    ></b-input>
+                    <p class="control">
+                        <b-button class="button is-primary" size="is-small">Search</b-button>
+                    </p>
+                </b-field>
             </form>
         </div>
 
-
-        <!-- 최근게시물   -->
-        <div class="box is-shadowless" style="border:solid 1px #eee ;">
-            <h1 class="is-size-6 icon-text">
-                <span class="icon"><i class="mdi mdi-calendar-month-outline"></i></span>
-                Recent Article
+                <!-- tag  -->
+<!--        <div class="box is-shadowless" style="border:solid 1px #eee ;">-->
+        <div class="box is-shadowless my-1 py-3" >
+            <h1 class="icon-text is-size-6 has-text-weight-bold">
+                <span class="icon"><i class="mdi mdi-tag-multiple-outline"></i></span>
+                {{ department.name }} Category
             </h1>
             <div class=" dropdown-divider"></div>
-            <ul>
-                {% for post in new_posts %}
-                <li class="pl-2">
-                    <span class=" has-text-grey-light">{{ loop.index }}.</span>
-                    <a href="{{ url_for('main.post_detail', category_id=post.category_id, id=post.id) }}">
-                        {{post.title}}
-                    </a>
-                </li>
-                <div class="dropdown-divider"></div>
+            <div class="tags pl-2">
+                {% for category in categories %}
+                <a class="tag is-rounded is-size-7 is-{{category.icon}}"
+                   href="{{ url_for('main.department_category', department_id=department.id, id=category.id) }}">
+                    {{ category.name }}
+                </a>
                 {% endfor %}
-            </ul>
+            </div>
         </div>
 
-
-        <div class="box is-shadowless" style="border:solid 1px #eee ;">
-            <h1 class="is-size-6 icon-text">
+                <!-- Archive  -->
+<!--        <div class="box is-shadowless" style="border:solid 1px #eee ;">-->
+        <div class="box is-shadowless my-1 py-3" >
+            <h1 class="icon-text is-size-6 has-text-weight-bold">
                 <span class="icon"><i class="mdi mdi-calendar-month-outline"></i></span>
-                Archive
+                {{ department.name }} Archive
             </h1>
             <div class="dropdown-divider"></div>
-            <!-- archive  -->
             <ul>
                 {% for date in dates %}
-                <li class="pl-2">
-                    <a href="{{ url_for('main.archive', date=date) }}"> {{date}} </a>
+                <li class="pl-2 pt-1 is-size-7 ">
+                    <span class="has-text-grey-light">•</span>
+                    <a href="{{ url_for('main.department_archive', department_id=department.id, date=date) }}">
+                        {{date}}
+                    </a>
                 </li>
-                <div class="dropdown-divider"></div>
+<!--                <div class="dropdown-divider"></div>-->
                 {% endfor %}
             </ul>
         </div>
 
-        <div class="box is-shadowless" style="border:solid 1px #eee ;">
-            <h1 class="is-size-6 icon-text">
+        <!-- tag  -->
+<!--        <div class="box is-shadowless" style="border:solid 1px #eee ;">-->
+        <div class="box is-shadowless my-1 py-3" >
+            <h1 class="icon-text is-size-6 has-text-weight-bold">
                 <span class="icon"><i class="mdi mdi-tag-multiple-outline"></i></span>
-                Tag
+                {{ department.name }} Tag
             </h1>
             <div class=" dropdown-divider"></div>
-            <!-- tag  -->
-            <div class="tags">
+            <div class="tags pl-2">
                 {% for tag in tags %}
-                <a class="tag {{ tag.style | random() }}"
-                   href="{{ url_for('main.tag', id=tag.id) }}">
+                <a class="tag is-rounded is-size-7 "
+                   href="{{ url_for('main.department_tag', department_id=department.id, id=tag.id) }}">
                     {{ tag.name }}
                 </a>
                 {% endfor %}
             </div>
         </div>
+
+
+        <!-- root department 전체 게시물 최근 게시글 5개   -->
+<!--        <div class="box is-shadowless" style="border:solid 1px #eee ;">-->
+        <div class="box is-shadowless my-1 py-3" >
+            <h1 class="icon-text is-size-6  has-text-weight-bold">
+                <span class="icon"><i class="mdi mdi-earth"></i></span>
+                {{ root_department.name }} 최신글
+            </h1>
+            <div class=" dropdown-divider"></div>
+            <ul>
+                {% for post in new_posts %}
+                <li class="pl-2 is-size-7 pt-1">
+                    <span class="has-text-grey-light">{{ loop.index }}.</span>
+                    <span class="tag is-rounded is-{{post.category.icon}}">
+                            <small>{{ post.category.name }}</small>
+                    </span>
+                    <a href="{{ url_for('main.department_post_detail', department_id=root_department.id, id=post.id) }}">
+                        {{post.title}}
+                    </a>
+                </li>
+<!--                <div class="dropdown-divider"></div>-->
+                {% endfor %}
+            </ul>
+        </div>
+
+
+
 
     </div>
 </div>
