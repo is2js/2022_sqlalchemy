@@ -375,11 +375,15 @@ date_format = '%Y년 %m월'.encode('unicode-escape').decode()
 def inject_archive():
     # Archive route용 모든 Post들의 출판일(pub_date)에서 -> [0000년 00월] 추출
     # -> archive route는 [0000년 00월]에서 숫자를 추출해서 extact('날짜단위', )로 필터링해서 조회할 수 있게 된다.
-    posts = Post.load({'category': 'selectin'}).filter_by(
+    posts = Post.load({'category': 'selectin', 'author' : 'selectin'}).filter_by(
         type=PostPublishType.SHOW
     ).order_by('-pub_date').all()
-    # https://onlytojay.medium.com/%ED%8C%8C%EC%9D%B4%EC%8D%AC-%EB%82%A0%EC%A7%9C-%ED%91%9C%ED%98%84-%ED%95%9C%EA%B8%80-%EC%97%90%EB%9F%AC-44aea1ae66d8
 
+    for post in posts:
+        author = post.author
+        # author.
+
+    # https://onlytojay.medium.com/%ED%8C%8C%EC%9D%B4%EC%8D%AC-%EB%82%A0%EC%A7%9C-%ED%91%9C%ED%98%84-%ED%95%9C%EA%B8%80-%EC%97%90%EB%9F%AC-44aea1ae66d8
     dates = set(post.pub_date.strftime(date_format).encode().decode('unicode-escape')
                 for post in posts)
     dates = sorted(dates, reverse=True)[:5]

@@ -113,8 +113,11 @@ def inject_permission():
     )
 
 def inject_departments():
-    root_department = Department.filter_by(level=0).first()
-    departments = Department.filter_by(level=1).order_by('sort').all()
+    # 나중에는 root들을 all()로 찾고 -> load1번만 한 상태로 children을 각 그룹들로 ㅟ급하자.
+    # -> 각 그룹들은 dropdown으로 나타내던지 하자.
+    root_department = Department.load({'children':'joined'}).filter_by(level=0).first()
+    # departments = Department.filter_by(level=1).order_by('sort').all()
+    departments = root_department.children
 
     return dict(
         root_department=root_department,

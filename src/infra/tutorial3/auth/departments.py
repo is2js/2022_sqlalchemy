@@ -138,7 +138,8 @@ class EmployeeDepartment(BaseModel):
     # employee_id = Column(Integer, nullable=False, index=True)
     # department_id = Column(Integer, nullable=False, index=True)
     # pickupapi # 다대다+정보도 관계테이블처럼 fk로 주기
-    employee_id = Column(Integer, ForeignKey('employees.id'), nullable=False, index=True)
+    employee_id = Column(Integer, ForeignKey('employees.id'), nullable=True, # 임시 삭제용
+                         index=True)
 
     # department_id = Column(Integer, ForeignKey('departments.id'), nullable=False, index=True)
     #### session.delete( dept )시, fk테이블인 여기에서 where = dept.id update set NULL이 자동으로 이루어진다.
@@ -158,6 +159,7 @@ class EmployeeDepartment(BaseModel):
                               # lazy='joined', # fk가 nullable하지 않으므로, joined를 줘도 된다.
                               back_populates='employee_departments'
                               )
+
 
     # 2. 고용일과 퇴직일은 없을 수 있다?! (퇴직일만 nullable=True인듯)
     employment_date = Column(Date, nullable=False, comment='입사일과 다른, 부임일')
@@ -568,7 +570,6 @@ class EmployeeDepartment(BaseModel):
         return mapper.department.has(
             Department_.id.in_(self_and_children_ids_of_parent_dept)
         )
-
 
 class Department(BaseModel):
     _N = 3  # path를 만들 때, 자를 단위
@@ -1361,6 +1362,69 @@ class Department(BaseModel):
 
         # 6. 전체 데이터에서 id만 select한 뒤, scalar_subquery로 만든다.
         return select(table.c.id).scalar_subquery()
+
+    @classmethod
+    def get_level_1_department_id_scalar_subquery(cls, department):
+        """
+db.get_session().execute(
+    Department.get_level_1_department_id_scalar_subquery(Department.get(8))
+    .select()
+).all()
+        => [(6,)]
+
+
+        """
+        # 1. 비재귀용어
+        child = (
+            select(cls)
+            .where(cls.id == department.id)
+        )
+        # 2. 비재귀용어 부모1개 select절을 +  재귀 cte로 만들어 parent table화 시킨다.
+        child = child.cte('cte', recursive=True)
+
+        # 3. 비재귀+재귀cte의 union아래부분에, 사용할, 재귀용어용 자식alias를 만든다
+        parent = aliased(cls)
+        parent = (
+            select(parent)
+            .join(child, parent.id == child.c.parent_id)
+        )
+
+        # 5. parent와 child를 union all한다.
+        table = child.union_all(parent)
+
+        level_expr = func.length(table.c.path) / cls._N - 1
+
+        # 6. 전체 데이터에서 id만 select한 뒤, scalar_subquery로 만든다.
+        return select(table.c.id).where(level_expr==1).scalar_subquery()
+
+    @classmethod
+    def get_level_1_department_id(cls, department, session=None):
+        # 1. 비재귀용어
+        child = (
+            select(cls)
+            .where(cls.id == department.id)
+        )
+        # 2. 비재귀용어 부모1개 select절을 +  재귀 cte로 만들어 parent table화 시킨다.
+        child = child.cte('cte', recursive=True)
+
+        # 3. 비재귀+재귀cte의 union아래부분에, 사용할, 재귀용어용 자식alias를 만든다
+        parent = aliased(cls)
+        parent = (
+            select(parent)
+            .join(child, parent.id == child.c.parent_id)
+        )
+
+        # 5. parent와 child를 union all한다.
+        table = child.union_all(parent)
+
+        level_expr = func.length(table.c.path) / cls._N - 1
+
+        # 6. 전체 데이터에서 id만 select한 뒤, scalar_subquery로 만든다.
+        query = select(table.c.id).where(level_expr==1)
+
+        obj = cls.create_obj(session=session, query=query)
+
+        return obj.scalar()
 
 
     # refactor for to_dict

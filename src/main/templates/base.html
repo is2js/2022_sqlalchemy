@@ -66,6 +66,8 @@
                         </b-navbar-item>
                     </template>
 
+
+
                     <template #start>
                         <!-- home 메뉴만 수동으로 href='/' 유지-->
 <!--                        <b-navbar-item href="/">-->
@@ -109,6 +111,25 @@
                             {{category.name }}
                         </b-navbar-item>
                         {% endfor %}
+
+
+                          <b-navbar-item >
+                            <b-dropdown :triggers="['hover', 'click']"
+                                        :auto-close="['outside', 'escape']"
+                                        >
+                                    <span slot="trigger">
+                                        <a class="has-text-info has-text-weight-bold"
+                                                href="#">고객센터</a>
+                                    </span>
+                                    <div>
+                                        <b-dropdown-item>불량 유저 신고</b-dropdown-item>
+                                        <b-dropdown-item>운영자 건의</b-dropdown-item>
+                                        <b-dropdown-item>게임 개발자 건의</b-dropdown-item>
+                                        <b-dropdown-item>웹 개발자 건의</b-dropdown-item>
+                                    </div>
+                                </b-dropdown>
+
+                        </b-navbar-item>
                     </template>
 
                     <!-- dropdown 메뉴는 혹시 몰라서 주석처리-->

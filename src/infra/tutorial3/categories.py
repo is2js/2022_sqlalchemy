@@ -40,7 +40,9 @@ posttags = Table('posttags', Base.metadata,
                  Column('tag_id', Integer().with_variant(BigInteger, "postgresql"), ForeignKey('tags.id'),
                         primary_key=True, nullable=False),
                  Column('post_id', Integer().with_variant(BigInteger, "postgresql"), ForeignKey('posts.id'),
-                        primary_key=True, nullable=False),
+                        primary_key=True, 
+                        nullable=True, # 임시 삭제용
+                        ),
                  mysql_engine='InnoDB',
                  mysql_charset='utf8mb4',
                  comment='Post-Tag 관계테이블'
@@ -127,7 +129,10 @@ class Post(BaseModel):
     post_counts = relationship('PostCount', passive_deletes=True)  # , back_populates='post')
 
     # 글 작성자(직원) fk 칼럼 추가
-    author_id = Column(Integer().with_variant(BigInteger, "postgresql"), ForeignKey('employees.id', ondelete="CASCADE"))
+    author_id = Column(Integer().with_variant(BigInteger, "postgresql"), 
+                       ForeignKey('employees.id', ondelete="CASCADE"),
+                       nullable=True, # 임시 삭제용
+                       )
     # Many create시  one객체로 fill하려면, Many -> One의 relation 추가
     author = relationship('Employee', foreign_keys=[author_id], back_populates='posts', uselist=False)
 
@@ -169,7 +174,6 @@ class Post(BaseModel):
         Tag_ = mapper.tags.mapper.class_
         return mapper.tags.any(Tag_.id == tag.id)
 
-
 # Post Count 모델 작성
 class PostCount(BaseModel):
     __tablename__ = 'postcounts'
@@ -182,7 +186,9 @@ class PostCount(BaseModel):
     # cascade delete 1: Fk에 DB레벨 제약조건을 on~ 으로 준다.
     # cascade delete 2: one의 relationship에 passive_delets=True를 줘서, DB에게 cascade를 맞긴다.
     post_id = Column(Integer().with_variant(BigInteger, "postgresql"),
-                     ForeignKey('posts.id', ondelete="CASCADE"), )
+                     ForeignKey('posts.id', ondelete="CASCADE"),
+                     nullable=True, # 임시 삭제용
+                     )
 
 
 class Comment(BaseModel):
@@ -192,7 +198,9 @@ class Comment(BaseModel):
     id = Column(Integer().with_variant(BigInteger, "postgresql"), primary_key=True)
 
     # 부모 글
-    post_id = Column(Integer().with_variant(BigInteger, "postgresql"), ForeignKey('posts.id', ondelete="CASCADE"))
+    post_id = Column(Integer().with_variant(BigInteger, "postgresql"), ForeignKey('posts.id', ondelete="CASCADE"),
+                     nullable=True, # 임시 삭제용
+                     )
     post = relationship('Post', foreign_keys=[post_id], uselist=False, back_populates='comments')
 
     # 글 작성자(직원) fk 칼럼 추가

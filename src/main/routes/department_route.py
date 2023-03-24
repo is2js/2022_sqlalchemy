@@ -289,7 +289,9 @@ def add_employee():
         #     # emp + emp_dept + rel obj
         #     'position': employee.get_position(after_department),
         # }
-        employee = Employee.get(payload['emp_id'])
+
+
+        employee = Employee.get(payload['emp_id']) # emp.get_position() 때리기 전에 더럽혀진 emp객체 다시 가져옴
 
         new_emp = employee.to_dict2(hybrid_attrs=True, enum_name=True, include=[
             'id', 'job_status', 'avatar', 'email', 'name'

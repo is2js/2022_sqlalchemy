@@ -936,7 +936,25 @@ def article_add():
 
         # 글내용에서 작성자의 employee객체를 추가
         # -> 생성시라면, 필드로 relation명으로 객체삽입 가능(relation있을 경우)
-        data['author'] = Employee.filter_by(user_id = g.user.id).first()
+        # employee = Employee.filter_by(user_id=g.user.id).first()
+        # -> g.user에는 이미 employee를 load하고 있음. ( role + employee )
+        data['author'] = g.user.employee
+
+        # level_1_department_id = g.user.employee.get_level_1_department_id()
+        # # level 1부서가 없다면, 관리자 중 그룹활동이 없는 계정(순수관리자)이거나, 직원인데 그룹가입 못한 직원
+        # # 1) 관리자이거나 root부서에 속하면 -> root부서로 배정
+        # # 2) 그룹가입못한 직원이면 -> null로 채워두도록 fill안함.
+        # if not level_1_department_id:
+        #     root_department = Department.filter_by(level=0).first()
+        #     if g.user.is_administrator or employee.is_below_to(root_department):
+        #         data['author_dept_id'] = root_department.id
+        #
+        # else:
+        #     data['author_dept_id'] = level_1_department_id
+        # print('data[author_dept_id]  >> ', data['author_dept_id'])
+
+        #### + g.user 로그인할 때, 동적으로 level_1_department도 넣어주기기
+        # del data['author_dept_id']
 
         result, msg = Post.create(**data)
         if result:
@@ -1603,6 +1621,7 @@ def employee_add(user_id):
         result, msg = user.update()
         if result:
             flash("직원 전환 성공", category='is-info')
+            return redirect(url_for('admin.employee'))
         else:
             flash(msg)
 

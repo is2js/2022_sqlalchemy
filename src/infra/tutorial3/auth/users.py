@@ -649,6 +649,14 @@ class Employee(BaseModel):
 
     posts = relationship('Post', passive_deletes=True, back_populates='author')
 
+    # new -> 상위부서
+    # => 취임정보 생성시, level 1 dept를 path로 구해서, 그것을 one으로 추가한다.
+    upper_department_id = Column(Integer, ForeignKey('departments.id', ondelete='SET NULL'),
+                                 index=True,
+                                 nullable=True
+                                 )
+    upper_department = relationship("Department", foreign_keys=[upper_department_id],)
+
     # qrcode, qrcode_img: https://github.com/prameshstha/QueueMsAPI/blob/85dedcce356475ef2b4b149e7e6164d4042ffffb/bookings/models.py#L92
 
     #### 특정 role의 사람들을 다 가져오기 위한 메서드
@@ -1082,6 +1090,26 @@ class Employee(BaseModel):
             filter_map.get('and_').update({'level': min_level_subq})
 
         return Department_.filter_by(**filter_map, session=session).order_by('path').all()
+
+    def get_level_1_department_id(self):
+        """
+        e = Employee.get(1)
+        e.get_level_1_department_id()
+        ----
+        6 or None
+        """
+        Department_ = self.__class__.departments.mapper.class_
+
+        depts = self.get_departments()
+
+        level_1_depts = set()
+        for dept in depts:
+            level_1_depts.add(Department_.get_level_1_department_id(dept))
+
+        if len(level_1_depts) > 1:
+            raise Exception(f'{self}는 현재 2개이상의 그룹에 소속 중입니다. 1개의 그룹에만 일하도록 해주세요.')
+
+        return next(iter(level_1_depts), None)
 
     #### with other entity
     # def is_leader_in(self, department: Department):
@@ -1963,22 +1991,21 @@ class Employee(BaseModel):
         data = dict()  # 한번에 fill = update의 인자로 주기 위해 모으기 용
 
         Role_ = self.__class__.user.mapper.class_.role.mapper.class_
-        print('session.identity_map.values()  >> ', session.identity_map.values())
+        # print('session.identity_map.values()  >> ', session.identity_map.values())
 
         # 1. 승진여부 -> #Role 변화 : 부서변화(취임정보)의  [제거 or 변경/추가]와 무관하게 먼저 판단하기
         if self.is_demote(current_dept_id, after_dept_id, as_leader, session=session):
             # self.user.role = Role.filter_by(name='STAFF').first()
             # self.fill(role =Role.filter_by(name='STAFF').first())
-            print('session.identity_map.values() is_demote >> ', session.identity_map.values())
-            session.identity_map.values()
+            # print('session.identity_map.values() is_demote >> ', session.identity_map.values())
             data['role'] = Role_.filter_by(name='STAFF', session=session).first()
 
         elif self.is_promote(after_dept_id, as_leader, session=session):
-            print('session.identity_map.values() is_promote >> ', session.identity_map.values())
+            # print('session.identity_map.values() is_promote >> ', session.identity_map.values())
             # self.fill(role=Role.filter_by(name='CHIEFSTAFF').first())
             data['role'] = Role_.filter_by(name='CHIEFSTAFF', session=session).first()
 
-        print('session.identity_map.values() after promote >> ', session.identity_map.values())
+        # print('session.identity_map.values() after promote >> ', session.identity_map.values())
 
         EmployeeDepartment_ = self.__class__.employee_departments.mapper.class_
         # 2. 선택된 [현재부서]의 [취임정보#EmployeeDepartment 해임 표시] 할 상황 -> [부서변경]or[부서제거]을 찾아 처리
@@ -2005,14 +2032,26 @@ class Employee(BaseModel):
         Department_ = self.__class__.departments.mapper.class_
         # (2-1)
         if not after_dept_id:
+            #### 부서제거
             # 부서제거시, 부서제거 reference입력하고 add
-            print('session.identity_map.values()  >> ', session.identity_map.values())
+            # print('session.identity_map.values()  >> ', session.identity_map.values())
 
             current_dept = Department_.get(current_dept_id, session=session)
+
+            #### new3) 1개의 level1 상위부서들 중 여러 부서에 취임가능한 상태이므로,
+            #          마지막 1개 남은 부서의 해임일 때, 상위부서도 제거한다.
+            # => 이미 위에서 current_dept가 있을 시, session에서 [일단 dismissal_date가 채워진 상황]이므로
+            # => * active한 부서취임정보 검색시 1남을 때가 아닌 0개 남을때로 확인한다.
+            current_all_depts = self.get_departments(session=session)
+            # if len(current_all_depts) == 1:
+            if len(current_all_depts) == 0:
+                self.fill(upper_department=None)
+
             self.fill_reference(f"[{current_dept.name}]부서 해임({format_date(target_date)})")
             # result, msg = self.update()
+
             result, msg = self.update(**data, session=session, auto_commit=auto_commit)
-            print('session.identity_map.values()  >> ', session.identity_map.values())
+            # print('session.identity_map.values()  >> ', session.identity_map.values())
             if result:
                 return True, f"[{current_dept.name}]부서 제거를 성공하였습니다."
             else:
@@ -2021,7 +2060,6 @@ class Employee(BaseModel):
         # (2-2) 다음 취임정보#EmployeeDepartment를 생성하는 상황(부서 변경 or 부서 추가)
         # (2-2-1) (after부서가 있는 상태): current O[부서변경] or current X [부서추가] -> after 부서 취임정보 생성
         #### 추가. .save()에 검증을 통합하지말고, .create()위에 일단 정의하기
-
         # 추가1. exists()는 create에 fill될 keyword를 가지고 미리 filter_by를 만든 뒤 호출한다.
         # 이 때, fill될 데이터는 filter_by + create 둘다에서 쓸 것이니 -> 미리 변수로 만들어놓는다.
         # result, message_after_save = after_emp_dept.save()
@@ -2071,13 +2109,38 @@ class Employee(BaseModel):
             # current_dept = Department.get(current_dept_id)
             after_dept = Department_.get(after_dept_id, session=session)
             if current_dept_id:
+                # 부서 변경
                 current_dept = Department_.get(current_dept_id, session=session)
+
+                #### new4) 부서변경은 이미 employee에 upper_department_id를 가진 상태이므로
+                #          after의 상위부서와 비교한다.
+                target_upper_dept = Department_.filter_by(path=after_dept.path[:6], session=session).first()
+                current_all_departments = self.get_departments(session=session) # 현재부서는 빠진 상태
+                # 현재 상위부서에 대한 부서가, 현재부서를 제외하고 남아있으면, 비교하여 검증한다
+                if len(current_all_departments) > 1:
+                    if self.upper_department_id != target_upper_dept.id:
+                        session.close()
+                        return False, '이미 다른 그룹에 소속된 직원입니다. Level 1의 부서들 중 1곳에서만 소속 가능합니다.'
+
+                self.fill(upper_department=target_upper_dept)
+
                 self.fill_reference(f"[{current_dept.name}→{after_dept.name}]부서 변경({format_date(target_date)})")
                 message = f"부서 변경[{current_dept.name}→{after_dept.name}]을 성공하였습니다."
 
             else:
+                # 부서 추가
                 self.fill_reference(f"[{after_dept.name}]부서 취임({format_date(target_date)})")
                 message = f"부서 추가[{after_dept.name}]를 성공하였습니다."
+
+                #### new) after 부서의 상위부서(level=1)를 찾아 필드로 추가
+                target_upper_dept = Department_.filter_by(path=after_dept.path[:6], session=session).first()
+
+                #### new2) 상위부서 추가하기 전에, [현재 상위부서 존재]시 현재 상위부서와 타겟 상위부서를 비교해서, 다르면 여기서 탈락
+                if self.upper_department_id and self.upper_department_id != target_upper_dept.id:
+                    session.close()
+                    return False, '이미 다른 그룹에 소속된 직원입니다. Level 1의 부서들 중 1곳에서만 소속 가능합니다.'
+
+                self.fill(upper_department=target_upper_dept)
 
             # updated_data.update(dict(employee_departments=[current_emp_dept, after_emp_dept]))
             # self.fill(employee_departments=after_emp_dept)
@@ -2369,7 +2432,6 @@ class Employee(BaseModel):
             ED_.dismissal_date.is_(None) & ED_.is_below_to(dept)
         )
 
-
 # #### with other entity
 # def is_demote(self, as_leader, current_dept_id):
 #
@@ -2503,7 +2565,8 @@ class EmployeeLeaveHistory(BaseModel, CRUDMixin):
     id = Column(Integer().with_variant(BigInteger, "postgresql"), primary_key=True)
 
     employee_id = Column(Integer, ForeignKey('employees.id'),
-                         nullable=False, index=True)
+                         nullable=True, # 임시 삭제용
+                         index=True)
 
     #### 원래는 직원별, 부서별, 휴~복직 정보를 모으려고 했는데
     #### => 어차피 내가 속한 부서들 다 가져와서 한번에 처리하므로
