@@ -4,9 +4,10 @@
 
 {% block extra_head_style %}
 <style>
-    .is-hero-bar {
+    .is-bottom-bar {
         background-color: #fff;
         border-bottom: 1px solid rgba(24, 28, 33, .06);
+        margin-bottom: 0.5rem;
     }
 
     .is-hero-background {
@@ -47,16 +48,19 @@
                     <div class="level-right">
                         <div class="level-item">
                             <div class="buttons is-right">
+                                <!-- 부서관리(상위부서장) -->
                                 <a href="https://justboil.me/bulma-admin-template/one/"
                                    target="_blank" class="button is-outlined is-danger is-light is-small">
                                     <span class="icon"><i class="mdi mdi-pencil-box-outline default"></i></span>
                                     <span><small>부서관리</small></span>
                                 </a>
+                                <!-- 조직도(부서원) -->
                                 <a href="https://justboil.me/bulma-admin-template/one/"
                                    target="_blank" class="button is-outlined is-info is-light is-small">
                                     <span class="icon"><i class="mdi mdi-pencil-box-outline default"></i></span>
                                     <span><small>조직도</small></span>
                                 </a>
+                                <!-- 글쓰기(부서원) -->
                                 <a href="https://justboil.me/bulma-admin-template/one/"
                                    target="_blank" class="button is-outlined is-primary is-light is-small">
                                     <span class="icon"><i class="mdi mdi-pencil-box-outline default"></i></span>
@@ -192,7 +196,7 @@
     <div class="column">
         <!-- 해당상위부서 직원일 경우       -->
         {% if g.user and g.user.is_upper_department(department) %}
-        <section class="hero is-hero-bar is-hero-background">
+        <section class="hero is-hero-background is-bottom-bar">
             <div class="hero-body p-2">
                 <div class="level">
                     <div class="level-left">
@@ -221,11 +225,11 @@
         <!-- 검색 -->
         <!--        <div class="box is-shadowless" style="border:solid 1px #eee ;">-->
         <div class="box is-shadowless my-1 py-3 ">
-            <h1 class="icon-text is-size-7 has-text-weight-bold">
+            <h1 class="icon-text is-size-7 has-text-weight-bold is-bottom-bar">
                 <span class="icon"><i class="mdi mdi-magnify"></i></span>
                 {{ department.name }} 검색
             </h1>
-            <div class=" dropdown-divider"></div>
+<!--            <div class=" dropdown-divider"></div>-->
             <form action="{{url_for('main.department_search', department_id=department.id)}}" method="get"
                   class="pl-2"
             >
@@ -244,11 +248,11 @@
         <!-- tag  -->
         <!--        <div class="box is-shadowless" style="border:solid 1px #eee ;">-->
         <div class="box is-shadowless my-1 py-3">
-            <h1 class="icon-text is-size-7 has-text-weight-bold">
+            <h1 class="icon-text is-size-7 has-text-weight-bold is-bottom-bar">
                 <span class="icon"><i class="mdi mdi-tag-multiple-outline"></i></span>
                 {{ department.name }} Category
             </h1>
-            <div class=" dropdown-divider"></div>
+<!--            <div class=" dropdown-divider"></div>-->
             <div class="tags pl-2">
                 {% for category in categories %}
                 <a class="tag is-rounded is-size-7 is-{{category.icon}}"
@@ -262,14 +266,14 @@
         <!-- Archive  -->
         <!--        <div class="box is-shadowless" style="border:solid 1px #eee ;">-->
         <div class="box is-shadowless my-1 py-3">
-            <h1 class="icon-text is-size-7 has-text-weight-bold">
+            <h1 class="icon-text is-size-7 has-text-weight-bold is-bottom-bar">
                 <span class="icon"><i class="mdi mdi-calendar-month-outline"></i></span>
                 {{ department.name }} Archive
             </h1>
-            <div class="dropdown-divider"></div>
+<!--            <div class="dropdown-divider"></div>-->
             <ul>
                 {% for date in dates %}
-                <li class="pl-2 pt-1 is-size-7 ">
+                <li class="pl-2 is-size-7 ">
                     <span class="has-text-grey-light">•</span>
                     <a href="{{ url_for('main.department_archive', department_id=department.id, date=date) }}">
                         {{date}}
@@ -283,11 +287,11 @@
         <!-- tag  -->
         <!--        <div class="box is-shadowless" style="border:solid 1px #eee ;">-->
         <div class="box is-shadowless my-1 py-3">
-            <h1 class="icon-text is-size-7 has-text-weight-bold">
+            <h1 class="icon-text is-size-7 has-text-weight-bold is-bottom-bar">
                 <span class="icon"><i class="mdi mdi-tag-multiple-outline"></i></span>
                 {{ department.name }} Tag
             </h1>
-            <div class=" dropdown-divider"></div>
+<!--            <div class=" dropdown-divider"></div>-->
             <div class="tags pl-2">
                 {% for tag in tags %}
                 <a class="tag is-rounded is-size-7 "
@@ -303,14 +307,14 @@
         <!--        <div class="box is-shadowless" style="border:solid 1px #eee ;">-->
         {% if department.level != 0 %}
         <div class="box is-shadowless my-1 py-3">
-            <h1 class="icon-text is-size-7  has-text-weight-bold">
+            <h1 class="icon-text is-size-7  has-text-weight-bold is-bottom-bar">
                 <span class="icon"><i class="mdi mdi-earth"></i></span>
-                월드 최신글
+                전체 최신글
             </h1>
-            <div class=" dropdown-divider"></div>
+<!--            <div class=" dropdown-divider"></div>-->
             <ul>
                 {% for post in new_posts %}
-                <li class="pl-2 is-size-7 pt-1">
+                <li class="pl-2 is-size-7">
                     <!--                    <span class="has-text-grey-light">{{ loop.index }}.</span>-->
                     <!--                    <span class="has-text-grey-light">-->
                     <!--                        • {{ post.author.upper_department.name }}|{{ post.category.name }}-->

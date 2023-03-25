@@ -11,6 +11,19 @@
 
 <!--<script src="https://unpkg.com/axios/dist/axios.min.js"></script>-->
 <script src="{{url_for('static', filename='js/axios.min.js')}}"></script>
+
+<style>
+    .is-bottom-bar {
+        background-color: #fff;
+        border-bottom: 1px solid rgba(24, 28, 33, .06);
+        margin-bottom: 0.5rem;
+    }
+
+    .is-hero-background {
+        background-image: url("{{url_for('static', filename='img/main/hero_background.png')}}");
+        background-size: cover;
+    }
+</style>
 {% endblock extra_head_style %}
 
 {% block title %}
