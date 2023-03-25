@@ -10,6 +10,8 @@ from src.config import project_config
 from src.infra.config.connection import DBConnectionHandler
 
 # app객체를 받아 초기화해주는 메서드
+from src.infra.tutorial3 import Category
+
 
 def init_script(app: Flask):
     # app -> terminal용 flask adminuser생성 command를 method형태로 추가
@@ -43,6 +45,21 @@ def init_script(app: Flask):
             print('e  >> ', e)
 
             click.echo(f'Warning) 알수없는 이유로 Role 데이터 생성에 실패했습니다.')
+
+    #### admin user 만들기 전에 role도 파이선으로 생성가능하도록 명령어로 만들기
+    @app.cli.command("create_category")
+    def create_category():
+        click.echo('기본 Category들을 python으로 생성합니다.')
+        try:
+            Category.insert_categories()
+            click.echo(f'초기 카테고리 데이터들이 생성되었습니다.')
+        except IntegrityError:
+            # 이미 생성할때 존재하면 생성안하도록 순회해서 걸릴 일은 없을 것 이다.
+            click.echo(f'Warning) 이미 Category 데이터가 존재합니다.')
+        except Exception as e:
+            print('e  >> ', e)
+
+            click.echo(f'Warning) 알수없는 이유로 Category 데이터 생성에 실패했습니다.')
 
 
     @app.cli.command("create_admin_user")

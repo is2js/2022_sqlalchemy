@@ -74,7 +74,7 @@
 <!--                            Home-->
 <!--                        </b-navbar-item>-->
                         <!-- 부서들( level=0 + level=1)  -->
-                        {% if root_department %}
+                        {% for root_department in root_departments %}
                         <b-navbar-item
                             {% if root_department.id == current_dept_id %}
                                 class="has-text-weight-bold is-size-5 has-text-danger"
@@ -84,33 +84,36 @@
                             href="{{ url_for('main.department', id=root_department.id) }}">
                             {{ root_department.name }}
                         </b-navbar-item>
-                        {% endif  %}
 
-                        {% for department in departments %}
-                        <b-navbar-item
-                            {% if department.id == current_dept_id %}
-                                class="has-text-weight-bold has-text-primary"
-                            {% else %}
-                                class=""
-                            {% endif %}
-                            href="{{ url_for('main.department', id=department.id) }}">
-                            {{department.name }}
-                        </b-navbar-item>
-                        {% endfor %}
+                            {% for department in root_department.children %}
+                            <b-navbar-item
+                                {% if department.id == current_dept_id %}
+                                    class="has-text-weight-bold has-text-primary"
+                                {% else %}
+                                    class=""
+                                {% endif %}
+                                href="{{ url_for('main.department', id=department.id) }}">
+                                {{department.name }}
+                            </b-navbar-item>
+                            {% endfor %}
+
+                        {% endfor  %}
+
+
 
                         <!-- home 제외 메뉴는 전역 categories로 구성-->
                         <!-- base.html에 app_context로 넘어오는 category와, category(id) route에 진입했을 때넘겨주는category_id를 비교한다 -->
                         <!-- 1) 그렇다면, 평소에는 category_id는 None으로서 비교안되고, 해당route에 들어갓을때만 값이 넘어와서 비교되서 class를 표기 -->
                         <!-- 2) 해당route에 진입안해서 못받은 {{ category_id }}는 None으로서 아예 표기도 안된다.-->
-                        {% for category in categories %}
-                        <b-navbar-item
-                                {% if category.id== category_id %}
-                                class="has-text-primary"
-                                {% endif %}
-                                href="{{ url_for('main.category', id=category.id) }}">
-                            {{category.name }}
-                        </b-navbar-item>
-                        {% endfor %}
+<!--                        {% for category in categories %}-->
+<!--                        <b-navbar-item-->
+<!--                                {% if category.id== category_id %}-->
+<!--                                class="has-text-primary"-->
+<!--                                {% endif %}-->
+<!--                                href="{{ url_for('main.category', id=category.id) }}">-->
+<!--                            {{category.name }}-->
+<!--                        </b-navbar-item>-->
+<!--                        {% endfor %}-->
 
 
                           <b-navbar-item >

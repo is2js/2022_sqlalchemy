@@ -205,6 +205,7 @@ class ObjectMixin(Base, BaseQuery):
     def set_engine(cls, engine):
         cls._engine = engine
 
+    @classmethod
     def get_scoped_session(self):
         # for template engine + sqlite (1thread only 1session)
         if self._engine:

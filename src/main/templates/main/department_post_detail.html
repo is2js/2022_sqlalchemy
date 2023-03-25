@@ -57,7 +57,7 @@
             <span class="icon"><i class="mdi mdi-clipboard-text-clock-outline"></i></span>
             {{ post.add_date | feed_datetime(is_feed=True) }}
             {% if post.add_date != post.pub_date %}
-             (수정됨)
+             (수정: {{ post.pub_date | feed_datetime(is_feed=True) }})
             {% endif %}
         </div>
     </div>
@@ -239,8 +239,8 @@
                 </strong>
                 <span class="has-text-grey mx-1">
                     <small>
-                    {$ child.feed_date $}
-                    {$ child.add_date != child.pub_date ? '(수정됨)' : '' $}
+                    {$ child.feed_add_date $}
+                    {$ child.add_date != child.pub_date ? '(수정: '+ child.feed_pub_date + ')' : '' $}
                     </small>
                 </span>
             </div>

@@ -30,11 +30,27 @@ class Category(BaseModel):
                          # lazy=True
                          )
 
-    # def __repr__(self):
-    #     info: str = f"{self.__class__.__name__}" \
-    #                 f"[name={self.name!r}]"
-    #     return info
+    @classmethod
+    def insert_categories(cls):
+        # 2) role dict묶음을 돌면서, 이미 존재하는지 조회하고, 없을 때 Role객체를 생성하여 role객체를 유지한다
+        session = cls.get_scoped_session()
 
+        name_and_icons = [
+            ('잡담', 'grey is-light'),
+            ('질문', 'success is-light'),
+            ('인사', 'info is-light'),
+            ('자료', 'warning'),
+            ('회의', 'warning is-light'),
+            ('공지', 'danger is-light'),
+            ('메인일정(캘린더)', 'danger'),
+        ]
+        for name, icon in name_and_icons:
+            Category.create(
+                name=name, icon=icon,
+                session=session, auto_commit=False
+            )
+
+        session.commit()
 
 posttags = Table('posttags', Base.metadata,
                  Column('tag_id', Integer().with_variant(BigInteger, "postgresql"), ForeignKey('tags.id'),
@@ -321,7 +337,11 @@ class Comment(BaseModel):
 
     # column내용과 일치하는 propery를 만들면 recursion에러난다.
     @hybrid_property
-    def feed_date(self):
+    def feed_add_date(self):
+        return feed_datetime(self.add_date, is_feed=True, k=365)
+
+    @hybrid_property
+    def feed_pub_date(self):
         return feed_datetime(self.pub_date, is_feed=True, k=365)
 
     @hybrid_property
