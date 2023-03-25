@@ -5,11 +5,10 @@ from pathlib import Path
 
 from flask import Flask, render_template
 from flask_cors import CORS
-from sqlalchemy import select
+from flask_debugtoolbar import DebugToolbarExtension
 
 from src.config import app_config
 
-from src.infra.config.connection import DBConnectionHandler
 from src.infra.tutorial3 import Category, Setting, Permission, Roles, Department
 
 ## Path.cwd()는 실행파일(root의 run.py)의 위치가 찍힌다 -> root부터 경로잡기
@@ -42,6 +41,7 @@ def create_app(config_name='default'):
 
     ## extension객체들로 app객체 초기화
     CORS(app)
+    DebugToolbarExtension(app)
 
     ## 필터 추가
     from src.main.templates.filters import feed_datetime, join_phone, join_birth
