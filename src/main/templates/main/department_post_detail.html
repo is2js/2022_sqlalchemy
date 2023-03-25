@@ -463,6 +463,7 @@
                     let updated_comment = res.data.updated_comment;
                     this.child.content = updated_comment.content;
                     this.child.pub_date = updated_comment.pub_date;
+                    this.child.feed_pub_date = updated_comment.feed_pub_date;
 
 
                     this.toast(res.data.message);
@@ -534,6 +535,7 @@
 
                     targetComment.status = updatedComment.status;
                     targetComment.pub_date = updatedComment.pub_date;
+                    targetComment.feed_pub_date = updatedComment.feed_pub_date;
 
                     this.toast(res.data.message);
 
@@ -680,6 +682,7 @@
 
                     targetComment.status = updatedComment.status;
                     targetComment.pub_date = updatedComment.pub_date;
+                    targetComment.feed_pub_date = updatedComment.feed_pub_date;
 
 
                     this.toast(res.data.message);

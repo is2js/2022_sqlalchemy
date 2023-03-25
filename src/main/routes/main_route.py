@@ -144,6 +144,13 @@ def category(id):
 def department(id):
     # 상위entity인 category 자체 설명
     department = Department.get(id)
+    if department.level == 0:
+        departments = Department.filter_by(parent_id=department.id).all()
+        # relation에 대해 in은 적용되지 않으므로, id로
+        # post_author_filter = dict(author___upper_department__in=departments)
+        post_author_filter = dict(author___upper_department_id__in=[x.id for x in departments])
+    else:
+        post_author_filter = dict(author___upper_department=department)
 
     page = request.args.get('page', 1, type=int)
 
@@ -153,7 +160,9 @@ def department(id):
                             }) \
         .filter_by(
         type=PostPublishType.SHOW,
-        is_author_below_to=department
+        **post_author_filter
+        # author___upper_department=department,
+        # is_author_below_to=department
     ) \
         .order_by('-add_date') \
         .paginate(page, per_page=5)
