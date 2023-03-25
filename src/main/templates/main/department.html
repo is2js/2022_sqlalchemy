@@ -69,19 +69,21 @@
             <!-- title + desc -->
             <div class="mt-2 is-size-5 has-text-weight-bold">
                 <a href="{{ url_for('main.department_post_detail', department_id=department.id, id=post.id) }}">
-                    {{ post.title }}</a>
+                    {{ post.title }}
+                </a>
             </div>
             {% if post.desc %}
             <div class="has-text-grey is-size-7 ">설명: {{ post.desc }}</div>
             {% endif %}
 
-            <!-- 카테고리 + 댓글 갯수 -->
+            <!--  카테고리 + 댓글 갯수 + (자식부서) -->
             <div class="my-3 is-size-7 is-flex is-align-items-center">
                 <!-- 카테고리 -->
                 <a class="tag is-rounded is-size-7 is-{{post.category.icon}}"
                    href="{{ url_for('main.department_category', department_id=department.id, id=post.category.id) }}">
                     {{ post.category.name }}
                 </a>
+
                 <!-- 댓글 갯수 -->
                 {% if post.comment_count > 0 %}
                 <b-button class="is-rounded has-text-grey mx-2" size="is-small" style="font-size: 0.6rem"
@@ -89,6 +91,14 @@
                     <span class="icon" style="width: 20px"><i class="mdi mdi-comment-outline"></i></span>
                     {{ post.comment_count }}
                 </b-button>
+                {% endif %}
+
+                <!-- level 0 부서일 경우만, 작성자의 상위부서(자식 부서인 level 1 부서) -->
+                {% if department.level == 0 %}
+                <a class="tag is-rounded is-size-7 is-grey"
+                   href="{{ url_for('main.department', id=post.author.upper_department.id) }}">
+                    {{ post.author.upper_department.name }}
+                </a>
                 {% endif %}
             </div>
 
@@ -218,6 +228,7 @@
 
         <!-- root department 전체 게시물 최근 게시글 5개   -->
 <!--        <div class="box is-shadowless" style="border:solid 1px #eee ;">-->
+        {% if department.level != 0 %}
         <div class="box is-shadowless my-1 py-3" >
             <h1 class="icon-text is-size-7  has-text-weight-bold">
                 <span class="icon"><i class="mdi mdi-earth"></i></span>
@@ -237,7 +248,7 @@
 <!--                    <span class="tag is-rounded is-{{post.category.icon}}">-->
 <!--                            <small>{{ post.category.name }}</small>-->
 <!--                    </span>-->
-                    <a href="{{ url_for('main.department_post_detail', department_id=department.id, id=post.id) }}">
+                    <a href="{{ url_for('main.department_post_detail', department_id=post.author.upper_department.id, id=post.id) }}">
                         [{{ post.category.name }}] {{post.title}}
                     </a>
                 </li>
@@ -245,6 +256,7 @@
                 {% endfor %}
             </ul>
         </div>
+        {% endif %}
 
 
 

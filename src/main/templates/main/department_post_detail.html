@@ -29,7 +29,7 @@
 
 {% block post_box %}
 <div class="pl-2">
-    <div class="is-size-5 is-flex is-align-items-center">
+    <div class="is-size-5 is-flex is-align-items-center mb-1">
         <div class="tag is-rounded is-size-6 is-{{post.category.icon}}">
             {{ post.category.name }}
         </div>
@@ -39,9 +39,9 @@
     </div>
     <!-- [좌측정렬] 프로필 | 이름 | 시간 -->
     <div class="is-pulled-left">
-        <div class="has-text-grey-light is-size-6 mt-1 is-align-items-center is-flex">
+        <div class="has-text-grey-light is-size-7 mt-1 is-align-items-center is-flex">
             <figure class="image  mr-2 is-inline-block" style="border: none;">
-                <img class="is-rounded" style="height: 36px; width: 36px;"
+                <img class="is-rounded" style="height: 32px; width: 32px;"
                      src="
                          {% if post.author.user.avatar %}
                          {{url_for('download_file', filename=post.author.user.avatar)}}
@@ -64,7 +64,7 @@
 
     <!-- [우측정렬] 조회수 + 태그 -->
     <div class="is-pulled-right mr-2">
-        <div class="has-text-grey is-size-6">
+        <div class="has-text-grey is-size-7">
             {% if post.tags %}
             <span class="icon"><i class="mdi mdi-tag-heart-outline"></i></span>{{ post.tags|join(',') }}
             {% endif %}

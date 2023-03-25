@@ -142,27 +142,26 @@ def category(id):
 @main_bp.route("/department/<int:id>")
 @login_required
 def department(id):
-    # 상위entity인 category 자체 설명
     department = Department.get(id)
-    if department.level == 0:
-        departments = Department.filter_by(parent_id=department.id).all()
-        # relation에 대해 in은 적용되지 않으므로, id로
-        # post_author_filter = dict(author___upper_department__in=departments)
-        post_author_filter = dict(author___upper_department_id__in=[x.id for x in departments])
-    else:
-        post_author_filter = dict(author___upper_department=department)
 
     page = request.args.get('page', 1, type=int)
 
-    pagination = Post.load({'category': 'selectin', 'tags': 'joined',
-                            'author': ('selectin', {'user': 'selectin'},),  # employee(author name) + user(for avatar)
-                            'comments': 'joined'  # 댓글 갯수 @h comment_count를 사용하기 위해
-                            }) \
+    schema = {
+        'category': 'selectin', 'tags': 'joined',
+        'author': ('selectin', {
+            'user': 'selectin',  # employee(author name) + user(for avatar)
+            },),
+        'comments': 'joined'  # 댓글 갯수 @h comment_count를 사용하기 위해
+        }
+
+    # level 0 부서는 작성자의 상위부서 == level 1부서들을 post마다 나타내기용
+    if department.level == 0:
+        schema['author'][1].update({'upper_department': 'selectin'})
+
+    pagination = Post.load(schema) \
         .filter_by(
         type=PostPublishType.SHOW,
-        **post_author_filter
-        # author___upper_department=department,
-        # is_author_below_to=department
+        is_author_upper_department=department,  # level 0이면 내부에서 자식 level 1 부서들을 꺼내서 필터링
     ) \
         .order_by('-add_date') \
         .paginate(page, per_page=5)
@@ -296,7 +295,7 @@ def department_post_detail(department_id, id):
     # limit 이전 글의 갯수
     prev_post = Post.filter_by(
         type=PostPublishType.SHOW,
-        is_author_below_to=department,
+        is_author_upper_department=department,
         id__lt=id,
     ).order_by('-id') \
         .limit(1) \
@@ -305,7 +304,7 @@ def department_post_detail(department_id, id):
     # limit 다음 글의 갯수
     next_post = Post.filter_by(
         type=PostPublishType.SHOW,
-        is_author_below_to=department,
+        is_author_upper_department=department,
         id__gt=id,
     ).order_by('id') \
         .limit(1) \
@@ -355,12 +354,23 @@ def department_search(department_id):
     page = request.args.get('page', 1, type=int)
     word = request.args.get('word', '', type=str).strip()
 
-    pagination = Post.load({'category': 'selectin', 'tags': 'joined', 'author': ('selectin', {'user': 'selectin'}),
-                            'comments': 'joined'  # 댓글 갯수 @h comment_count를 사용하기 위해
-                            }) \
+    schema = {
+        'category': 'selectin', 'tags': 'joined',
+        'author': ('selectin', {
+            'user': 'selectin',  # employee(author name) + user(for avatar)
+            },),
+        'comments': 'joined'  # 댓글 갯수 @h comment_count를 사용하기 위해
+        }
+
+    # level 0 부서는 작성자의 상위부서 == level 1부서들을 post마다 나타내기용
+    if department.level == 0:
+        schema['author'][1].update({'upper_department': 'selectin'})
+
+    pagination = Post.load(schema) \
         .filter_by(
         type=PostPublishType.SHOW,
-        is_author_below_to=department,
+        is_author_upper_department=department,  # level 0이면 내부에서 자식 level 1 부서들을 꺼내서 필터링
+
         or_=dict(title__contains=word, content__contains=word)
     ) \
         .order_by('-add_date') \
@@ -384,7 +394,7 @@ date_format = '%Y년 %m월'.encode('unicode-escape').decode()
 def inject_archive():
     # Archive route용 모든 Post들의 출판일(pub_date)에서 -> [0000년 00월] 추출
     # -> archive route는 [0000년 00월]에서 숫자를 추출해서 extact('날짜단위', )로 필터링해서 조회할 수 있게 된다.
-    posts = Post.load({'category': 'selectin', 'author' : ('selectin', {'upper_department' : 'selectin'})}).filter_by(
+    posts = Post.load({'category': 'selectin', 'author': ('selectin', {'upper_department': 'selectin'})}).filter_by(
         type=PostPublishType.SHOW
     ).order_by('-pub_date').all()
 
@@ -485,11 +495,23 @@ def department_archive(department_id, date):
     year, month = tuple(map(lambda x: int(x), yyyy_mm_compiler.findall(date)))
 
     # posts의 필터에 yyyy 필터 + mm필터를 각각 걸어서 해당하는 posts들만 추출한다.
-    pagination = Post.load({'category': 'selectin', 'tags': 'joined', 'author': ('selectin', {'user': 'selectin'}),
-                            'comments': 'joined'  # 댓글 갯수 @h comment_count를 사용하기 위해
-                            }).filter_by(
+    schema = {
+        'category': 'selectin', 'tags': 'joined',
+        'author': ('selectin', {
+            'user': 'selectin',  # employee(author name) + user(for avatar)
+            },),
+        'comments': 'joined'  # 댓글 갯수 @h comment_count를 사용하기 위해
+        }
+
+    # level 0 부서는 작성자의 상위부서 == level 1부서들을 post마다 나타내기용
+    if department.level == 0:
+        schema['author'][1].update({'upper_department': 'selectin'})
+
+    pagination = Post.load(schema) \
+        .filter_by(
         type=PostPublishType.SHOW,
-        is_author_below_to=department,
+        is_author_upper_department=department,  # level 0이면 내부에서 자식 level 1 부서들을 꺼내서 필터링
+
         pub_date__year=year,
         pub_date__month=month,
     ).order_by('-add_date') \
@@ -533,7 +555,6 @@ def tag(id):
     )
 
 
-
 @main_bp.route('/department/<int:department_id>/tag/<int:id>')
 def department_tag(department_id, id):
     department = Department.get(department_id)
@@ -542,11 +563,23 @@ def department_tag(department_id, id):
 
     tag = Tag.get(id)
 
-    pagination = Post.load({'category': 'selectin', 'tags': 'joined', 'author': ('selectin', {'user': 'selectin'}),
-                            'comments': 'joined'  # 댓글 갯수 @h comment_count를 사용하기 위해
-                            }).filter_by(
+    schema = {
+        'category': 'selectin', 'tags': 'joined',
+        'author': ('selectin', {
+            'user': 'selectin',  # employee(author name) + user(for avatar)
+            },),
+        'comments': 'joined'  # 댓글 갯수 @h comment_count를 사용하기 위해
+        }
+
+    # level 0 부서는 작성자의 상위부서 == level 1부서들을 post마다 나타내기용
+    if department.level == 0:
+        schema['author'][1].update({'upper_department': 'selectin'})
+
+    pagination = Post.load(schema) \
+        .filter_by(
         type=PostPublishType.SHOW,
-        is_author_below_to=department,
+        is_author_upper_department=department,  # level 0이면 내부에서 자식 level 1 부서들을 꺼내서 필터링
+
         is_tagged_by=tag,
     ) \
         .order_by('-add_date') \
@@ -570,11 +603,22 @@ def department_category(department_id, id):
 
     category = Category.get(id)
 
-    pagination = Post.load({'category': 'selectin', 'tags': 'joined', 'author': ('selectin', {'user': 'selectin'}),
-                            'comments': 'joined'  # 댓글 갯수 @h comment_count를 사용하기 위해
-                            }).filter_by(
+    schema = {
+        'category': 'selectin', 'tags': 'joined',
+        'author': ('selectin', {
+            'user': 'selectin',  # employee(author name) + user(for avatar)
+            },),
+        'comments': 'joined'  # 댓글 갯수 @h comment_count를 사용하기 위해
+        }
+
+    # level 0 부서는 작성자의 상위부서 == level 1부서들을 post마다 나타내기용
+    if department.level == 0:
+        schema['author'][1].update({'upper_department': 'selectin'})
+
+    pagination = Post.load(schema) \
+        .filter_by(
         type=PostPublishType.SHOW,
-        is_author_below_to=department,
+        is_author_upper_department=department,  # level 0이면 내부에서 자식 level 1 부서들을 꺼내서 필터링
         category=category,
     ) \
         .order_by('-add_date') \

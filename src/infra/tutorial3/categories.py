@@ -1,7 +1,7 @@
 import datetime
 import enum
 
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, Table, BigInteger, Boolean, func
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, Table, BigInteger, Boolean, func, select
 from sqlalchemy.ext.hybrid import hybrid_property, hybrid_method
 from sqlalchemy.orm import relationship, backref, Session
 
@@ -52,12 +52,13 @@ class Category(BaseModel):
 
         session.commit()
 
+
 posttags = Table('posttags', Base.metadata,
                  Column('tag_id', Integer().with_variant(BigInteger, "postgresql"), ForeignKey('tags.id'),
                         primary_key=True, nullable=False),
                  Column('post_id', Integer().with_variant(BigInteger, "postgresql"), ForeignKey('posts.id'),
-                        primary_key=True, 
-                        nullable=True, # 임시 삭제용
+                        primary_key=True,
+                        nullable=True,  # 임시 삭제용
                         ),
                  mysql_engine='InnoDB',
                  mysql_charset='utf8mb4',
@@ -145,9 +146,9 @@ class Post(BaseModel):
     post_counts = relationship('PostCount', passive_deletes=True)  # , back_populates='post')
 
     # 글 작성자(직원) fk 칼럼 추가
-    author_id = Column(Integer().with_variant(BigInteger, "postgresql"), 
+    author_id = Column(Integer().with_variant(BigInteger, "postgresql"),
                        ForeignKey('employees.id', ondelete="CASCADE"),
-                       nullable=True, # 임시 삭제용
+                       nullable=True,  # 임시 삭제용
                        )
     # Many create시  one객체로 fill하려면, Many -> One의 relation 추가
     author = relationship('Employee', foreign_keys=[author_id], back_populates='posts', uselist=False)
@@ -164,23 +165,56 @@ class Post(BaseModel):
     def comment_count(self):
         return len(self.comments)
 
-    # refactor
-    @hybrid_method
-    def is_author_below_to(cls, department, mapper=None):
-        """
-        1번 부서 -> 1번부서의 자식부서들에 속한 작성자들의 -> Post
+    # # refactor
+    # @hybrid_method
+    # def is_author_below_to(cls, department, mapper=None):
+    #     """
+    #     1번 부서 -> 1번부서의 자식부서들에 속한 작성자들의 -> Post
+    #
+    #     Post.filter_by(
+    #         is_author_below_to=Department.get(1)
+    #     ).all()
+    #     ----
+    #     [<Post#1 'test'>, <Post#2 '오늘 업데이트 공지...'>, <Post#3 '오늘 재판 내용관련...'>, <Post#6 '질문입니다'>,
+    #     """
+    #     mapper = mapper or cls
+    #     Author_ = mapper.author.mapper.class_
+    #
+    #     return mapper.author.has(
+    #         Author_.is_below_to(department)
+    #     )
 
-        Post.filter_by(
-            is_author_below_to=Department.get(1)
-        ).all()
+    # refactor 2
+    @hybrid_method
+    def is_author_upper_department(cls, upper_department, mapper=None):
+        """
+        부서가 레벨0이면, 자식들의 id를 scalar 서브쿼리로 만들어서, In으로 필터링되게 한다
+        부서가 레벨1이면, list에 담아서 in으로 필터링한다
         ----
-        [<Post#1 'test'>, <Post#2 '오늘 업데이트 공지...'>, <Post#3 '오늘 재판 내용관련...'>, <Post#6 '질문입니다'>,
+        레벨0
+        Post.filter_by(is_author_upper_department=Department.get(1)).all()
+        [<Post#1 'zzzzzzzz'>, <Post#2 '2222'>, <Post#3 '333333333'>, <Post#4 '44444'>]
+
+        레벨1
+        Post.filter_by(is_author_upper_department=Department.get(2)).all()
+        => [<Post#1 'zzzzzzzz'>, <Post#3 '333333333'>, <Post#2 '2222'>]
         """
         mapper = mapper or cls
         Author_ = mapper.author.mapper.class_
 
+        # IN은 1개라도 list를 요구함.
+        level_1_ids = [upper_department.id]
+
+        # level 0부서가 들어올 경우, scalar_subquery를 통해, 자식들의 id를 한큐에 구한 뒤, IN에 넣어준다
+        if upper_department.level == 0:
+            Department_ = Author_.upper_department.mapper.class_
+
+            level_1_ids = select(Department_.id) \
+                .where(Department_.parent_id == upper_department.id) \
+                .scalar_subquery()
+
         return mapper.author.has(
-            Author_.is_below_to(department)
+            Author_.upper_department_id.in_(level_1_ids)
         )
 
     # refactor
@@ -189,6 +223,7 @@ class Post(BaseModel):
         mapper = mapper or cls
         Tag_ = mapper.tags.mapper.class_
         return mapper.tags.any(Tag_.id == tag.id)
+
 
 # Post Count 모델 작성
 class PostCount(BaseModel):
@@ -203,7 +238,7 @@ class PostCount(BaseModel):
     # cascade delete 2: one의 relationship에 passive_delets=True를 줘서, DB에게 cascade를 맞긴다.
     post_id = Column(Integer().with_variant(BigInteger, "postgresql"),
                      ForeignKey('posts.id', ondelete="CASCADE"),
-                     nullable=True, # 임시 삭제용
+                     nullable=True,  # 임시 삭제용
                      )
 
 
@@ -215,7 +250,7 @@ class Comment(BaseModel):
 
     # 부모 글
     post_id = Column(Integer().with_variant(BigInteger, "postgresql"), ForeignKey('posts.id', ondelete="CASCADE"),
-                     nullable=True, # 임시 삭제용
+                     nullable=True,  # 임시 삭제용
                      )
     post = relationship('Post', foreign_keys=[post_id], uselist=False, back_populates='comments')
 
@@ -377,5 +412,3 @@ class Tag(BaseModel):
         # info: str = f"{self.__class__.__name__}" \
         info: str = f"{self.name}"
         return info
-
-
