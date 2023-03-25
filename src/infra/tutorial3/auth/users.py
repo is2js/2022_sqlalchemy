@@ -56,6 +56,8 @@ class User(BaseModel):
 
     # 최근방문시간 -> model ping메서드 -> auth route에서 before_app_request에 로그인시 메서드호출하면서 수정하도록 변경
     last_seen = Column(DateTime, default=datetime.datetime.now, nullable=False)
+    # 최근활동(방문)시간 VS 최근 로그인한 시간은 다르다.
+    # last_login_date = Column(DateTime, default=datetime.datetime.now, nullable=False)
 
     # 가입후에 수정 -> nullable = True
     is_active = Column(Boolean, nullable=True, default=True)
@@ -355,6 +357,10 @@ class User(BaseModel):
                 .select()
             )
             return db.session.scalar(stmt)
+
+    @hybrid_method
+    def is_upper_department(self, department):
+        return self.employee.upper_department_id == department.id
 
 
 class Permission(enum.IntEnum):

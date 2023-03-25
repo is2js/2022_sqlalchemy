@@ -45,7 +45,8 @@ def load_logged_in_user():
         # 순서 중요. eagerload한 것을 넣어주고, update하면 eagerload안된 것이 반영됨.
         # user = User.load({'role': 'selectin'}).filter_by(id=user_id).first()
         # -> 현재 접속유저의 직원명을 댓글에서 확인하기 위해 employee 추가
-        user = User.load({'role': 'selectin', 'employee' : 'selectin'}).filter_by(id=user_id).first()
+        user = User.load({'role': 'selectin', 'employee' : 'selectin'})\
+            .filter_by(id=user_id).first()
         if user:
             user.update(last_seen=datetime.datetime.now())
         g.user = user
@@ -153,6 +154,9 @@ def login():
         # -> db속 user객체가 무조건 존재하는 상황
         session.clear()
         session['user_id'] = user.id
+
+        # 최종 로그인 시간
+        # user.update(last_login_date=datetime.datetime.now())
 
         # 직전url이 있다면 그곳으로 / (아니면) main으로로
         if redirect_to:

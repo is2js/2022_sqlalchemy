@@ -49,7 +49,7 @@
                     <span class="icon"><i class="mdi mdi-clipboard-text-clock-outline"></i></span>
                     {{ post.add_date | feed_datetime(is_feed=True, k=7) }}
                     {% if post.add_date != post.pub_date %}
-                     (수정: {{ post.pub_date | feed_datetime(is_feed=True, k=7) }})
+                    (수정: {{ post.pub_date | feed_datetime(is_feed=True, k=7) }})
                     {% endif %}
                 </div>
             </div>
@@ -144,10 +144,41 @@
 
     <!-- [new html] 자식들이 공유하는 데이터 없는 html  -->
     <div class="column">
+        <!-- 해당상위부서 직원일 경우       -->
+        {% if g.user and g.user.is_upper_department(department) %}
+        <section class="hero"
+                 style= "background-color: #fff;
+                        border-bottom: 1px solid rgba(24,28,33,.06);
+                        background-image: url('../../static/img/main/hero_background.png');
+                        background-size: cover;"
+        >
+            <div class="hero-body p-2">
+                <div class="level">
+                    <div class="level-left">
+<!--                        <div class="level-item is-hero-avatar-item">-->
+<!--                            <div class="image is-user-avatar"><img-->
+<!--                                    src="https://avatars.dicebear.com/api/avataaars/example.svg?options[top][]=shortHair&amp;options[accessoriesChance]=93">-->
+<!--                            </div>-->
+<!--                        </div>-->
+                        <div class="level-item is-hero-content-item">
+                            <div>
+                                <h3 class="title is-spaced is-size-6"> 🖐 Hi, <b>{{g.user.employee.name}} !!</b></h3>
+                                <p class="subtitle mt-2 is-size-7 ">You have <b>6 to-dos</b> and <b>84 appointments</b></p></div>
+                        </div>
+                    </div>
+<!--                    <div class="level-right">-->
+<!--                        <div class="level-item"><a href="#/profile" class="button is-light" title="Profile"><span-->
+<!--                                class="icon"><i-->
+<!--                                class="mdi mdi-account default"></i></span><span>Manage profile</span></a></div>-->
+<!--                    </div>-->
+                </div>
+            </div>
+        </section>
+        {% endif %}
 
         <!-- 검색 -->
-<!--        <div class="box is-shadowless" style="border:solid 1px #eee ;">-->
-        <div class="box is-shadowless my-1 py-3 " >
+        <!--        <div class="box is-shadowless" style="border:solid 1px #eee ;">-->
+        <div class="box is-shadowless my-1 py-3 ">
             <h1 class="icon-text is-size-7 has-text-weight-bold">
                 <span class="icon"><i class="mdi mdi-magnify"></i></span>
                 {{ department.name }} 검색
@@ -156,8 +187,8 @@
             <form action="{{url_for('main.department_search', department_id=department.id)}}" method="get"
                   class="pl-2"
             >
-<!--                 <b-field label="{{department.name}} 검색" label-position="on-border" >-->
-                 <b-field >
+                <!--                 <b-field label="{{department.name}} 검색" label-position="on-border" >-->
+                <b-field>
                     <b-input placeholder="검색..." type="search" size="is-small"
                              value="{{word}}" name="word"
                     ></b-input>
@@ -168,9 +199,9 @@
             </form>
         </div>
 
-                <!-- tag  -->
-<!--        <div class="box is-shadowless" style="border:solid 1px #eee ;">-->
-        <div class="box is-shadowless my-1 py-3" >
+        <!-- tag  -->
+        <!--        <div class="box is-shadowless" style="border:solid 1px #eee ;">-->
+        <div class="box is-shadowless my-1 py-3">
             <h1 class="icon-text is-size-7 has-text-weight-bold">
                 <span class="icon"><i class="mdi mdi-tag-multiple-outline"></i></span>
                 {{ department.name }} Category
@@ -186,9 +217,9 @@
             </div>
         </div>
 
-                <!-- Archive  -->
-<!--        <div class="box is-shadowless" style="border:solid 1px #eee ;">-->
-        <div class="box is-shadowless my-1 py-3" >
+        <!-- Archive  -->
+        <!--        <div class="box is-shadowless" style="border:solid 1px #eee ;">-->
+        <div class="box is-shadowless my-1 py-3">
             <h1 class="icon-text is-size-7 has-text-weight-bold">
                 <span class="icon"><i class="mdi mdi-calendar-month-outline"></i></span>
                 {{ department.name }} Archive
@@ -202,14 +233,14 @@
                         {{date}}
                     </a>
                 </li>
-<!--                <div class="dropdown-divider"></div>-->
+                <!--                <div class="dropdown-divider"></div>-->
                 {% endfor %}
             </ul>
         </div>
 
         <!-- tag  -->
-<!--        <div class="box is-shadowless" style="border:solid 1px #eee ;">-->
-        <div class="box is-shadowless my-1 py-3" >
+        <!--        <div class="box is-shadowless" style="border:solid 1px #eee ;">-->
+        <div class="box is-shadowless my-1 py-3">
             <h1 class="icon-text is-size-7 has-text-weight-bold">
                 <span class="icon"><i class="mdi mdi-tag-multiple-outline"></i></span>
                 {{ department.name }} Tag
@@ -227,9 +258,9 @@
 
 
         <!-- root department 전체 게시물 최근 게시글 5개   -->
-<!--        <div class="box is-shadowless" style="border:solid 1px #eee ;">-->
+        <!--        <div class="box is-shadowless" style="border:solid 1px #eee ;">-->
         {% if department.level != 0 %}
-        <div class="box is-shadowless my-1 py-3" >
+        <div class="box is-shadowless my-1 py-3">
             <h1 class="icon-text is-size-7  has-text-weight-bold">
                 <span class="icon"><i class="mdi mdi-earth"></i></span>
                 월드 최신글
@@ -238,27 +269,25 @@
             <ul>
                 {% for post in new_posts %}
                 <li class="pl-2 is-size-7 pt-1">
-<!--                    <span class="has-text-grey-light">{{ loop.index }}.</span>-->
-<!--                    <span class="has-text-grey-light">-->
-<!--                        • {{ post.author.upper_department.name }}|{{ post.category.name }}-->
-<!--                    </span>-->
+                    <!--                    <span class="has-text-grey-light">{{ loop.index }}.</span>-->
+                    <!--                    <span class="has-text-grey-light">-->
+                    <!--                        • {{ post.author.upper_department.name }}|{{ post.category.name }}-->
+                    <!--                    </span>-->
                     <span class="tag has-text-weight-bold">
                         <small>{{ post.author.upper_department.name }}</small>
                     </span>
-<!--                    <span class="tag is-rounded is-{{post.category.icon}}">-->
-<!--                            <small>{{ post.category.name }}</small>-->
-<!--                    </span>-->
+                    <!--                    <span class="tag is-rounded is-{{post.category.icon}}">-->
+                    <!--                            <small>{{ post.category.name }}</small>-->
+                    <!--                    </span>-->
                     <a href="{{ url_for('main.department_post_detail', department_id=post.author.upper_department.id, id=post.id) }}">
                         [{{ post.category.name }}] {{post.title}}
                     </a>
                 </li>
-<!--                <div class="dropdown-divider"></div>-->
+                <!--                <div class="dropdown-divider"></div>-->
                 {% endfor %}
             </ul>
         </div>
         {% endif %}
-
-
 
 
     </div>
