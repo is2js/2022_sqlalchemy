@@ -17,15 +17,15 @@
     {{ post.title }}
 {% endblock title %}
 
-{% block breadcrumb %}
-<nav class="breadcrumb is-small" aria-label="breadcrumbs">
+<!--<nav class="breadcrumb is-small" aria-label="breadcrumbs">-->
+    {% block breadcrumb %}
     <ul>
         <li><a href="/">Home</a></li>
         <li ><a href="{{ url_for('main.department', id=department.id) }}" aria-current="page">{{ department.name }}</a></li>
         <li class="is-active"><a href="#" aria-current="page">{{ post.title }}</a></li>
     </ul>
-</nav>
-{% endblock breadcrumb %}
+    {% endblock breadcrumb %}
+<!--</nav>-->
 
 {% block post_box %}
 <div class="pl-2">

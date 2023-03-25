@@ -2,27 +2,73 @@
 
 {% block title %} {{ department.name }} {% endblock title %}
 
+{% block extra_head_style %}
+<style>
+    .is-hero-bar {
+        background-color: #fff;
+        border-bottom: 1px solid rgba(24, 28, 33, .06);
+    }
+
+    .is-hero-background {
+        background-image: url("{{url_for('static', filename='img/main/hero_background.png')}}");
+        background-size: cover;
+    }
+</style>
+{% endblock extra_head_style %}
+
 {% block hero %}{% endblock hero %}
 
 {% block box %}
 <div class="columns">
     <div class="column is-8" style="border-right:solid 1px #eee ;">
         <div class="box is-shadowless has-background-light py-3">
-            <!-- [new block] 자식들이 내용다르게 돌려쓸 block -->
-            {% block breadcrumb %}
+
             <nav class="breadcrumb is-small" aria-label="breadcrumbs">
-                <ul>
-                    <!-- Home만 addrule /로 직접 걸어주고 -->
-                    <li><a href="/">Home</a></li>
-                    <!-- 이후로는 직접 객체로 걸어주는데, [현재]면 #으로 걸고 or href주되 is-active면 클릭안되는 상태
-                         .name만 / [부모]도 껴있으면 부모객체 -->
-                    <li class="is-active">
-                        <a href="{{ url_for('main.department', id=department.id) }}" aria-current="page">
-                            {{ department.name }}</a>
-                    </li>
-                </ul>
+                <div class="level">
+                    <div class="level-left">
+                        <div class="level-item">
+                            <!-- [new block] 자식들이 내용다르게 돌려쓸 block -->
+                            {% block breadcrumb %}
+                            <ul>
+                                <!-- Home만 addrule /로 직접 걸어주고 -->
+                                <li><a href="/">Home</a></li>
+                                <!-- 이후로는 직접 객체로 걸어주는데, [현재]면 #으로 걸고 or href주되 is-active면 클릭안되는 상태
+                                     .name만 / [부모]도 껴있으면 부모객체 -->
+                                <li class="is-active">
+                                    <a href="{{ url_for('main.department', id=department.id) }}" aria-current="page">
+                                        {{ department.name }}</a>
+                                </li>
+                            </ul>
+                            {% endblock breadcrumb %}
+                        </div>
+                    </div>
+                    {% if g.user.is_upper_department(department) %}
+                     
+                    <div class="level-right">
+                        <div class="level-item">
+                            <div class="buttons is-right">
+                                <a href="https://justboil.me/bulma-admin-template/one/"
+                                   target="_blank" class="button is-outlined is-danger is-light is-small">
+                                    <span class="icon"><i class="mdi mdi-pencil-box-outline default"></i></span>
+                                    <span><small>부서관리</small></span>
+                                </a>
+                                <a href="https://justboil.me/bulma-admin-template/one/"
+                                   target="_blank" class="button is-outlined is-info is-light is-small">
+                                    <span class="icon"><i class="mdi mdi-pencil-box-outline default"></i></span>
+                                    <span><small>조직도</small></span>
+                                </a>
+                                <a href="https://justboil.me/bulma-admin-template/one/"
+                                   target="_blank" class="button is-outlined is-primary is-light is-small">
+                                    <span class="icon"><i class="mdi mdi-pencil-box-outline default"></i></span>
+                                    <span><small>글쓰기</small></span>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
             </nav>
-            {% endblock breadcrumb %}
+
         </div>
 
         <!-- [new block] 자식들이 내용다르게 돌려쓸 block -->
@@ -146,31 +192,27 @@
     <div class="column">
         <!-- 해당상위부서 직원일 경우       -->
         {% if g.user and g.user.is_upper_department(department) %}
-        <section class="hero"
-                 style= "background-color: #fff;
-                        border-bottom: 1px solid rgba(24,28,33,.06);
-                        background-image: url('../../static/img/main/hero_background.png');
-                        background-size: cover;"
-        >
+        <section class="hero is-hero-bar is-hero-background">
             <div class="hero-body p-2">
                 <div class="level">
                     <div class="level-left">
-<!--                        <div class="level-item is-hero-avatar-item">-->
-<!--                            <div class="image is-user-avatar"><img-->
-<!--                                    src="https://avatars.dicebear.com/api/avataaars/example.svg?options[top][]=shortHair&amp;options[accessoriesChance]=93">-->
-<!--                            </div>-->
-<!--                        </div>-->
+                        <!--                        <div class="level-item is-hero-avatar-item">-->
+                        <!--                            <div class="image is-user-avatar"><img-->
+                        <!--                                    src="https://avatars.dicebear.com/api/avataaars/example.svg?options[top][]=shortHair&amp;options[accessoriesChance]=93">-->
+                        <!--                            </div>-->
+                        <!--                        </div>-->
                         <div class="level-item is-hero-content-item">
                             <div>
                                 <h3 class="title is-spaced is-size-6"> 🖐 Hi, <b>{{g.user.employee.name}} !!</b></h3>
-                                <p class="subtitle mt-2 is-size-7 ">You have <b>6 to-dos</b> and <b>84 appointments</b></p></div>
+                                <p class="subtitle mt-2 is-size-7 ">You have <b>6 to-dos</b> and <b>84 appointments</b>
+                                </p></div>
                         </div>
                     </div>
-<!--                    <div class="level-right">-->
-<!--                        <div class="level-item"><a href="#/profile" class="button is-light" title="Profile"><span-->
-<!--                                class="icon"><i-->
-<!--                                class="mdi mdi-account default"></i></span><span>Manage profile</span></a></div>-->
-<!--                    </div>-->
+                    <!--                    <div class="level-right">-->
+                    <!--                        <div class="level-item"><a href="#/profile" class="button is-light" title="Profile"><span-->
+                    <!--                                class="icon"><i-->
+                    <!--                                class="mdi mdi-account default"></i></span><span>Manage profile</span></a></div>-->
+                    <!--                    </div>-->
                 </div>
             </div>
         </section>

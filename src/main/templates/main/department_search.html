@@ -4,8 +4,8 @@
 
 {% block hero %}{% endblock hero %}
 
-{% block breadcrumb %}
-    <nav class="breadcrumb is-small" aria-label="breadcrumbs">
+<!--    <nav class="breadcrumb is-small" aria-label="breadcrumbs">-->
+    {% block breadcrumb %}
         <ul>
             <li><a href="/">Home</a></li>
             <li class="">
@@ -15,8 +15,8 @@
                 <a href="#" aria-current="page">'{{ word }}' 검색 결과</a>
             </li>
         </ul>
-    </nav>
 {% endblock breadcrumb %}
+<!--    </nav>-->
 
 {% block pagination %}
     <nav class="pagination is-small" role="navigation" aria-label="pagination">
