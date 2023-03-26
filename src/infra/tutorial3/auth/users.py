@@ -2131,9 +2131,16 @@ class Employee(BaseModel):
                 current_all_departments = self.get_departments(session=session) # 현재부서는 빠진 상태
                 # 현재 상위부서에 대한 부서가, 현재부서를 제외하고 남아있으면, 비교하여 검증한다
                 if len(current_all_departments) > 1:
+                    # if self.upper_department_id != target_upper_dept.id:
+                    #### new8) 애초에 상위부서후보(level=0과 level=1)의 동시취임을 막는다.
+                    if self.upper_department and self.upper_department.level != target_upper_dept.level:
+                        session.close()
+                        return False, '최상위 부서 <-> level 1 부서 동시 취임할 수 없습니다. 한 곳을 해임해주세요.'
+
+                    #### (같은레벨-level1인 경우) 상위부서가 서로 다르면 탈락
                     if self.upper_department_id != target_upper_dept.id:
                         session.close()
-                        return False, '이미 다른 그룹에 소속된 직원입니다. Level 1의 부서들 중 1곳에서만 소속 가능합니다.'
+                        return False, '이미 다른 그룹에 소속된 직원입니다. 최상위부서 1곳 or Level 1 부서들 중 1곳에서만 소속 가능합니다.'
 
                 self.fill(upper_department=target_upper_dept)
 
@@ -2154,12 +2161,19 @@ class Employee(BaseModel):
                 #### new) after 부서의 상위부서(level=1)를 찾아 필드로 추가
                 target_upper_dept = Department_.filter_by(path=after_dept.path[:6], session=session).first()
 
+                #### new8) 애초에 상위부서후보(level=0과 level=1)의 동시취임을 막는다.
+                if self.upper_department and self.upper_department.level != target_upper_dept.level:
+                    session.close()
+                    return False, '최상위 부서 <-> level 1 부서 동시 취임할 수 없습니다. 한 곳을 해임해주세요.'
+
                 #### new2) 상위부서 추가하기 전에, [현재 상위부서 존재]시 현재 상위부서와 타겟 상위부서를 비교해서, 다르면 여기서 탈락
+                #         (같은레벨-level1인 경우) 상위부서가 서로 다르면 탈락
                 if self.upper_department_id and self.upper_department_id != target_upper_dept.id:
                     session.close()
                     return False, '이미 다른 그룹에 소속된 직원입니다. Level 1의 부서들 중 1곳에서만 소속 가능합니다.'
 
                 self.fill(upper_department=target_upper_dept)
+
                 #### new5) 현재부서X 타겟상위부서의 level이 = 0  or  1이면서 , as_leader의 상황이면, 상위부서장으로 체크해준다.
                 if after_dept.level in [0, 1] and as_leader:
                     self.fill(is_upper_department_leader=True)
