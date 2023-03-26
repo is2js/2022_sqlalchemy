@@ -1,7 +1,7 @@
 import datetime
 import enum
 
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, Table, BigInteger, Boolean, func, select
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, Table, BigInteger, Boolean, func, select, or_
 from sqlalchemy.ext.hybrid import hybrid_property, hybrid_method
 from sqlalchemy.orm import relationship, backref, Session
 
@@ -213,7 +213,12 @@ class Post(BaseModel):
             Department_ = Author_.upper_department.mapper.class_
 
             level_1_ids = select(Department_.id) \
-                .where(Department_.parent_id == upper_department.id) \
+                .where(
+                or_(
+                    Department_.id == upper_department.id,
+                    Department_.parent_id == upper_department.id
+                )
+            ) \
                 .scalar_subquery()
 
         return mapper.author.has(

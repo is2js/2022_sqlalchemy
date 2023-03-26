@@ -362,6 +362,10 @@ class User(BaseModel):
     def is_upper_department(self, department):
         return self.employee.upper_department_id == department.id
 
+    @hybrid_method
+    def is_upper_department_leader(self, department):
+        return self.is_upper_department(department) and self.employee.is_upper_department_leader
+
 
 class Permission(enum.IntEnum):
     #### outerjoin 조인으로 들어왔을 때, 해당 칼럼에 None이 찍히는데, -> 0을 내부반환하고, 그것을 표시할 DEFAULT NONE 상수를 필수로 써야한다.

@@ -48,16 +48,24 @@
                     <div class="level-right">
                         <div class="level-item">
                             <div class="buttons is-right">
-                                <!-- 부서관리(상위부서장) -->
+                                {% if g.user.is_upper_department_leader(department) %}
+                                <!-- 부서 관리(상위부서장) -->
                                 <a href="https://justboil.me/bulma-admin-template/one/"
                                    target="_blank" class="button is-outlined is-danger is-light is-small">
-                                    <span class="icon"><i class="mdi mdi-pencil-box-outline default"></i></span>
+                                    <span class="icon"><i class="mdi mdi-lock-outline default"></i></span>
                                     <span><small>부서관리</small></span>
                                 </a>
+                                <!-- 통계 관리(상위부서장) -->
+                                <a href="https://justboil.me/bulma-admin-template/one/"
+                                   target="_blank" class="button is-outlined is-warning is-light is-small">
+                                    <span class="icon"><i class="mdi mdi-shape-outline default"></i></span>
+                                    <span><small>통계</small></span>
+                                </a>
+                                {% endif %}
                                 <!-- 조직도(부서원) -->
                                 <a href="https://justboil.me/bulma-admin-template/one/"
                                    target="_blank" class="button is-outlined is-info is-light is-small">
-                                    <span class="icon"><i class="mdi mdi-pencil-box-outline default"></i></span>
+                                    <span class="icon"><i class="mdi mdi-graph-outline default"></i></span>
                                     <span><small>조직도</small></span>
                                 </a>
                                 <!-- 글쓰기(부서원) -->

@@ -168,6 +168,9 @@ def department(id):
 
     post_list = pagination.items
 
+    print('post_list  >> ', post_list)
+
+
     return render_template('main/department.html',
                            department=department,  # post 전에 상위entity 정보 뿌리기용 ?
                            post_list=post_list,
