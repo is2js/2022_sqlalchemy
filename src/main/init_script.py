@@ -89,7 +89,7 @@ def init_script(app: Flask):
                 # db.session.flush()
                 #### commit()을 하든 flush()를 하던 한번 갔다와야지 id부여된다.
 
-                employee_admin = Employee(user_id=created_user.id, name='관리자', sub_name='Administrator',
+                employee_admin = Employee(user=created_user, name='관리자', sub_name='Administrator',
                                           birth='9910101918111',
                                           join_date=datetime.datetime.today().date(), job_status=JobStatusType.재직.value,
                                           reference='관리자 계정')
@@ -99,9 +99,9 @@ def init_script(app: Flask):
 
                 click.echo(f'관리자 계정 [{username}]이 성공적으로 생성되었습니다.')
 
-            except IntegrityError:
+            except IntegrityError as e:
                 db.session.rollback()
-
+                click.echo(e)
                 click.echo(
                     f'Warning) Username[{username}]  or Email[{project_config.ADMIN_EMAIL}]이 생성에 실패했습니다.(이미 존재 하는 정보)')
 
@@ -112,51 +112,148 @@ def init_script(app: Flask):
                 click.echo(f'Warning) 알 수 없는 이유로 관리자계정 생성에 실패하였습니다.')
 
 
-    #### 예제 부서 만들기
-    @app.cli.command('create_department')
-    def create_department():
+    # refactor
+    @app.cli.command('create_departments')
+    def create_departments():
+        """
+        현재의 auto_commit = False는, merge만 한 상태라서 ,부모의 id배정이 안되어, 계층적인 add가 안된다.
+        => update의 save만 merge / create의 save는 flush하도록 변경하자.
+        => 임시적으로 auto_commit=True로 매번하고 + 배정받은 id를 자식들이 가지자.
+        """
         click.echo('예제 부서들을 python으로 생성합니다.')
-        try:
-            Department(name='병원장', type=DepartmentType.일인부서).save()
-            병원장 = Department.get_by_name('병원장')
+        with DBConnectionHandler() as db:
+            session = db.session
+            try:
+                로나월드, _ = Department.create(name='로나월드', type=DepartmentType.일인부서.value, session=session, auto_commit=True)
 
-            Department(name='진료부', type=DepartmentType.일인부서, parent=병원장).save()
-            진료부 = Department.get_by_name('진료부')
-            #### 진료부 하위 부서 - 팀장없이
-            Department(name='한방진료실', type=DepartmentType.다인부서, parent=진료부).save()
-            Department(name='탕전실', type=DepartmentType.다인부서, parent=진료부).save()
+                # 오성그룹, _ = Department.create(name='오성그룹', type=DepartmentType.일인부서.value, parent=로나월드, session=session, auto_commit=True)
+                오성그룹, _ = Department.create(name='오성그룹', type=DepartmentType.일인부서.value, parent_id=로나월드.id, session=session, auto_commit=True)
+                사장, _ = Department.create(name='사장', type=DepartmentType.일인부서.value, parent_id=오성그룹.id, session=session, auto_commit=True)
+                상무, _ = Department.create(name='상무', type=DepartmentType.일인부서.value, parent_id=사장.id, session=session, auto_commit=True)
+                건축부, _ = Department.create(name='건축부', type=DepartmentType.다인부서.value, parent_id=상무.id, session=session, auto_commit=True)
+                재료부, _ = Department.create(name='재료부', type=DepartmentType.다인부서.value, parent_id=상무.id, session=session, auto_commit=True)
 
-            Department(name='간호부', type=DepartmentType.일인부서, parent=병원장).save()
-            간호부 = Department.get_by_name('간호부')
-            #### 간호부 하위 부서 - 팀장없이
-            외래 = Department(name='외래', type=DepartmentType.치료실, parent=간호부).save()
-            병동 = Department(name='병동', type=DepartmentType.치료실, parent=간호부).save()
+                교양그룹, _ = Department.create(name='교양그룹', type=DepartmentType.일인부서.value, parent_id=로나월드.id, session=session, auto_commit=True)
 
-            Department(name='행정부', type=DepartmentType.일인부서, parent=병원장).save()
-            행정부 = Department.get_by_name('행정부')
-            #### 행정부 하위 부서 - 팀장없이
-            원무 = Department(name='원무', type=DepartmentType.다인부서, parent=행정부).save()
-            총무 = Department(name='총무', type=DepartmentType.다인부서, parent=행정부).save()
 
-            click.echo(f'예제 부서들이 생성되었습니다.')
-            click.echo("""******************************
- [ 병원장 ]  
-     [ 간호부 ]  
-         [ 외래 ]  
-         [ 병동 ]  
-     [ 행정부 ]  
-         [ 원무 ]  
-         [ 총무 ] 
-     [ 진료부 ]  
-         [ 탕전실 ] 
-         [ 한방진료실 ] 
+                건축건설부, _ = Department.create(name='건축/건설부', type=DepartmentType.다인부서.value, parent_id=교양그룹.id, session=session, auto_commit=True)
+                재료공급부, _ = Department.create(name='재료공급부', type=DepartmentType.다인부서.value, parent_id=교양그룹.id, session=session, auto_commit=True)
+
+
+                session.commit()
+                click.echo(f'예제 부서들이 생성되었습니다.')
+                click.echo("""
+******************************
+ [ 로나월드 ]  
+     [ 오성그룹 ]  
+         [ 사장 ]  
+            [ 상무 ] 
+                [ 건축부 ] 
+                [ 재료부 ] 
+     [ 교양그룹 ]  
+         [ 건축/건설부 ]  
+         [ 재료공급부 ]  
+
 ******************************
             """)
-        except IntegrityError:
-            # 이미 생성할때 존재하면 생성안하도록 순회해서 걸릴 일은 없을 것 이다.
-            click.echo(f'Warning) 이미 예제 부서 데이터들이 존재합니다.')
-        except:
-            click.echo(f'Warning) 알수없는 이유로 예제 부서 데이터 생성에 실패했습니다.')
+
+            except IntegrityError as e:
+                db.session.rollback()
+                click.echo(e)
+                click.echo(f'Warning) 이미 예제 부서 데이터들이 존재합니다.')
+            except Exception as e:
+                db.session.rollback()
+                click.echo(e)
+                click.echo(f'Warning) 알수없는 이유로 예제 부서 데이터 생성에 실패했습니다.')
+
+    payload_list = [
+        dict(
+            user=dict(
+                username='user', password='1234', email='user@gmail.com',
+            ),
+            employee=dict(
+                name='user', sub_name='user', birth='8712181918110', join_date=datetime.datetime.today().date(),
+                job_status=JobStatusType.재직.value, reference=''
+            )
+        ),
+        dict(
+            user=dict(
+                username='user2', password='1234', email='user2@gmail.com',
+            ),
+            employee=dict(
+                name='user2', sub_name='user2', birth='87121819181102', join_date=datetime.datetime.today().date(),
+                job_status=JobStatusType.재직.value, reference=''
+            )
+        ),
+        dict(
+            user=dict(
+                username='user3', password='1234', email='user3@gmail.com',
+            ),
+            employee=dict(
+                name='user3', sub_name='user3', birth='8712181918113', join_date=datetime.datetime.today().date(),
+                job_status=JobStatusType.재직.value, reference=''
+            )
+        ),
+        dict(
+            user=dict(
+                username='user4', password='1234', email='user4@gmail.com',
+            ),
+            employee=dict(
+                name='user4', sub_name='user4', birth='8712181918114', join_date=datetime.datetime.today().date(),
+                job_status=JobStatusType.재직.value, reference=''
+            )
+        ),
+        dict(
+            user=dict(
+                username='user5', password='1234', email='user5@gmail.com',
+            ),
+            employee=dict(
+                name='user5', sub_name='user5', birth='8712181918115', join_date=datetime.datetime.today().date(),
+                job_status=JobStatusType.재직.value, reference=''
+            )
+        ),
+
+    ]
+    # refactor
+    @app.cli.command('create_sample_employees')
+    def create_sample_employees():
+        """
+        """
+        click.echo('예제 유저(직원)을 python으로 생성합니다.')
+
+
+
+        with DBConnectionHandler() as db:
+            session = db.session
+
+            staff_role = Role.filter_by(name='STAFF', session=session).first()
+
+            try:
+                for i in range(1, 6):
+                    if i == 1:
+                        i = ''
+                    created_user, _ = User.create(username=f'user{i}', password='1234', email=f'user{i}@gmail.com',
+                                     role=staff_role, avatar=f'avatar/avatar{i}.png',
+                                                  session=session, auto_commit=True)
+
+                    employee_admin = Employee(user=created_user, name=f'user{i}', sub_name=f'user{i}',
+                                              birth=f'8{i}1218191851{i}',
+                                              join_date=datetime.datetime.today().date(), job_status=JobStatusType.재직.value,
+                                              reference='')
+
+                    session.add(employee_admin)
+                    session.commit()
+
+            except IntegrityError as e:
+                db.session.rollback()
+                click.echo(e)
+
+            except Exception as e:
+                db.session.rollback()
+                raise e
+
+                click.echo(f'Warning) 알 수 없는 이유로 관리자계정 생성에 실패하였습니다.')
+
 
 
     #### 예제 메뉴 만들기

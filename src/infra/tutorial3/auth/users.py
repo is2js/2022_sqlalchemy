@@ -662,6 +662,8 @@ class Employee(BaseModel):
                                  nullable=True
                                  )
     upper_department = relationship("Department", foreign_keys=[upper_department_id],)
+    # new 2 -> 상위부서의 부서장여부가 나의 부서 view에서 필요함.
+    is_upper_department_leader = Column(Boolean, default=False)
 
     # qrcode, qrcode_img: https://github.com/prameshstha/QueueMsAPI/blob/85dedcce356475ef2b4b149e7e6164d4042ffffb/bookings/models.py#L92
 
@@ -1156,6 +1158,7 @@ class Employee(BaseModel):
 
         return is_leader
 
+    #### 기안용
     #### with other entity
     def get_leader_or_senior_leader(self):
         # 1) 내 상사를 찾기 위해, 내가 가진 부서중 가장 상위 부서를 찾는다.
@@ -2053,6 +2056,10 @@ class Employee(BaseModel):
             if len(current_all_depts) == 0:
                 self.fill(upper_department=None)
 
+            # new 7) 해임할부서가, 상위부서이면서, 상위부서장이 체크되어있으면, 상위부서장을 False로 체운다
+            if current_dept.id == self.upper_department_id and self.is_upper_department_leader:
+                self.fill(is_upper_department_leader=False)
+
             self.fill_reference(f"[{current_dept.name}]부서 해임({format_date(target_date)})")
             # result, msg = self.update()
 
@@ -2130,6 +2137,12 @@ class Employee(BaseModel):
 
                 self.fill(upper_department=target_upper_dept)
 
+                #### new6) 부서추가와 동일하게, 변경할 부서가 level 0 or 1이면서 as_leader로 들어올때만 바뀐다.
+                # -> 부서추가와 동일한 로직
+                if after_dept.level in [0, 1] and as_leader:
+                    self.fill(is_upper_department_leader=True)
+
+
                 self.fill_reference(f"[{current_dept.name}→{after_dept.name}]부서 변경({format_date(target_date)})")
                 message = f"부서 변경[{current_dept.name}→{after_dept.name}]을 성공하였습니다."
 
@@ -2147,6 +2160,9 @@ class Employee(BaseModel):
                     return False, '이미 다른 그룹에 소속된 직원입니다. Level 1의 부서들 중 1곳에서만 소속 가능합니다.'
 
                 self.fill(upper_department=target_upper_dept)
+                #### new5) 현재부서X 타겟상위부서의 level이 = 0  or  1이면서 , as_leader의 상황이면, 상위부서장으로 체크해준다.
+                if after_dept.level in [0, 1] and as_leader:
+                    self.fill(is_upper_department_leader=True)
 
             # updated_data.update(dict(employee_departments=[current_emp_dept, after_emp_dept]))
             # self.fill(employee_departments=after_emp_dept)

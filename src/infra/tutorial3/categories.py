@@ -31,9 +31,10 @@ class Category(BaseModel):
                          )
 
     @classmethod
-    def insert_categories(cls):
+    def insert_categories(cls, session=None, auto_commit=True):
         # 2) role dict묶음을 돌면서, 이미 존재하는지 조회하고, 없을 때 Role객체를 생성하여 role객체를 유지한다
-        session = cls.get_scoped_session()
+        if not session:
+            session = cls.get_scoped_session()
 
         name_and_icons = [
             ('잡담', 'grey is-light'),
@@ -43,6 +44,7 @@ class Category(BaseModel):
             ('회의', 'warning is-light'),
             ('공지', 'danger is-light'),
             ('메인일정(캘린더)', 'danger'),
+            ('사건/사고', 'dark'),
         ]
         for name, icon in name_and_icons:
             Category.create(
@@ -50,7 +52,8 @@ class Category(BaseModel):
                 session=session, auto_commit=False
             )
 
-        session.commit()
+        if auto_commit:
+            session.commit()
 
 
 posttags = Table('posttags', Base.metadata,

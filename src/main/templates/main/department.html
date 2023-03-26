@@ -43,8 +43,8 @@
                             {% endblock breadcrumb %}
                         </div>
                     </div>
+
                     {% if g.user.is_upper_department(department) %}
-                     
                     <div class="level-right">
                         <div class="level-item">
                             <div class="buttons is-right">
@@ -220,6 +220,55 @@
                 </div>
             </div>
         </section>
+
+        <!-- 할일과 약속 -->
+        <section>
+            <b-tabs
+                    size="is-small"
+                    type="is-boxed"
+                    >
+
+                <b-tab-item>
+
+                    <template #header>
+                        <b-icon icon="information-outline"></b-icon>
+                        <span> Issues <b-tag rounded> 3 </b-tag> </span>
+                    </template>
+
+                    <ul>
+                        {% for post in new_posts %}
+                        <li class="pl-2 is-size-7">
+                                <span class="tag has-text-weight-bold">
+                                    <small>{{ post.author.upper_department.name }}</small>
+                                </span>
+                            <a href="{{ url_for('main.department_post_detail', department_id=post.author.upper_department.id, id=post.id) }}">
+                                [{{ post.category.name }}] {{post.title}}
+                            </a>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </b-tab-item>
+
+                <b-tab-item label="약속" icon="">
+
+
+                    What light is light, if Silvia be not seen? <br>
+                    What joy is joy, if Silvia be not by— <br>
+                    Unless it be to think that she is by <br>
+                    And feed upon the shadow of perfection? <br>
+                    Except I be by Silvia in the night, <br>
+                    There is no music in the nightingale.
+                    </small>
+                </b-tab-item>
+
+                <b-tab-item label="Videos" icon="video" disabled>
+                    Nunc nec velit nec libero vestibulum eleifend.
+                    Curabitur pulvinar congue luctus.
+                    Nullam hendrerit iaculis augue vitae ornare.
+                    Maecenas vehicula pulvinar tellus, id sodales felis lobortis eget.
+                </b-tab-item>
+            </b-tabs>
+        </section>
         {% endif %}
 
         <!-- 검색 -->
@@ -229,7 +278,7 @@
                 <span class="icon"><i class="mdi mdi-magnify"></i></span>
                 {{ department.name }} 검색
             </h1>
-<!--            <div class=" dropdown-divider"></div>-->
+            <!--            <div class=" dropdown-divider"></div>-->
             <form action="{{url_for('main.department_search', department_id=department.id)}}" method="get"
                   class="pl-2"
             >
@@ -252,7 +301,7 @@
                 <span class="icon"><i class="mdi mdi-tag-multiple-outline"></i></span>
                 {{ department.name }} Category
             </h1>
-<!--            <div class=" dropdown-divider"></div>-->
+            <!--            <div class=" dropdown-divider"></div>-->
             <div class="tags pl-2">
                 {% for category in categories %}
                 <a class="tag is-rounded is-size-7 is-{{category.icon}}"
@@ -270,7 +319,7 @@
                 <span class="icon"><i class="mdi mdi-calendar-month-outline"></i></span>
                 {{ department.name }} Archive
             </h1>
-<!--            <div class="dropdown-divider"></div>-->
+            <!--            <div class="dropdown-divider"></div>-->
             <ul>
                 {% for date in dates %}
                 <li class="pl-2 is-size-7 ">
@@ -291,7 +340,7 @@
                 <span class="icon"><i class="mdi mdi-tag-multiple-outline"></i></span>
                 {{ department.name }} Tag
             </h1>
-<!--            <div class=" dropdown-divider"></div>-->
+            <!--            <div class=" dropdown-divider"></div>-->
             <div class="tags pl-2">
                 {% for tag in tags %}
                 <a class="tag is-rounded is-size-7 "
@@ -311,7 +360,7 @@
                 <span class="icon"><i class="mdi mdi-earth"></i></span>
                 전체 최신글
             </h1>
-<!--            <div class=" dropdown-divider"></div>-->
+            <!--            <div class=" dropdown-divider"></div>-->
             <ul>
                 {% for post in new_posts %}
                 <li class="pl-2 is-size-7">
