@@ -21,7 +21,9 @@
 
 {% block box %}
 <div class="columns">
-    <div class="column is-8" style="border-right:solid 1px #eee ;">
+    <!-- 나의 그룹일 땐, post를 좀 더 줄이기 -->
+    <div class="column is-{% if g.user.is_upper_department(department) %}7{% else %}8{% endif %}"
+         style="border-right:solid 1px #eee ;">
         <div class="box is-shadowless has-background-light py-3">
 
             <nav class="breadcrumb is-small" aria-label="breadcrumbs">
@@ -137,14 +139,14 @@
             <!--  카테고리 + 댓글 갯수 + (자식부서) -->
             <div class="my-3 is-size-7 is-flex is-align-items-center">
                 <!-- 카테고리 -->
-                <a class="tag is-rounded is-size-7 is-{{post.category.icon}}"
+                <a class="tag is-rounded is-size-7 is-{{post.category.icon}} mr-2"
                    href="{{ url_for('main.department_category', department_id=department.id, id=post.category.id) }}">
                     {{ post.category.name }}
                 </a>
 
                 <!-- 댓글 갯수 -->
                 {% if post.comment_count > 0 %}
-                <b-button class="is-rounded has-text-grey mx-2" size="is-small" style="font-size: 0.6rem"
+                <b-button class="is-rounded has-text-grey mr-2" size="is-small" style="font-size: 0.6rem"
                 >
                     <span class="icon" style="width: 20px"><i class="mdi mdi-comment-outline"></i></span>
                     {{ post.comment_count }}
@@ -229,20 +231,34 @@
             </div>
         </section>
 
-        <!-- 할일과 약속 -->
+        <!-- 나의 할일과 그룹 할일 목록 -->
         <section>
             <b-tabs
                     size="is-small"
                     type="is-boxed"
-                    >
-
+            >
+                <!-- 나의 할일 Tab1 -->
                 <b-tab-item>
 
                     <template #header>
-                        <b-icon icon="information-outline"></b-icon>
-                        <span> Issues <b-tag rounded> 3 </b-tag> </span>
+                        <b-icon icon="briefcase-outline" size="is-small" type="is-dark"></b-icon>
+                        <span class="icon-text is-size-7 has-text-dark has-text-weight-bold">
+                            <small>나의 할 일</small>
+                        </span>
                     </template>
+                    <!-- 할일 table 컴포넌트 -->
+                    <todo-table></todo-table>
 
+                </b-tab-item>
+
+                <!-- 그룹 할일 목록 Tab2 -->
+                <b-tab-item>
+                    <template #header>
+                        <b-icon icon="account-group-outline" size="is-small" type="is-dark"></b-icon>
+                        <span class="icon-text is-size-7 has-text-dark has-text-weight-bold">
+                            <small>그룹 할 일</small>
+                        </span>
+                    </template>
                     <ul>
                         {% for post in new_posts %}
                         <li class="pl-2 is-size-7">
@@ -255,21 +271,16 @@
                         </li>
                         {% endfor %}
                     </ul>
+
                 </b-tab-item>
 
-                <b-tab-item label="약속" icon="">
-
-
-                    What light is light, if Silvia be not seen? <br>
-                    What joy is joy, if Silvia be not by— <br>
-                    Unless it be to think that she is by <br>
-                    And feed upon the shadow of perfection? <br>
-                    Except I be by Silvia in the night, <br>
-                    There is no music in the nightingale.
-                    </small>
-                </b-tab-item>
-
-                <b-tab-item label="Videos" icon="video" disabled>
+                <b-tab-item disabled>
+                    <template #header>
+                        <b-icon icon="stairs-up" size="is-small" type="is-dark"></b-icon>
+                        <span class="icon-text is-size-7 has-text-dark has-text-weight-bold">
+                            <small>보고</small>
+                        </span>
+                    </template>
                     Nunc nec velit nec libero vestibulum eleifend.
                     Curabitur pulvinar congue luctus.
                     Nullam hendrerit iaculis augue vitae ornare.
@@ -397,3 +408,226 @@
 </div>
 {% endblock box %}
 
+{% block extra_foot_script %}
+<script>
+    var TodoTable = {
+        delimiters: ['{$', '$}'],  // jinja와 같이 쓸 vue 변수
+        name: "TodoTable",
+        template: `
+<div>
+      <div class="container">
+        <div class="level mb-2">
+            <b-button class="is-rounded has-text-dark has-text-weight-bold mr-2" size="is-small" style="font-size: 0.75rem"
+                @click=""
+                >
+                    <span class="icon" style="width: 25px"><i class="mdi mdi-plus"></i></span>
+                    할 일 추가
+            </b-button>
+            <b-button class="is-rounded has-text-dark has-text-weight-bold has-background-grey-lighter mr-2" size="is-small" style="font-size: 0.75rem;"
+                @click=""
+                >
+                    <span class="icon" style="width: 25px"><i class="mdi mdi-delete-outline"></i></span>
+                    완료 일괄 삭제
+            </b-button>
+
+        </div>
+
+        <b-table
+            :data="todos"
+            :narrowed="true"
+            default-sort="complete_date"
+            default-sort-direction="desc"
+            sort-icon="menu-up"
+            sort-icon-size="is-small"
+         >
+
+
+            <b-table-column field="type" label="타입"  width="40" v-slot="todos" sortable :th-attrs="thAttrs" :td-attrs="tdAttrs" centered>
+                <span class="tag" :class="todos.row.type === '개인' ? ' is-warning is-light' : ' is-warning'">
+                    <small>{$ todos.row.type $}</small>
+                </span>
+            </b-table-column>
+
+            <b-table-column label="할 일" v-slot="todos" :th-attrs="thAttrs" :td-attrs="tdAttrs">
+
+              <span class="is-size-7 has-text-weight-bold">{$ todos.row.todo $}</span>
+
+              <!--  수정(완료안됬을 시)/삭제 -->
+              <a v-show="!todos.row.complete_date"class=" has-text-warning-dark is-size-7"
+                       href="">
+                   <span class="icon"><i class="mdi mdi-note-edit-outline"></i></span>
+              </a>
+              <a class=" has-text-warning-dark is-size-7"
+                       href="">
+                   <span class="icon"><i class="mdi mdi-delete-outline"></i></span>
+              </a>
+            </b-table-column>
+
+
+            <b-table-column field="due_date" label="기한"  width="40" :th-attrs="thAttrs" :td-attrs="tdAttrs" v-slot="todos" centered>
+
+                  <b-tooltip
+                      v-if="todos.row.target_date"
+                      position="is-right"
+                      type="is-warning">
+
+                        <span class="tag is-grey is-size-7">
+                            <small>{$ todos.row.remain_days $}</small>
+                        </span>
+
+                       <template v-slot:content>
+                           <span  class="is-size-7">
+                                <small>{$ new Date(todos.row.target_date).toLocaleDateString() $}</small>
+                            </span>
+                       </template>
+                </b-tooltip>
+
+              <span v-else class="is-size-7">
+                <small>-</small>
+              </span>
+            </b-table-column>
+
+            <b-table-column field="complete_date" label="완료"  width="40" :th-attrs="thAttrs" v-slot="todos" sortable centered>
+                <span v-if="todos.row.complete_date" class="tag is-grey is-size-7">
+                    <small>{$ new Date(todos.row.complete_date).toLocaleDateString() $}</small>
+                </span>
+                <span v-else class="is-size-7">
+                    <a class=" has-text-danger "
+                        href="">
+                        <span class="icon"><i class="mdi mdi-check-bold"></i></span>
+                    </a>
+                </span>
+
+            </b-table-column>
+        </b-table>
+      </div>
+</div>
+        `,
+        data() {
+            return {
+                initialTodos: [
+                    {
+                        id: 1,
+                        todo: "워크 / 코코 / 리카 이어폰 500 만원 이미 받음",
+                        type: "개인",
+
+                        target_date: '2016/10/15 13:43:27',
+                        remain_days: '5일',
+
+                        complete_date: null,
+                    },
+                    {
+                        id: 2,
+                        todo: "Take out the garbage",
+                        type: "그룹",
+
+                        target_date: null,
+                        remain_days: null,
+
+                        complete_date: null,
+                    },
+                    {
+                        id: 3,
+                        todo: "Paint the house",
+                        type: "그룹",
+
+                        target_date: '2016/10/15 13:43:27',
+                        remain_days: '3일',
+
+                        complete_date: null,
+                    },
+                    {
+                        id: 4,
+                        todo: "Replace the doorknob",
+                        type: "개인",
+
+                        target_date: '2016/10/15 13:43:27',
+                        remain_days: '15일',
+
+                        complete_date: '2016/10/15 13:43:27'
+                    },
+                    {
+                        id: 5,
+                        todo: "Smell the roses",
+                        type: "개인",
+
+                        target_date: '2016/10/15 13:43:27',
+                        remain_days: '10일',
+
+                        complete_date: '2016/10/15 13:43:27'
+                    }
+                ],
+                todos: [],
+                selectedTodo: {},
+
+                // types: [
+                //     {id: 1, name: "개인"},
+                //     {id: 2, name: "부서"},
+                // ],
+                // isEditModalActive: false,
+                // isAddModalActive: false,
+            }
+        },
+        mounted() {
+            if (localStorage.getItem("todos")) {
+                this.todos = JSON.parse(localStorage.getItem("todos"));
+            } else {
+                this.todos = this.initialTodos;
+            }
+        },
+        methods: {
+            thAttrs(column) {
+                return {
+                    title: 'This title is sponsored by "th-attrs" prop',
+                    class: 'has-text-grey is-size-7',
+                    style: {
+                        'font-size': '.55rem!important;'
+                    }
+                }
+            },
+            tdAttrs(row, column) {
+
+                if (row.complete_date) {
+                    if (column.label === '할 일') {
+                        return {
+                            class: 'has-text-grey-light',
+                            style: {
+                                'text-decoration': 'line-through 1px',
+                            }
+                        }
+                    } else if (column.label === '타입') {
+                        return {
+                            class: '',
+                            style: {
+                                'text-decoration': 'line-through 2px #946c00'
+                            }
+                        }
+                    } else if (column.label === '기한') {
+                        return {
+                            class: '',
+                            style: {
+                                'text-decoration': 'line-through 1px'
+                            }
+                        }
+                    }
+                }
+                return null
+            }
+        },
+    }
+</script>
+{% endblock extra_foot_script %}
+
+{% block vue_mixins %}
+<script>
+
+    const myMixin = {
+        components: {
+            TodoTable
+        },
+        data() {
+            return {};
+        },
+    }
+</script>
+{% endblock vue_mixins %}
