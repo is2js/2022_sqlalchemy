@@ -600,10 +600,10 @@
                     할 일 추가
             </b-button>
             <b-button class="is-rounded has-text-dark has-text-weight-bold has-background-grey-lighter mr-2" size="is-small" style="font-size: 0.75rem;"
-                @click=""
+                @click="deleteCompletedTodos"
                 >
                     <span class="icon" style="width: 25px"><i class="mdi mdi-delete-outline"></i></span>
-                    완료 일괄 삭제
+                    완료된 할 일 일괄 삭제
             </b-button>
 
         </div>
@@ -865,17 +865,34 @@
                 // close the modal
                 this.isEditModalActive = false;
             },
+
             deleteTodo(item) {
                 this.$buefy.dialog.confirm({
                     title: `할 일 삭제`,
                     confirmText: "삭제",
                     type: "is-danger",
+                    // hasIcon: true,
                     message: `정말 삭제하시겠습니까?`,
                     onConfirm: () => {
                         // find in the array and remove
                         const index = this.todos.indexOf(item);
                         this.todos.splice(index, 1);
 
+                        // save the updated array in localstorage
+                        this.saveLocalStorageTodos();
+                    }
+                });
+            },
+
+            deleteCompletedTodos() {
+                this.$buefy.dialog.confirm({
+                    title: `완료된 할일 삭제`,
+                    confirmText: "삭제",
+                    type: "is-danger",
+                    // hasIcon: true,
+                    message: `완료된 할 일들을 삭제하시겠습니까?`,
+                    onConfirm: () => {
+                        this.todos = this.todos.filter((item) => !item.complete_date)
                         // save the updated array in localstorage
                         this.saveLocalStorageTodos();
                     }
