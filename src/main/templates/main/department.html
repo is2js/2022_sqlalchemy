@@ -629,16 +629,16 @@
               <span class="is-size-7 has-text-weight-bold">{$ todos.row.todo $}</span>
 
               <!--  수정(완료안됬을 시) -->
-              <span v-show="!todos.row.complete_date" class="has-text-warning-dark is-size-7"
+              <b-button v-show="!todos.row.complete_date" class="is-white has-text-warning-dark is-size-7"
                     @click="openEditModal(todos.row)"
                     >
                    <span class="icon"><i class="mdi mdi-note-edit-outline"></i></span>
-              </span>
+              </b-button>
               <!--  삭제 -->
-              <a class="has-text-warning-dark is-size-7"
-                       href="">
+              <b-button class="is-white has-text-warning-dark is-size-7"
+                    @click="deleteTodo(todos.row)">
                    <span class="icon"><i class="mdi mdi-delete-outline"></i></span>
-              </a>
+              </b-button>
             </b-table-column>
 
 
@@ -864,6 +864,22 @@
 
                 // close the modal
                 this.isEditModalActive = false;
+            },
+            deleteTodo(item) {
+                this.$buefy.dialog.confirm({
+                    title: `할 일 삭제`,
+                    confirmText: "삭제",
+                    type: "is-danger",
+                    message: `정말 삭제하시겠습니까?`,
+                    onConfirm: () => {
+                        // find in the array and remove
+                        const index = this.todos.indexOf(item);
+                        this.todos.splice(index, 1);
+
+                        // save the updated array in localstorage
+                        this.saveLocalStorageTodos();
+                    }
+                });
             },
 
         },
