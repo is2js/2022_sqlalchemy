@@ -465,12 +465,14 @@
         },
         data() {
             return {
-                // type: "",
-                type:  '개인',
+                type: "",
                 content: "",
                 target_date: null,
 
             };
+        },
+        mounted() {
+            this.type = '개인';
         },
         methods: {
             addTodo() {
@@ -480,18 +482,113 @@
                     // null or Wed Mar 01 2023 00:00:00 GMT+0900 (한국 표준시)
                     target_date: this.target_date,
                 };
-                console.log('payload >> ', payload);
+
                 this.$emit("add-todo", payload);
             }
         }
 
-    }
+    };
+
+    var TodoEditModal = {
+        delimiters: ['{$', '$}'],  // jinja와 같이 쓸 vue 변수
+        name: "TodoEditModal",
+        template: `
+    <div class="modal-card" style="width: auto">
+    <header class="modal-card-head">
+      <p class="modal-card-title">할일 수정</p>
+    </header>
+    <section class="modal-card-body">
+      <b-field label="내용">
+        <b-input type="text" v-model="content" placeholder="할일을 적어주세요." size="is-small">
+        </b-input>
+      </b-field>
+
+      <b-field label="타입 선택">
+        <b-select placeholder="타입 선택" v-model="type"
+           size="is-small"
+         >
+          <option
+            v-for="option in types"
+            :value="option.name"
+            :key="option.id"
+          >
+            {$ option.name $}
+          </option>
+        </b-select>
+      </b-field>
+
+    <b-field label="기한(선택사항)">
+        <b-datepicker
+          inline
+          size="is-small"
+          v-model="target_date"
+          >
+        </b-datepicker>
+      </b-field>
+
+    </section>
+    <footer class="modal-card-foot">
+      <button class="button" type="button" @click="$parent.close()">
+        Close
+      </button>
+      <button class="button is-primary" @click="editTodo">Save</button>
+    </footer>
+    </div>
+        `,
+        props: {
+            types: {
+                type: Array,
+                required: true
+            },
+            todo: {
+                type: Object,
+                required: true
+            }
+        },
+        data() {
+            return {
+                type: "",
+                content: "",
+                target_date: null,
+            };
+        },
+        mounted() {
+            this.content = this.todo.todo;
+            this.type = this.todo.type;
+            this.target_date = this.parser(this.todo.target_date);
+        },
+        methods: {
+            parser(stringDate) {
+                // new Date( null )을 하면 1970/1/1이 생성되므로
+                // Date객체를 생성하기 전에 null을 반환한다
+                if (!stringDate) {
+                    return null
+                }
+                //2023/03/28 13:43:27
+                return new Date(stringDate);
+            },
+            editTodo() {
+                const payload = {
+                    // 생성시와 다르게, 수정용 필드에는 안들어가지만, 나가서 수정된 객체를 찾기 위해
+                    // -> id를, 바뀌는 필드들과 같이 돌려준다.
+                    id: this.todo.id,
+
+                    type: this.type,
+                    content: this.content,
+                    target_date: this.target_date,
+                };
+
+                this.$emit("edit-todo", payload);
+            },
+        }
+
+    };
 
 
     var TodoTable = {
         delimiters: ['{$', '$}'],  // jinja와 같이 쓸 vue 변수
         name: "TodoTable",
-        components: {TodoAddModal},
+        components: {TodoAddModal, TodoEditModal},
         template: `
 <div>
       <div class="container">
@@ -531,12 +628,14 @@
 
               <span class="is-size-7 has-text-weight-bold">{$ todos.row.todo $}</span>
 
-              <!--  수정(완료안됬을 시)/삭제 -->
-              <a v-show="!todos.row.complete_date"class=" has-text-warning-dark is-size-7"
-                       href="">
+              <!--  수정(완료안됬을 시) -->
+              <span v-show="!todos.row.complete_date" class="has-text-warning-dark is-size-7"
+                    @click="openEditModal(todos.row)"
+                    >
                    <span class="icon"><i class="mdi mdi-note-edit-outline"></i></span>
-              </a>
-              <a class=" has-text-warning-dark is-size-7"
+              </span>
+              <!--  삭제 -->
+              <a class="has-text-warning-dark is-size-7"
                        href="">
                    <span class="icon"><i class="mdi mdi-delete-outline"></i></span>
               </a>
@@ -587,7 +686,15 @@
             :types="types"
           ></todo-add-modal>
         </b-modal>
-      </div>
+
+        <b-modal :active.sync="isEditModalActive" has-modal-card>
+          <todo-edit-modal
+            :types="types"
+            :todo="selectedTodo"
+            @edit-todo="onEditTodo"
+          ></todo-edit-modal>
+        </b-modal>
+    </div>
 </div>
         `,
         data() {
@@ -599,7 +706,7 @@
                         todo: "워크 / 코코 / 리카 이어폰 500 만원 이미 받음",
                         type: "개인",
 
-                        target_date: '2016/10/15 13:43:27',
+                        target_date: '2023/03/28 13:43:27',
                         remain_days: '5일',
 
                         complete_date: null,
@@ -619,7 +726,7 @@
                         todo: "Paint the house",
                         type: "그룹",
 
-                        target_date: '2016/10/15 13:43:27',
+                        target_date: '2023/03/28 13:43:27',
                         remain_days: '3일',
 
                         complete_date: null,
@@ -629,7 +736,7 @@
                         todo: "Replace the doorknob",
                         type: "개인",
 
-                        target_date: '2016/10/15 13:43:27',
+                        target_date: '2023/03/26 13:43:27',
                         remain_days: '15일',
 
                         complete_date: '2016/10/15 13:43:27'
@@ -639,7 +746,7 @@
                         todo: "Smell the roses",
                         type: "개인",
 
-                        target_date: '2016/10/15 13:43:27',
+                        target_date: '2023/03/26 13:43:27',
                         remain_days: '10일',
 
                         complete_date: '2016/10/15 13:43:27'
@@ -655,7 +762,7 @@
                 isAddModalActive: false,
 
                 selectedTodo: {},
-                // isEditModalActive: false,
+                isEditModalActive: false,
             }
         },
         mounted() {
@@ -703,9 +810,12 @@
                 }
                 return null
             },
+            saveLocalStorageTodos() {
+                localStorage.setItem("todos", JSON.stringify(this.todos));
+                this.todos = JSON.parse(localStorage.getItem("todos"));
+            },
 
             onAddTodo(item) {
-
                 // get the highest number id to iterate on it
                 const highestId = Math.max.apply(Math, this.todos.map(item => item.id));
                 // Add the item to the array
@@ -727,10 +837,35 @@
                 this.isAddModalActive = false;
             },
 
-            saveLocalStorageTodos() {
-                localStorage.setItem("todos", JSON.stringify(this.todos));
-                this.todos = JSON.parse(localStorage.getItem("todos"));
-            }
+            openEditModal(todo) {
+                this.selectedTodo = todo;
+                this.isEditModalActive = true;
+            },
+
+            findTodo(item) {
+                return this.todos.find(o => o.id === item.id);
+            },
+
+            onEditTodo(item) {
+                // id를 이용해 find
+                const todo = this.findTodo(item);
+
+                // Apply the updated values
+                todo.todo = item.content;
+                todo.type = item.type;
+                // return 백엔드
+                if (item.target_date) {
+                    todo.target_date = new Date(item.target_date).toLocaleDateString();
+                    todo.remain_days = '99일';
+                }
+
+                // save the updated array in localstorage
+                this.saveLocalStorageTodos();
+
+                // close the modal
+                this.isEditModalActive = false;
+            },
+
         },
     }
 </script>
