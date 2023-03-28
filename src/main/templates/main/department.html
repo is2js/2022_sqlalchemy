@@ -424,15 +424,6 @@
         </b-input>
       </b-field>
 
-      <b-field label="기한(선택사항)">
-<!--          inline-->
-        <b-datepicker
-          append-to-body="true"
-          size="is-small"
-          >
-        </b-datepicker>
-      </b-field>
-
       <b-field label="타입 선택">
         <b-select placeholder="타입 선택" v-model="type"
            size="is-small"
@@ -441,11 +432,20 @@
             v-for="option in types"
             :value="option.name"
             :key="option.id"
-
           >
             {$ option.name $}
           </option>
         </b-select>
+      </b-field>
+
+    <b-field label="기한(선택사항)">
+        <!-- append-to-body="true"-->
+        <b-datepicker
+          inline
+          size="is-small"
+          v-model="target_date"
+          >
+        </b-datepicker>
       </b-field>
 
     </section>
@@ -467,15 +467,20 @@
             return {
                 // type: "",
                 type:  '개인',
-                content: ""
+                content: "",
+                target_date: null,
+
             };
         },
         methods: {
             addTodo() {
                 const payload = {
                     type: this.type,
-                    content: this.content
+                    content: this.content,
+                    // null or Wed Mar 01 2023 00:00:00 GMT+0900 (한국 표준시)
+                    target_date: this.target_date,
                 };
+                console.log('payload >> ', payload);
                 this.$emit("add-todo", payload);
             }
         }
@@ -698,7 +703,9 @@
                 }
                 return null
             },
+
             onAddTodo(item) {
+
                 // get the highest number id to iterate on it
                 const highestId = Math.max.apply(Math, this.todos.map(item => item.id));
                 // Add the item to the array
@@ -710,7 +717,7 @@
                     complete_date: null,
 
                     //return 데이터
-                    target_date: '2016/10/15 13:43:27',
+                    target_date: '2016/10/15 13:43:27', //string
                     remain_days: '99일',
                 });
 
@@ -719,6 +726,7 @@
 
                 this.isAddModalActive = false;
             },
+
             saveLocalStorageTodos() {
                 localStorage.setItem("todos", JSON.stringify(this.todos));
                 this.todos = JSON.parse(localStorage.getItem("todos"));
