@@ -410,15 +410,89 @@
 
 {% block extra_foot_script %}
 <script>
+    var TodoAddModal = {
+        delimiters: ['{$', '$}'],  // jinja와 같이 쓸 vue 변수
+        name: "TodoAddModal",
+        template: `
+    <div class="modal-card" style="width: auto">
+    <header class="modal-card-head">
+      <p class="modal-card-title">할일 추가</p>
+    </header>
+    <section class="modal-card-body">
+      <b-field label="내용">
+        <b-input type="text" v-model="content" placeholder="할일을 적어주세요." size="is-small">
+        </b-input>
+      </b-field>
+
+      <b-field label="기한(선택사항)">
+<!--          inline-->
+        <b-datepicker
+          append-to-body="true"
+          size="is-small"
+          >
+        </b-datepicker>
+      </b-field>
+
+      <b-field label="타입 선택">
+        <b-select placeholder="타입 선택" v-model="type"
+           size="is-small"
+         >
+          <option
+            v-for="option in types"
+            :value="option.name"
+            :key="option.id"
+
+          >
+            {$ option.name $}
+          </option>
+        </b-select>
+      </b-field>
+
+    </section>
+    <footer class="modal-card-foot">
+      <button class="button" type="button" @click="$parent.close()">
+        Close
+      </button>
+      <button class="button is-primary" @click="addTodo">Save</button>
+    </footer>
+    </div>
+        `,
+        props: {
+            types: {
+                type: Array,
+                required: true
+            }
+        },
+        data() {
+            return {
+                // type: "",
+                type:  '개인',
+                content: ""
+            };
+        },
+        methods: {
+            addTodo() {
+                const payload = {
+                    type: this.type,
+                    content: this.content
+                };
+                this.$emit("add-todo", payload);
+            }
+        }
+
+    }
+
+
     var TodoTable = {
         delimiters: ['{$', '$}'],  // jinja와 같이 쓸 vue 변수
         name: "TodoTable",
+        components: {TodoAddModal},
         template: `
 <div>
       <div class="container">
         <div class="level mb-2">
             <b-button class="is-rounded has-text-dark has-text-weight-bold mr-2" size="is-small" style="font-size: 0.75rem"
-                @click=""
+                @click="isAddModalActive = true"
                 >
                     <span class="icon" style="width: 25px"><i class="mdi mdi-plus"></i></span>
                     할 일 추가
@@ -501,10 +575,19 @@
             </b-table-column>
         </b-table>
       </div>
+
+        <b-modal :active.sync="isAddModalActive" has-modal-card>
+          <todo-add-modal
+            @add-todo="onAddTodo"
+            :types="types"
+          ></todo-add-modal>
+        </b-modal>
+      </div>
 </div>
         `,
         data() {
             return {
+                //초기데이터
                 initialTodos: [
                     {
                         id: 1,
@@ -558,14 +641,16 @@
                     }
                 ],
                 todos: [],
-                selectedTodo: {},
 
-                // types: [
-                //     {id: 1, name: "개인"},
-                //     {id: 2, name: "부서"},
-                // ],
+                // 초기데이터
+                types: [
+                    {id: 1, name: "개인"},
+                    {id: 2, name: "그룹"},
+                ],
+                isAddModalActive: false,
+
+                selectedTodo: {},
                 // isEditModalActive: false,
-                // isAddModalActive: false,
             }
         },
         mounted() {
@@ -612,6 +697,31 @@
                     }
                 }
                 return null
+            },
+            onAddTodo(item) {
+                // get the highest number id to iterate on it
+                const highestId = Math.max.apply(Math, this.todos.map(item => item.id));
+                // Add the item to the array
+                this.todos.push({
+                    id: highestId + 1,
+                    todo: item.content,
+                    type: item.type,
+
+                    complete_date: null,
+
+                    //return 데이터
+                    target_date: '2016/10/15 13:43:27',
+                    remain_days: '99일',
+                });
+
+                // save the updated array in localstorage
+                this.saveLocalStorageTodos();
+
+                this.isAddModalActive = false;
+            },
+            saveLocalStorageTodos() {
+                localStorage.setItem("todos", JSON.stringify(this.todos));
+                this.todos = JSON.parse(localStorage.getItem("todos"));
             }
         },
     }
