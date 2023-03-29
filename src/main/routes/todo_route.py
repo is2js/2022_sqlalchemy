@@ -78,3 +78,26 @@ def delete():
         return make_response(dict(message='할 일 삭제 성공'), 200)
     else:
         return make_response(dict(message='할 일 삭제 실패'), 409)
+
+@todo_bp.route("/delete_completed", methods=['DELETE'])
+def delete_completed():
+    payload = request.get_json()
+    # payload  >>  {'ids': [27, 29, 31]}
+    todos = Todo.filter_by(id__in=payload['ids']).all()
+    if not todos:
+        return make_response(dict(message='삭제할, 완료된 할 일이 존재하지 않습니다'), 409)
+
+    session = Todo.get_scoped_session()
+
+    total_result = True
+    for todo in todos:
+        result, msg = todo.delete(session=session, auto_commit=False)
+        if not result:
+            total_result = False
+
+    if not total_result:
+        session.rollback()
+        return make_response(dict(message='완료된 할 일 삭제 실패'), 409)
+
+    session.commit()
+    return make_response(dict(message='완료된 할 일 삭제 성공'), 200)

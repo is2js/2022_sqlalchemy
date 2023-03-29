@@ -1028,9 +1028,33 @@
                     // hasIcon: true,
                     message: `완료된 할 일들을 삭제하시겠습니까?`,
                     onConfirm: () => {
-                        this.todos = this.todos.filter((item) => !item.complete_date)
-                        // save the updated array in localstorage
-                        this.saveLocalStorageTodos();
+                        // 완료된 것들만 id 모으기
+                        let targetTodos = this.todos.filter((item) => item.complete_date);
+                        targetTodoIds = targetTodos.map((item) => item.id)
+
+                        const payload = {
+                            ids: targetTodoIds
+                        }
+                        axios({
+                            url: '{{ url_for("todo.delete_completed") }}',
+                            method: 'delete',
+                            data: payload,
+                            headers: {'Content-type': 'application/json;charset=utf-8'},
+                        }).then(res => {
+                            if (res.status >= 300) {
+                                this.toast(res.data.message, type='is-danger');
+                                return;
+                            }
+                            // 통신 성공 + (status변경)로직 성공
+                            // 완료안된 것만 필터링해서 넣어주기
+                            this.todos = this.todos.filter((item) => !item.complete_date)
+                            // save the updated array in localstorage
+                            this.saveLocalStorageTodos();
+                        }).catch(err => {
+                            console.log(err)
+                            this.toast(err.response ? err.response.data.message : '서버와 연결이 올바르지 않습니다.');
+                        }).finally(() => {
+                        });
                     }
                 });
             },
