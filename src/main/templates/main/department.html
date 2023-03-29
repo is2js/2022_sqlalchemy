@@ -1042,7 +1042,7 @@
                             headers: {'Content-type': 'application/json;charset=utf-8'},
                         }).then(res => {
                             if (res.status >= 300) {
-                                this.toast(res.data.message, type='is-danger');
+                                this.toast(res.data.message, type = 'is-danger');
                                 return;
                             }
                             // 통신 성공 + (status변경)로직 성공
@@ -1060,7 +1060,7 @@
             },
 
             completeTodo(item) {
-                 let payload = {
+                let payload = {
                     id: item.id,
 
                     complete_date: new Date().toLocaleDateString("ko-KR")
@@ -1095,18 +1095,47 @@
                     this.toast(err.response ? err.response.data.message : '서버와 연결이 올바르지 않습니다.');
 
                 }).finally(() => {
-
                 });
             },
 
             restoreTodo(item) {
-                // id를 이용해 find
-                const todo = this.findTodo(item);
+                let payload = {
+                    id: item.id,
 
-                todo.complete_date = null;
+                    complete_date: null
+                }
 
-                // save the updated array in localstorage
-                this.saveLocalStorageTodos();
+                axios({
+                    url: '{{ url_for("todo.restore") }}',
+                    method: 'put',
+                    data: payload,
+                    headers: {'Content-type': 'application/json;charset=utf-8'},
+                }).then(res => {
+                    // 통신성공 but 로직 실패(200대 외)
+                    if (res.status >= 300) {
+                        this.toast(res.data.message)
+                        return;
+                    }
+
+                    let updatedTodo = res.data.updated_todo;
+
+                    // id를 이용해 find
+                    const todo = this.findTodo(updatedTodo);
+
+                    // Apply the updated values
+                    // id 빼고 업데이트
+                    todo.complete_date = null;
+
+                    // save the updated array in localstorage
+                    this.saveLocalStorageTodos();
+
+                }).catch(err => {
+                    console.log(err)
+                    this.toast(err.response ? err.response.data.message : '서버와 연결이 올바르지 않습니다.');
+
+                }).finally(() => {
+                });
+
             },
 
         },

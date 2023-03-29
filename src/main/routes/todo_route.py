@@ -34,6 +34,7 @@ def add():
     else:
         return make_response(dict(message='댓글 등록 실패!'), 409)
 
+
 @todo_bp.route("/edit", methods=['PUT'])
 def edit():
     payload = request.get_json()
@@ -79,6 +80,7 @@ def delete():
     else:
         return make_response(dict(message='할 일 삭제 실패'), 409)
 
+
 @todo_bp.route("/delete_completed", methods=['DELETE'])
 def delete_completed():
     payload = request.get_json()
@@ -102,6 +104,7 @@ def delete_completed():
     session.commit()
     return make_response(dict(message='완료된 할 일 삭제 성공'), 200)
 
+
 @todo_bp.route("/complete", methods=['PUT'])
 def complete():
     payload = request.get_json()
@@ -118,3 +121,21 @@ def complete():
         return make_response(dict(updated_todo=updated_todo, message="할 일 완료."), 200)
     else:
         return make_response(dict(message="할 일 완료 실패."), 409)
+
+
+@todo_bp.route("/restore", methods=['PUT'])
+def restore():
+    payload = request.get_json()
+
+    todo = Todo.filter_by(id=payload['id']).first()
+    if not todo:
+        return make_response(dict(message='해당 할일이 존재하지 않습니다'), 409)
+
+    result, msg = todo.update(complete_date=None)
+
+    if result:
+        updated_todo = result.to_dict2(hybrid_attrs=True)
+
+        return make_response(dict(updated_todo=updated_todo, message="할 일 복원 완료."), 200)
+    else:
+        return make_response(dict(message="할 일 복원 실패."), 409)
