@@ -60,6 +60,8 @@ def create_app(config_name='default'):
         util_bp,
         dept_bp,
         comment_bp,
+        todo_bp,
+
     )
 
     app.register_blueprint(main_bp)
@@ -69,6 +71,7 @@ def create_app(config_name='default'):
     app.register_blueprint(util_bp)
     app.register_blueprint(dept_bp)
     app.register_blueprint(comment_bp)
+    app.register_blueprint(todo_bp)
 
     # 기본 / url 지정 in route.py의 function
     app.add_url_rule('/', endpoint='index', view_func=index)

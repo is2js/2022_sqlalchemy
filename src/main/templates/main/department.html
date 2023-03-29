@@ -15,6 +15,9 @@
         background-size: cover;
     }
 </style>
+
+<script src="{{url_for('static', filename='js/axios.min.js')}}"></script>
+
 {% endblock extra_head_style %}
 
 {% block hero %}{% endblock hero %}
@@ -430,7 +433,7 @@
          >
           <option
             v-for="option in types"
-            :value="option.name"
+            :value="option.id"
             :key="option.id"
           >
             {$ option.name $}
@@ -472,7 +475,8 @@
             };
         },
         mounted() {
-            this.type = '개인';
+            // this.type = '개인';
+            this.type = 0;
         },
         methods: {
             addTodo() {
@@ -509,7 +513,7 @@
          >
           <option
             v-for="option in types"
-            :value="option.name"
+            :value="option.id"
             :key="option.id"
           >
             {$ option.name $}
@@ -618,30 +622,36 @@
          >
 
 
-            <b-table-column field="type" label="타입"  width="40" v-slot="todos" sortable :th-attrs="thAttrs" :td-attrs="tdAttrs" centered>
-                <span class="tag" :class="todos.row.type === '개인' ? ' is-warning is-light' : ' is-warning'">
-                    <small>{$ todos.row.type $}</small>
+            <b-table-column field="type" label="타입"  width="40" v-slot="todos" sortable :th-attrs="thAttrs" :td-attrs="tdAttrs">
+                <span class="tag" :class="todos.row.type === 0 ? ' is-warning is-light' : ' is-warning'">
+                    <small>{$ todos.row.type === 0 ? '개인' : '그룹' $}</small>
                 </span>
             </b-table-column>
 
             <b-table-column label="할 일" v-slot="todos" :th-attrs="thAttrs" :td-attrs="tdAttrs">
 
-              <span class="is-size-7 has-text-weight-bold">{$ todos.row.todo $}</span>
+              <span class="is-size-7 ">{$ todos.row.todo $}</span>
 
               <!--  수정(완료안됬을 시) -->
-              <b-button v-show="!todos.row.complete_date" class="is-white has-text-warning-dark is-size-7"
+              <b-button v-if="!todos.row.complete_date" class="is-white has-text-grey is-size-7 px-1"
                     @click="openEditModal(todos.row)"
                     >
                    <span class="icon"><i class="mdi mdi-note-edit-outline"></i></span>
               </b-button>
+            <!--  복원(완료됬을 시)            -->
+              <b-button v-else class="is-white has-text-grey is-size-7 px-1"
+                    @click="restoreTodo(todos.row)"
+                    >
+                   <span class="icon"><i class="mdi mdi-restore"></i></span>
+              </b-button>
               <!--  삭제 -->
-              <b-button class="is-white has-text-warning-dark is-size-7"
+              <b-button class="is-white has-text-grey is-size-7 px-1"
                     @click="deleteTodo(todos.row)">
                    <span class="icon"><i class="mdi mdi-delete-outline"></i></span>
               </b-button>
             </b-table-column>
 
-
+            <!-- 기한 -->
             <b-table-column field="due_date" label="기한"  width="40" :th-attrs="thAttrs" :td-attrs="tdAttrs" v-slot="todos" centered>
 
                   <b-tooltip
@@ -666,17 +676,20 @@
             </b-table-column>
 
             <b-table-column field="complete_date" label="완료"  width="40" :th-attrs="thAttrs" v-slot="todos" sortable centered>
-                <span v-if="todos.row.complete_date" class="tag is-grey is-size-7">
-                    <small>{$ new Date(todos.row.complete_date).toLocaleDateString() $}</small>
+<!--                <span v-if="todos.row.complete_date" class="tag is-grey is-size-7">-->
+<!--                    <small>{$ new Date(todos.row.complete_date).toLocaleDateString() $}</small>-->
+<!--                </span>-->
+                <span v-if="todos.row.complete_date" class="is-size-7 has-text-weight-bold">
+                        <small>완</small>
                 </span>
-                <span v-else class="is-size-7">
-                    <a class=" has-text-danger "
-                        href="">
-                        <span class="icon"><i class="mdi mdi-check-bold"></i></span>
-                    </a>
-                </span>
-
+                <!-- 완료 -->
+                <b-button v-else class="is-white has-text-danger is-size-7"
+                    @click="completeTodo(todos.row)"
+                    >
+                   <span class="icon"><i class="mdi mdi-check-bold"></i></span>
+              </b-button>
             </b-table-column>
+
         </b-table>
       </div>
 
@@ -707,7 +720,7 @@
                         type: "개인",
 
                         target_date: '2023/03/28 13:43:27',
-                        remain_days: '5일',
+                        remain_days: '5일', // backend
 
                         complete_date: null,
                     },
@@ -756,8 +769,8 @@
 
                 // 초기데이터
                 types: [
-                    {id: 1, name: "개인"},
-                    {id: 2, name: "그룹"},
+                    {id: 0, name: "개인"},
+                    {id: 1, name: "그룹"},
                 ],
                 isAddModalActive: false,
 
@@ -769,10 +782,38 @@
             if (localStorage.getItem("todos")) {
                 this.todos = JSON.parse(localStorage.getItem("todos"));
             } else {
-                this.todos = this.initialTodos;
+                // this.todos = this.initialTodos;
+                this.todos = this.getTodos();
             }
         },
         methods: {
+            toast(message, type = 'is-info', position = 'is-top') {
+                this.$buefy.toast.open({
+                    type: type,
+                    duration: 5000,
+                    message: message,
+                    position: position,
+                });
+            },
+            getTodos() {
+                axios({
+                    url: '{{ url_for("todo.all", employee_id=g.user.employee.id) }}',
+                    method: 'get',
+                    headers: {'Content-type': 'application/json;charset=utf-8'},
+                }).then(res => {
+                    if (res.status >= 300) {
+                        this.toast(res.data.message)
+                        return;
+                    }
+                    console.log('res.data.todos >> ', res.data.todos);
+
+                    this.todos = res.data.todos;
+
+                }).catch(err => {
+                    this.toast(err.response ? err.response.data.message : '서버와 연결이 올바르지 않습니다.');
+                }).finally(() => {
+                });
+            },
             thAttrs(column) {
                 return {
                     title: 'This title is sponsored by "th-attrs" prop',
@@ -817,24 +858,58 @@
 
             onAddTodo(item) {
                 // get the highest number id to iterate on it
-                const highestId = Math.max.apply(Math, this.todos.map(item => item.id));
-                // Add the item to the array
-                this.todos.push({
-                    id: highestId + 1,
-                    todo: item.content,
+                // const highestId = Math.max.apply(Math, this.todos.map(item => item.id));
+
+                let payload = {
+                    employee_id: parseInt('{{g.user.employee.id}}'),
                     type: item.type,
+                    todo: item.content,
+                    // null or Wed Mar 01 2023 00:00:00 GMT+0900 (한국 표준시)
+                    target_date: item.target_date,
+                }
+                axios({
+                    url: '{{ url_for("todo.add") }}',
+                    method: 'post',
+                    data: payload,
+                    headers: {'Content-type': 'application/json;charset=utf-8'},
+                }).then(res => {
+                    // 통신성공 but 로직 실패(200대 외)
+                    if (res.status >= 300) {
+                        this.toast(res.data.message)
+                        return;
+                    }
 
-                    complete_date: null,
+                    // 통신 성공 + (DB 순서변경)로직
+                    // Add the item to the array
+                    // this.todos.push({
+                    //     id: highestId + 1,
+                    //     todo: item.content,
+                    //     type: item.type,
+                    //
+                    //     complete_date: null,
+                    //
+                    //     //return 데이터
+                    //     target_date: '2016/10/15 13:43:27', //string
+                    //     remain_days: '99일',
+                    // });
+                    console.log('res.data.new_todo >> ', res.data.new_todo);
+                    this.todos.push(res.data.new_todo);
 
-                    //return 데이터
-                    target_date: '2016/10/15 13:43:27', //string
-                    remain_days: '99일',
+                    // save the updated array in localstorage
+                    this.saveLocalStorageTodos();
+
+                    this.toast(res.data.message);
+
+                }).catch(err => {
+                    console.log(err)
+                    this.toast(err.response ? err.response.data.message : '서버와 연결이 올바르지 않습니다.');
+                }).finally(() => {
+                    // 댓글창 닫아주기
+                    this.isAddModalActive = false;
                 });
 
-                // save the updated array in localstorage
-                this.saveLocalStorageTodos();
 
-                this.isAddModalActive = false;
+
             },
 
             openEditModal(todo) {
@@ -897,6 +972,29 @@
                         this.saveLocalStorageTodos();
                     }
                 });
+            },
+
+            completeTodo(item) {
+                // id를 이용해 find
+                const todo = this.findTodo(item);
+
+                // Apply the updated values
+                // new Date(null)과 달리 new Date()는 now임.
+                todo.complete_date = new Date().toLocaleDateString();
+
+
+                // save the updated array in localstorage
+                this.saveLocalStorageTodos();
+            },
+
+            restoreTodo(item) {
+                // id를 이용해 find
+                const todo = this.findTodo(item);
+
+                todo.complete_date = null;
+
+                // save the updated array in localstorage
+                this.saveLocalStorageTodos();
             },
 
         },

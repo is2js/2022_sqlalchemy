@@ -5,3 +5,5 @@ from .departments import (
     Department, DepartmentType,
     EmployeeDepartment
 )
+
+from .todos import TodoType, Todo

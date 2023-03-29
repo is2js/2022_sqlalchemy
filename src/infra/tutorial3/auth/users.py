@@ -633,7 +633,7 @@ class Employee(BaseModel):
     # new : 휴직 상태의 최종휴직일을 알도록 칼럼을 추가한다
     leave_date = Column(Date, nullable=True)
 
-    reference = Column(String(500), nullable=True)
+    reference = Column(String(2000), nullable=True)
 
     #### MANY 취임정보(들)에 대한 relationship 생성
     employee_departments = relationship('EmployeeDepartment',
@@ -669,6 +669,7 @@ class Employee(BaseModel):
     # new 2 -> 상위부서의 부서장여부가 나의 부서 view에서 필요함.
     is_upper_department_leader = Column(Boolean, default=False)
 
+    todos = relationship('Todo', passive_deletes=True, back_populates='employee')
     # qrcode, qrcode_img: https://github.com/prameshstha/QueueMsAPI/blob/85dedcce356475ef2b4b149e7e6164d4042ffffb/bookings/models.py#L92
 
     #### 특정 role의 사람들을 다 가져오기 위한 메서드

@@ -71,3 +71,9 @@ class IntEnum(TypeDecorator):
         #     # sqlalchemy.exc.InvalidRequestError: The unique() method must be invoked on this Result, as it contains results that include joined eager loads against collections
 
         return self._enumtype(value)
+
+
+    @classmethod
+    def choices(cls):
+        # form을 위한 choices에는, 선택권한을 안준다? -> 0을 value로 잡아서 제외시킴
+        return [(choice.value, choice.name) for choice in cls if choice.value]

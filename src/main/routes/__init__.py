@@ -5,3 +5,4 @@ from .admin_route import admin_bp
 from .util_route import util_bp
 from .department_route import dept_bp
 from .comment_route import comment_bp
+from .todo_route import todo_bp
