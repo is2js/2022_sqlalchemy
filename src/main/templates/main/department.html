@@ -918,9 +918,6 @@
                     // 댓글창 닫아주기
                     this.isAddModalActive = false;
                 });
-
-
-
             },
 
             openEditModal(todo) {
@@ -933,23 +930,64 @@
             },
 
             onEditTodo(item) {
-                // id를 이용해 find
-                const todo = this.findTodo(item);
+                let payload = {
+                    id: item.id,
+                    employee_id: item.employee_id,
 
-                // Apply the updated values
-                todo.todo = item.content;
-                todo.type = item.type;
-                // return 백엔드
-                if (item.target_date) {
-                    todo.target_date = new Date(item.target_date).toLocaleDateString();
-                    todo.remain_days = '99일';
+                    type: item.type,
+                    todo: item.content,
+                    // 이미 string으로 들어갔거나 null임.
+                    // null을 채웠으면, date객체이므로 string화 시켜야한다.
+                    target_date: item.target_date.toLocaleDateString("ko-KR"),
                 }
 
-                // save the updated array in localstorage
-                this.saveLocalStorageTodos();
+                //
+                // if (item.target_date) {
+                //     payload["target_date"] = item.target_date.toLocaleDateString("ko-KR");
+                // } else {
+                //     payload["target_date"] = null;
+                // }
 
-                // close the modal
-                this.isEditModalActive = false;
+                axios({
+                    url: '{{ url_for("todo.edit") }}',
+                    method: 'put',
+                    data: payload,
+                    headers: {'Content-type': 'application/json;charset=utf-8'},
+                }).then(res => {
+                    // 통신성공 but 로직 실패(200대 외)
+                    if (res.status >= 300) {
+                        this.toast(res.data.message)
+                        return;
+                    }
+
+                    let updatedTodo = res.data.updated_todo;
+
+                    // id를 이용해 find
+                    const todo = this.findTodo(updatedTodo);
+
+                    // Apply the updated values
+                    // id와 employee_id를 빼고 업데이트
+                    todo.todo = updatedTodo.content;
+                    todo.type = updatedTodo.type;
+
+                    // target데이트가 있을 때만. string변환 저장 / remain_days 저장
+                    if (updatedTodo.target_date) {
+                        // backend에서 올 땐 이미 to_dict에서 넘어온 string
+                        todo.target_date = updatedTodo.target_date;
+                        todo.remain_days = updatedTodo.remain_days;
+                    }
+
+                    // save the updated array in localstorage
+                    this.saveLocalStorageTodos();
+
+                }).catch(err => {
+                    console.log(err)
+                    this.toast(err.response ? err.response.data.message : '서버와 연결이 올바르지 않습니다.');
+
+                }).finally(() => {
+                    // close the modal
+                    this.isEditModalActive = false;
+                });
             },
 
             deleteTodo(item) {
