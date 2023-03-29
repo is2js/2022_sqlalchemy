@@ -623,7 +623,7 @@
          >
 
 
-            <b-table-column field="type" label="타입"  width="40" v-slot="todos" sortable :th-attrs="thAttrs" :td-attrs="tdAttrs">
+            <b-table-column field="type" label="타입"  width="40" v-slot="todos"  :th-attrs="thAttrs" :td-attrs="tdAttrs">
                 <span class="tag" :class="todos.row.type === 0 ? ' is-warning is-light' : ' is-warning'">
                     <small>{$ todos.row.type === 0 ? '개인' : '그룹' $}</small>
                 </span>
@@ -653,7 +653,7 @@
             </b-table-column>
 
             <!-- 기한 -->
-            <b-table-column field="remain_days" sortable label="기한"  width="40" :th-attrs="thAttrs" :td-attrs="tdAttrs" v-slot="todos" centered>
+            <b-table-column field="remain_days"  label="기한"  width="40" :th-attrs="thAttrs" :td-attrs="tdAttrs" v-slot="todos" centered>
                   <!-- target_date가 없으면, remain_days가 None이라서 필터링 -->
                   <b-tooltip
                       v-if="todos.row.target_date && todos.row.remain_days != null"
@@ -682,7 +682,7 @@
               </span>
             </b-table-column>
 
-            <b-table-column field="complete_date" label="완료"  width="40" :th-attrs="thAttrs" v-slot="todos" sortable centered>
+            <b-table-column field="complete_date" label="완료"  width="40" :th-attrs="thAttrs" v-slot="todos"  centered>
 <!--                <span v-if="todos.row.complete_date" class="tag is-grey is-size-7">-->
 <!--                    <small>{$ new Date(todos.row.complete_date).toLocaleDateString() $}</small>-->
 <!--                </span>-->
@@ -818,7 +818,8 @@
                 });
             },
             orderTodos(todos){
-                return _.orderBy(todos, ['complete_date', 'type', 'target_date', ], ['asc', 'desc', 'asc' ]);
+                // null은 맨 뒤에 배치되니, null or 값이면, 내림차순으로 정렬해야 값 -> null
+                return _.orderBy(todos, ['complete_date', 'type', 'target_date', ], ['desc', 'desc', 'asc' ]);
             },
             getTodos() {
                 axios({
