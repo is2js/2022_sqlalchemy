@@ -101,3 +101,20 @@ def delete_completed():
 
     session.commit()
     return make_response(dict(message='완료된 할 일 삭제 성공'), 200)
+
+@todo_bp.route("/complete", methods=['PUT'])
+def complete():
+    payload = request.get_json()
+
+    todo = Todo.filter_by(id=payload['id']).first()
+    if not todo:
+        return make_response(dict(message='해당 할일이 존재하지 않습니다'), 409)
+
+    result, msg = todo.update(complete_date=parse(payload['complete_date']))
+
+    if result:
+        updated_todo = result.to_dict2(hybrid_attrs=True)
+
+        return make_response(dict(updated_todo=updated_todo, message="할 일 완료."), 200)
+    else:
+        return make_response(dict(message="할 일 완료 실패."), 409)

@@ -1060,16 +1060,43 @@
             },
 
             completeTodo(item) {
-                // id를 이용해 find
-                const todo = this.findTodo(item);
+                 let payload = {
+                    id: item.id,
 
-                // Apply the updated values
-                // new Date(null)과 달리 new Date()는 now임.
-                todo.complete_date = new Date().toLocaleDateString();
+                    complete_date: new Date().toLocaleDateString("ko-KR")
+                }
 
+                axios({
+                    url: '{{ url_for("todo.complete") }}',
+                    method: 'put',
+                    data: payload,
+                    headers: {'Content-type': 'application/json;charset=utf-8'},
+                }).then(res => {
+                    // 통신성공 but 로직 실패(200대 외)
+                    if (res.status >= 300) {
+                        this.toast(res.data.message)
+                        return;
+                    }
 
-                // save the updated array in localstorage
-                this.saveLocalStorageTodos();
+                    let updatedTodo = res.data.updated_todo;
+
+                    // id를 이용해 find
+                    const todo = this.findTodo(updatedTodo);
+
+                    // Apply the updated values
+                    // id 빼고 업데이트
+                    todo.complete_date = updatedTodo.complete_date;
+
+                    // save the updated array in localstorage
+                    this.saveLocalStorageTodos();
+
+                }).catch(err => {
+                    console.log(err)
+                    this.toast(err.response ? err.response.data.message : '서버와 연결이 올바르지 않습니다.');
+
+                }).finally(() => {
+
+                });
             },
 
             restoreTodo(item) {
