@@ -652,15 +652,21 @@
             </b-table-column>
 
             <!-- 기한 -->
-            <b-table-column field="due_date" label="기한"  width="40" :th-attrs="thAttrs" :td-attrs="tdAttrs" v-slot="todos" centered>
-
+            <b-table-column field="remain_days" sortable label="기한"  width="40" :th-attrs="thAttrs" :td-attrs="tdAttrs" v-slot="todos" centered>
+                  <!-- target_date가 없으면, remain_days가 None이라서 필터링 -->
                   <b-tooltip
-                      v-if="todos.row.target_date"
+                      v-if="todos.row.target_date && todos.row.remain_days != null"
                       position="is-right"
-                      type="is-warning">
+                      type="is-dark">
 
-                        <span class="tag is-grey is-size-7">
-                            <small>{$ todos.row.remain_days $}</small>
+                        <span v-if="todos.row.remain_days === 0" class="tag is-danger is-light is-size-7">
+                            <small>오늘</small>
+                        </span>
+                        <span v-else-if="todos.row.remain_days < 0" class="tag is-danger is-light has-text-weight-bold is-size-7">
+                            <small>{$ todos.row.remain_days $}일</small>
+                        </span>
+                        <span v-else class="tag is-grey is-size-7">
+                            <small>{$ todos.row.remain_days $}일</small>
                         </span>
 
                        <template v-slot:content>
@@ -864,9 +870,14 @@
                     employee_id: parseInt('{{g.user.employee.id}}'),
                     type: item.type,
                     todo: item.content,
-                    // null or Wed Mar 01 2023 00:00:00 GMT+0900 (한국 표준시)
-                    target_date: item.target_date,
+                    // null or Wed Mar 01 2023 00:00:00 GMT+0900 (한국 표준시) -> iso string로 변환
+                    // target_date: item.target_date,
+                    // target_date: item.target_date.toISOString(),
+                    // target_date: new Date( item.target_date - item.target_date.getTimezoneOffset() * 60000 ).toISOString(),
+                    // target_date: item.target_date.toLocaleDateString(),
+                    target_date: item.target_date.toLocaleDateString("ko-KR"),
                 }
+
                 axios({
                     url: '{{ url_for("todo.add") }}',
                     method: 'post',
@@ -892,7 +903,7 @@
                     //     target_date: '2016/10/15 13:43:27', //string
                     //     remain_days: '99일',
                     // });
-                    console.log('res.data.new_todo >> ', res.data.new_todo);
+
                     this.todos.push(res.data.new_todo);
 
                     // save the updated array in localstorage

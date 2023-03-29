@@ -50,12 +50,12 @@ class Todo(BaseModel):
 
     @hybrid_property
     def remain_days(self):
+        # 타겟데이가 없으면, None 반환 -> 기한 '-'으로 표시
         if self.target_date is None:
             return None
 
+        # 타겟데이가 있으면 -> remain_days가 int로 반환
         today = datetime.date.today()
-        if today > self.target_date:
-            return None
 
         delta = self.target_date - today
         return delta.days

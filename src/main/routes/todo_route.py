@@ -1,3 +1,4 @@
+from dateutil.parser import parse
 from flask import Blueprint, request, make_response, jsonify
 from src.infra.tutorial3 import Comment, Todo
 
@@ -18,9 +19,10 @@ def all(employee_id):
 @todo_bp.route("/add", methods=['POST'])
 def add():
     payload = request.get_json()
-    # payload  >>  {'employee_id': '1', 'type': '개인', 'todo': 'fasdfsa', 'target_date': None}
-    # payload['employee_id'] = int(payload['employee_id']) -> view에서 parseInt
+    # payload  >>  {'employee_id': 1, 'type': '개인', 'todo': 'fasdfsa', 'target_date': None}
+
     payload['todo'] = payload['todo'].strip()
+    payload['target_date'] = parse(payload['target_date'])
 
     result, msg = Todo.create(**payload)
 
