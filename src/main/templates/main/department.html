@@ -17,7 +17,8 @@
 </style>
 
 <script src="{{url_for('static', filename='js/axios.min.js')}}"></script>
-
+<!--정렬을 위한-->
+<script src="https://cdn.jsdelivr.net/npm/lodash@4.17.11/lodash.min.js"></script>
 {% endblock extra_head_style %}
 
 {% block hero %}{% endblock hero %}
@@ -685,9 +686,20 @@
 <!--                <span v-if="todos.row.complete_date" class="tag is-grey is-size-7">-->
 <!--                    <small>{$ new Date(todos.row.complete_date).toLocaleDateString() $}</small>-->
 <!--                </span>-->
-                <span v-if="todos.row.complete_date" class="is-size-7 has-text-weight-bold">
-                        <small>완</small>
-                </span>
+                <b-tooltip
+                      v-if="todos.row.complete_date"
+                      position="is-right"
+                      type="is-dark">
+
+                    <span  class="is-size-7 has-text-weight-bold">
+                            <small>완</small>
+                    </span>
+                       <template v-slot:content>
+                            <span  class="is-size-7">
+                                <small>{$ new Date(todos.row.complete_date).toLocaleDateString("ko-KR") $}</small>
+                            </span>
+                       </template>
+                </b-tooltip>
                 <!-- 완료 -->
                 <b-button v-else class="is-white has-text-danger is-size-7"
                     @click="completeTodo(todos.row)"
@@ -785,11 +797,15 @@
             }
         },
         mounted() {
+            // intelligence, DESC로 1차정렬
+            // strength, ASC로 2차정렬
             if (localStorage.getItem("todos")) {
                 this.todos = JSON.parse(localStorage.getItem("todos"));
             } else {
                 // this.todos = this.initialTodos;
-                this.todos = this.getTodos();
+                // this.todos = this.getTodos();
+                // this.todos = _.orderBy(this.getTodos, ['complete_date', 'target_date', 'type'], ['asc', 'asc', 'desc'])
+                this.getTodos();
             }
         },
         methods: {
@@ -801,6 +817,9 @@
                     position: position,
                 });
             },
+            orderTodos(todos){
+                return _.orderBy(todos, ['complete_date', 'type', 'target_date', ], ['asc', 'desc', 'asc' ]);
+            },
             getTodos() {
                 axios({
                     url: '{{ url_for("todo.all", employee_id=g.user.employee.id) }}',
@@ -811,9 +830,9 @@
                         this.toast(res.data.message)
                         return;
                     }
-                    console.log('res.data.todos >> ', res.data.todos);
+                    // console.log('res.data.todos >> ', res.data.todos);
 
-                    this.todos = res.data.todos;
+                    this.todos = this.orderTodos(res.data.todos)
 
                 }).catch(err => {
                     this.toast(err.response ? err.response.data.message : '서버와 연결이 올바르지 않습니다.');
@@ -858,7 +877,7 @@
                 return null
             },
             saveLocalStorageTodos() {
-                localStorage.setItem("todos", JSON.stringify(this.todos));
+                localStorage.setItem("todos", JSON.stringify(this.orderTodos(this.todos)));
                 this.todos = JSON.parse(localStorage.getItem("todos"));
             },
 
@@ -875,7 +894,10 @@
                     // target_date: item.target_date.toISOString(),
                     // target_date: new Date( item.target_date - item.target_date.getTimezoneOffset() * 60000 ).toISOString(),
                     // target_date: item.target_date.toLocaleDateString(),
-                    target_date: item.target_date.toLocaleDateString("ko-KR"),
+                }
+                // null이면 string화 안하고 필요도 없고, 채웠으면, date객체이므로 string화 시켜야한다.
+                if (item.target_date) {
+                    payload['target_date'] = item.target_date.toLocaleDateString("ko-KR")
                 }
 
                 axios({

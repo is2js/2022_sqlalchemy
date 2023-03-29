@@ -23,7 +23,10 @@ def add():
     # payload  >>  {'employee_id': 1, 'type': 0, 'todo': 'ㅇㅇㅇㅇㅇㅇ', 'target_date': '2023. 3. 31.'}
 
     payload['todo'] = payload['todo'].strip()
-    payload['target_date'] = parse(payload['target_date'])
+    # payload['target_date'] = parse(payload['target_date'])
+    if payload.get('target_date'):
+        payload['target_date'] = parse(payload['target_date'])
+
 
     result, msg = Todo.create(**payload)
 
@@ -46,15 +49,15 @@ def edit():
     if not todo:
         return make_response(dict(message='해당 할일이 존재하지 않습니다'), 409)
 
-    filter = dict(
+    args_map = dict(
         todo=payload['todo'].strip(),
         type=payload['type'],
     )
     if payload.get('target_date'):
-        filter['target_date'] = parse(payload['target_date'])
+        args_map['target_date'] = parse(payload['target_date'])
 
     result, msg = todo.update(
-        **filter
+        **args_map
     )
 
     if result:
