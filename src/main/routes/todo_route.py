@@ -45,10 +45,15 @@ def edit():
     if not todo:
         return make_response(dict(message='해당 할일이 존재하지 않습니다'), 409)
 
-    result, msg = todo.update(
+    filter = dict(
         todo=payload['todo'].strip(),
         type=payload['type'],
-        target_date=parse(payload['target_date']),
+    )
+    if payload.get('target_date'):
+        filter['target_date'] = parse(payload['target_date'])
+
+    result, msg = todo.update(
+        **filter
     )
 
     if result:
@@ -58,37 +63,18 @@ def edit():
     else:
         return make_response(dict(message="할 일 수정 실패"), 409)
 
-#
-# @comment_bp.route("/blind", methods=['PUT'])
-# def blind():
-#     payload = request.get_json()
-#     comment = Comment.filter_by(id=payload['id']).first()
-#     if not comment:
-#         return make_response(dict(message='해당 부서가 존재하지 않습니다'), 409)
-#
-#     result, msg = comment.update(status=0)
-#
-#     if result:
-#         updated_comment = result.to_dict2(nested=Comment._MAX_LEVEL, relations='replies',
-#                                           hybrid_attrs=True,
-#                                           exclude=['path', 'sort'])
-#
-#         return make_response(dict(updated_comment=updated_comment, message="대댓글이 존재하여 BLIND 처리."), 200)
-#     else:
-#         return make_response(dict(message="댓글 삭제 실패"), 409)
-#
-#
-# @comment_bp.route("/remove", methods=['DELETE'])
-# def remove():
-#     payload = request.get_json()
-#
-#     comment = Comment.filter_by(id=payload['id']).first()
-#     if not comment:
-#         return make_response(dict(message='해당 부서가 존재하지 않습니다'), 409)
-#
-#     result, msg = comment.delete()
-#
-#     if result:
-#         return make_response(dict(message='댓글 삭제 성공'), 200)
-#     else:
-#         return make_response(dict(message='댓글 삭제 실패'), 409)
+
+@todo_bp.route("/delete", methods=['DELETE'])
+def delete():
+    payload = request.get_json()
+
+    todo = Todo.filter_by(id=payload['id']).first()
+    if not todo:
+        return make_response(dict(message='해당 할 일이 존재하지 않습니다'), 409)
+
+    result, msg = todo.delete()
+
+    if result:
+        return make_response(dict(message='할 일 삭제 성공'), 200)
+    else:
+        return make_response(dict(message='할 일 삭제 실패'), 409)

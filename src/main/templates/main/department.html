@@ -932,21 +932,16 @@
             onEditTodo(item) {
                 let payload = {
                     id: item.id,
-                    employee_id: item.employee_id,
 
                     type: item.type,
                     todo: item.content,
                     // 이미 string으로 들어갔거나 null임.
-                    // null을 채웠으면, date객체이므로 string화 시켜야한다.
-                    target_date: item.target_date.toLocaleDateString("ko-KR"),
                 }
 
-                //
-                // if (item.target_date) {
-                //     payload["target_date"] = item.target_date.toLocaleDateString("ko-KR");
-                // } else {
-                //     payload["target_date"] = null;
-                // }
+                // null이면 string화 안하고 필요도 없고, 채웠으면, date객체이므로 string화 시켜야한다.
+                if (item.target_date) {
+                    payload['target_date'] = item.target_date.toLocaleDateString("ko-KR")
+                }
 
                 axios({
                     url: '{{ url_for("todo.edit") }}',
@@ -966,16 +961,11 @@
                     const todo = this.findTodo(updatedTodo);
 
                     // Apply the updated values
-                    // id와 employee_id를 빼고 업데이트
-                    todo.todo = updatedTodo.content;
+                    // id 빼고 업데이트
+                    todo.todo = updatedTodo.todo;
                     todo.type = updatedTodo.type;
-
-                    // target데이트가 있을 때만. string변환 저장 / remain_days 저장
-                    if (updatedTodo.target_date) {
-                        // backend에서 올 땐 이미 to_dict에서 넘어온 string
-                        todo.target_date = updatedTodo.target_date;
-                        todo.remain_days = updatedTodo.remain_days;
-                    }
+                    todo.target_date = updatedTodo.target_date;
+                    todo.remain_days = updatedTodo.remain_days;
 
                     // save the updated array in localstorage
                     this.saveLocalStorageTodos();
@@ -998,12 +988,34 @@
                     // hasIcon: true,
                     message: `정말 삭제하시겠습니까?`,
                     onConfirm: () => {
-                        // find in the array and remove
-                        const index = this.todos.indexOf(item);
-                        this.todos.splice(index, 1);
 
-                        // save the updated array in localstorage
-                        this.saveLocalStorageTodos();
+                        const payload = {
+                            id: item.id
+                        }
+                        axios({
+                            url: '{{ url_for("todo.delete") }}',
+                            method: 'delete',
+                            data: payload,
+                            headers: {'Content-type': 'application/json;charset=utf-8'},
+                        }).then(res => {
+                            if (res.status >= 300) {
+                                this.toast(res.data.message, 'is-danger');
+                                return;
+                            }
+                            // 통신 성공 + (status변경)로직 성공
+                            // find in the array and remove
+                            const index = this.todos.indexOf(item);
+                            this.todos.splice(index, 1);
+
+                            // save the updated array in localstorage
+                            this.saveLocalStorageTodos();
+                            ;
+
+                        }).catch(err => {
+                            console.log(err)
+                            this.toast(err.response ? err.response.data.message : '서버와 연결이 올바르지 않습니다.');
+                        }).finally(() => {
+                        });
                     }
                 });
             },
