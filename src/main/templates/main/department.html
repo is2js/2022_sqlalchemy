@@ -666,7 +666,6 @@
                     <span class="icon" style="width: 25px"><i class="mdi mdi-delete-outline"></i></span>
                     완료된 할 일 일괄 삭제
             </b-button>
-
         </div>
 
         <b-table
@@ -1227,6 +1226,16 @@
         components: {},
         template: `
 <div>
+    <div class="level-right">
+        <b-button class="is-rounded is-success has-text-weight-bold mr-2"
+            size="is-small"
+            style="font-size: 0.55rem"
+            @click="refreshGroupTodos"
+            >
+                <span class="icon" style="width: 25px"><i class="mdi mdi-refresh"></i></span>
+                새로고침
+        </b-button>
+    </div>
     <article v-for="groupTodo in groupTodos"
             class="media my-1">
         <!-- avatar -->
@@ -1242,12 +1251,19 @@
 
         <div class="media-content">
             <div class="content is-size-7">
-                <div class="level mb-1">
+                <div class="level mb-2">
                     <div class="level-left m-0">
                         <!--  좌측 이름   -->
-                        <strong class="tag" :class="getNameClass(groupTodo)"
-                                style="font-size: 0.6rem">
+                        <strong style="font-size: 0.75rem">
                             {$ groupTodo.name $}
+                        </strong>
+                        <strong
+                            v-if="groupTodo.is_min_level_dept_leader || groupTodo.is_any_dept_leader"
+                            style="font-size: 0.55rem"
+                            class="tag ml-2"
+                            :class="getPositionClass(groupTodo)"
+                        >
+                            {$ groupTodo.is_min_level_dept_leader ? '그룹장' : '팀장' $}
                         </strong>
                     </div>
                     <div class="level-right m-0">
@@ -1299,7 +1315,7 @@
         }
         ,
         methods: {
-            getNameClass(groupTodo) {
+            getPositionClass(groupTodo) {
                  if (groupTodo.is_min_level_dept_leader){
                      return 'is-danger is-light'
                  } else if (groupTodo.is_any_dept_leader) {
@@ -1334,6 +1350,9 @@
                 }).finally(() => {
                 });
             },
+            refreshGroupTodos(){
+                this.getGroupTodos();
+            }
         }
     }
 </script>
