@@ -263,19 +263,76 @@
                             <small>그룹 할 일</small>
                         </span>
                     </template>
-                    <ul>
-                        {% for post in new_posts %}
-                        <li class="pl-2 is-size-7">
-                                <span class="tag has-text-weight-bold">
-                                    <small>{{ post.author.upper_department.name }}</small>
-                                </span>
-                            <a href="{{ url_for('main.department_post_detail', department_id=post.author.upper_department.id, id=post.id) }}">
-                                [{{ post.category.name }}] {{post.title}}
-                            </a>
-                        </li>
-                        {% endfor %}
-                    </ul>
 
+                    <group-todo></group-todo>
+
+<!--                    {% for group_todo in group_todos %}-->
+<!--                    <article class="media my-1">-->
+<!--                        &lt;!&ndash; avatar &ndash;&gt;-->
+<!--                        <figure class="media-left image mr-2">-->
+<!--                            <img class="is-rounded" style="height: 32px; width: 32px"-->
+<!--                                 src="{% if group_todo.avatar and (group_todo.avatar | length) > 1 %}/uploads/{{group_todo.avatar}}-->
+<!--                                 {% else %}-->
+<!--                                 {{url_for('static', filename='img/user/default_avatar.svg')}}-->
+<!--                                 {% endif %}-->
+<!--                                "-->
+<!--                                 :alt="{{group_todo.name}}"-->
+<!--                            />-->
+<!--                        </figure>-->
+
+<!--                        <div class="media-content">-->
+<!--                            <div class="content is-size-7">-->
+<!--                                <div class="level mb-1">-->
+<!--                                    <div class="level-left m-0">-->
+<!--                                        &lt;!&ndash;  좌측 이름   &ndash;&gt;-->
+<!--                                        <strong class="tag-->
+<!--                                                    {% if group_todo.is_min_level_dept_leader %}-->
+<!--                                                     is-danger is-light-->
+<!--                                                    {% elif group_todo.is_any_dept_leader %}-->
+<!--                                                    is-primary is-light-->
+<!--                                                    {% else %}-->
+<!--                                                     is-grey-->
+<!--                                                    {% endif %}"-->
+<!--                                                style="font-size: 0.6rem">-->
+<!--                                            {{ group_todo.name }}-->
+<!--                                        </strong>-->
+<!--                                    </div>-->
+<!--                                    <div class="level-right m-0">-->
+<!--                                        &lt;!&ndash;  우측 부서들 &ndash;&gt;-->
+<!--                                        <span class="has-text-grey mx-1">-->
+<!--                                            <small>-->
+<!--                                            {{ group_todo.departments | join(' | ')}}-->
+<!--                                            </small>-->
+<!--                                        </span>-->
+<!--                                    </div>-->
+<!--                                </div>-->
+<!--                                <div class="">-->
+<!--                                    <ul style="margin-top: -0.2rem;">-->
+<!--                                        {% if (group_todo.todos | length) > 0 %}-->
+<!--                                        {% for todo in group_todo.todos %}-->
+<!--                                        <li style="list-style-position: inside;text-indent: -17px;">-->
+<!--                                            <small>-->
+<!--                                                <span class="has-background-warning-light has-text-warning-dark py-1 px-2 is-rounded"-->
+<!--                                                      style="font-size: 0.6rem;margin-left:-0.5rem;">-->
+<!--                                                {{todo.todo}}-->
+<!--                                                </span>-->
+<!--                                                | {{todo.pub_date}}-->
+<!--                                            </small>-->
+<!--                                        </li>-->
+<!--                                        {% endfor %}-->
+<!--                                        {% else %}-->
+<!--                                        <li>-->
+<!--                                            <small>-->
+<!--                                                없음-->
+<!--                                            </small>-->
+<!--                                        </li>-->
+<!--                                        {% endif %}-->
+<!--                                    </ul>-->
+<!--                                </div>-->
+<!--                            </div>-->
+<!--                        </div>-->
+<!--                    </article>-->
+<!--                    {% endfor %}-->
                 </b-tab-item>
 
                 <b-tab-item disabled>
@@ -589,7 +646,6 @@
 
     };
 
-
     var TodoTable = {
         delimiters: ['{$', '$}'],  // jinja와 같이 쓸 vue 변수
         name: "TodoTable",
@@ -623,7 +679,7 @@
          >
 
 
-            <b-table-column field="type" label="타입"  width="40" v-slot="todos"  :th-attrs="thAttrs" :td-attrs="tdAttrs">
+            <b-table-column field="type" label="타입"  width="40" v-slot="todos"  :th-attrs="thAttrs" :td-attrs="tdAttrs" centered>
                 <span class="tag" :class="todos.row.type === 0 ? ' is-warning is-light' : ' is-warning'">
                     <small>{$ todos.row.type === 0 ? '개인' : '그룹' $}</small>
                 </span>
@@ -631,7 +687,7 @@
 
             <b-table-column label="할 일" v-slot="todos" :th-attrs="thAttrs" :td-attrs="tdAttrs">
 
-              <span class="is-size-7 ">{$ todos.row.todo $}</span>
+              <span class="is-size-7 "><small>{$ todos.row.todo $}</small></span>
 
               <!--  수정(완료안됬을 시) -->
               <b-button v-if="!todos.row.complete_date" class="is-white has-text-grey is-size-7 px-1"
@@ -817,9 +873,9 @@
                     position: position,
                 });
             },
-            orderTodos(todos){
+            orderTodos(todos) {
                 // null은 맨 뒤에 배치되니, null or 값이면, 내림차순으로 정렬해야 값 -> null
-                return _.orderBy(todos, ['complete_date', 'type', 'target_date', ], ['desc', 'desc', 'asc' ]);
+                return _.orderBy(todos, ['complete_date', 'type', 'target_date',], ['desc', 'desc', 'asc']);
             },
             getTodos() {
                 axios({
@@ -1163,6 +1219,123 @@
 
         },
     }
+
+
+    var GroupTodo = {
+        delimiters: ['{$', '$}'],  // jinja와 같이 쓸 vue 변수
+        name: "GroupTodo",
+        components: {},
+        template: `
+<div>
+    <article v-for="groupTodo in groupTodos"
+            class="media my-1">
+        <!-- avatar -->
+        <figure class="media-left image mr-2">
+            <img class="is-rounded" style="height: 32px; width: 32px"
+                 :src="groupTodo.avatar && groupTodo.avatar.length > 0
+                    ? '/uploads/'+ groupTodo.avatar
+                    : '{{url_for('static', filename='img/user/default_avatar.svg')}}'
+                    "
+                :alt="groupTodo.name"
+                />
+        </figure>
+
+        <div class="media-content">
+            <div class="content is-size-7">
+                <div class="level mb-1">
+                    <div class="level-left m-0">
+                        <!--  좌측 이름   -->
+                        <strong class="tag" :class="getNameClass(groupTodo)"
+                                style="font-size: 0.6rem">
+                            {$ groupTodo.name $}
+                        </strong>
+                    </div>
+                    <div class="level-right m-0">
+                        <!--  우측 부서들 -->
+                        <span class="has-text-grey mx-1">
+                            <small>
+                            {$ groupTodo.departments.join(' | ') $}
+                            </small>
+                        </span>
+                    </div>
+                </div>
+                <div class="">
+                    <ul style="margin-top: -0.2rem;"
+                        v-if="groupTodo.todos.length > 0"
+                    >
+                        <li
+                            v-for="todo in groupTodo.todos"
+                            style="list-style-position: inside;text-indent: -17px;">
+                            <small>
+                                <span class="has-background-warning-light has-text-warning-dark py-1 px-2 is-rounded"
+                                      style="font-size: 0.6rem;margin-left:-0.5rem;">
+                                {$ todo.todo $}
+                                </span>
+                                | {$ todo.pub_date $}
+                            </small>
+                        </li>
+                    </ul>
+                    <ul style="margin-top: -0.2rem;"
+                        v-else>
+                        <li style="list-style-position: inside;text-indent: -17px;">
+                            <small style="font-size: 0.6rem;margin-left:-0.5rem;" class="py-1 px-2 ">
+                                없음
+                            </small>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </article>
+</div>
+        `,
+        data() {
+            return {
+                groupTodos: [],
+            }
+        },
+        mounted() {
+            this.getGroupTodos();
+        }
+        ,
+        methods: {
+            getNameClass(groupTodo) {
+                 if (groupTodo.is_min_level_dept_leader){
+                     return 'is-danger is-light'
+                 } else if (groupTodo.is_any_dept_leader) {
+                     return 'is-primary is-light'
+                 } else {
+                     return 'is-grey'
+                 }
+            },
+            toast(message, type = 'is-info', position = 'is-top') {
+                this.$buefy.toast.open({
+                    type: type,
+                    duration: 5000,
+                    message: message,
+                    position: position,
+                });
+            },
+            getGroupTodos() {
+                axios({
+                    url: '{{ url_for("todo.group_todos", department_id=department.id) }}',
+                    method: 'get',
+                    headers: {'Content-type': 'application/json;charset=utf-8'},
+                }).then(res => {
+                    if (res.status >= 300) {
+                        this.toast(res.data.message)
+                        return;
+                    }
+                    console.log('res.data.group_todos >> ', res.data.group_todos);
+                    this.groupTodos = res.data.group_todos
+
+                }).catch(err => {
+                    this.toast(err.response ? err.response.data.message : '서버와 연결이 올바르지 않습니다.');
+                }).finally(() => {
+                });
+            },
+        }
+    }
 </script>
 {% endblock extra_foot_script %}
 
@@ -1171,7 +1344,7 @@
 
     const myMixin = {
         components: {
-            TodoTable
+            TodoTable, GroupTodo
         },
         data() {
             return {};

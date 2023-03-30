@@ -1,15 +1,17 @@
 import json
 import random
 import re
+from functools import cmp_to_key
 
 from flask import Blueprint, render_template, request, url_for
 from sqlalchemy import select, and_, extract, or_
 
 from src.infra.config.connection import DBConnectionHandler
-from src.infra.tutorial3 import Post, Category, Tag, Banner, PostPublishType, Department
+from src.infra.tutorial3 import Post, Category, Tag, Banner, PostPublishType, Department, Employee, Todo, TodoType
 from src.infra.tutorial3.categories import PostCount, Comment
 from src.infra.tutorial3.common.pagination import paginate
 from src.main.decorators.decorators import login_required
+from src.main.utils.format_date import format_date
 from src.main.utils.get_client_ip import get_client_ip
 
 main_bp = Blueprint("main", __name__, url_prefix='/main')
@@ -139,6 +141,17 @@ def category(id):
                            )
 
 
+def compare(a, b):
+    if b['department_min_level'] == a['department_min_level']:
+        if b['is_min_level_dept_leader'] == a['is_min_level_dept_leader']:
+            # 3) 부장여부 내림차순
+            return b['is_any_dept_leader'] - a['is_any_dept_leader']
+        # 2) min레벨 부장여부 내림차순
+        return b['is_min_level_dept_leader'] - a['is_min_level_dept_leader']
+    # 1) min레벨 오름차순
+    return a['department_min_level'] - b['department_min_level']
+
+
 @main_bp.route("/department/<int:id>")
 @login_required
 def department(id):
@@ -168,14 +181,48 @@ def department(id):
 
     post_list = pagination.items
 
-    print('post_list  >> ', post_list)
+    # 임시
+    session = Employee.get_scoped_session()
+    group_todos = []
+    for employee in Employee.filter_by(upper_department_id=5, session=session).all():
+        data = dict()
+        data['name'] = employee.name
+        data['avatar'] = employee.avatar
+        data['departments'] = []
 
+        min_level = float('inf')
+        min_level_dept = None
+        is_any_dept_leader = False
+        for d in employee.get_departments(session=session):
+            data['departments'].append(d.name + f'({employee.get_position(d, session=session, close=False)})')
+            if d.level < min_level:
+                min_level = d.level
+                min_level_dept = d
+            if employee.is_leader_in(d, session=session):
+                is_any_dept_leader = True
+        data['department_min_level'] = min_level
+        data['is_min_level_dept_leader'] = employee.is_leader_in(min_level_dept, session=session)
+        data['is_any_dept_leader'] = is_any_dept_leader
+
+
+        data['todos'] = []
+        todos = Todo.filter_by(employee=employee, type=TodoType.그룹.value, complete_date=None, session=session).order_by('pub_date').all()
+        for todo in todos:
+            data['todos'].append(dict(todo=todo.todo, pub_date=format_date(todo.pub_date)))
+
+        group_todos.append(data)
+    session.close()
+
+
+    group_todos = sorted(group_todos, key=cmp_to_key(compare))
+    
 
     return render_template('main/department.html',
                            department=department,  # post 전에 상위entity 정보 뿌리기용 ?
                            post_list=post_list,
                            pagination=pagination,
-                           current_dept_id=id  # base.html에서 메뉴 불들어오게 하는 용도
+                           current_dept_id=id,  # base.html에서 메뉴 불들어오게 하는 용도
+                           group_todos=group_todos
                            )
 
 

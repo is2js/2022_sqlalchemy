@@ -39,9 +39,11 @@ def create_app(config_name='default'):
     # app_config.init_app(app)
     app.config.from_object(app_config)
 
+
     ## extension객체들로 app객체 초기화
     CORS(app)
     DebugToolbarExtension(app)
+    app.config['DEBUG_TB_INTERCEPT_REDIRECTS'] = False
 
     ## 필터 추가
     from src.main.templates.filters import feed_datetime, join_phone, join_birth
