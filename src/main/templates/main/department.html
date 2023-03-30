@@ -852,16 +852,16 @@
             }
         },
         mounted() {
-            // intelligence, DESC로 1차정렬
-            // strength, ASC로 2차정렬
-            if (localStorage.getItem("todos")) {
-                this.todos = JSON.parse(localStorage.getItem("todos"));
-            } else {
+
+            // if (localStorage.getItem("todos")) {
+            //     this.todos = JSON.parse(localStorage.getItem("todos"));
+            // } else {
                 // this.todos = this.initialTodos;
                 // this.todos = this.getTodos();
                 // this.todos = _.orderBy(this.getTodos, ['complete_date', 'target_date', 'type'], ['asc', 'asc', 'desc'])
-                this.getTodos();
-            }
+                // this.getTodos();
+            // }
+            this.getTodos();
         },
         methods: {
             toast(message, type = 'is-info', position = 'is-top') {
@@ -932,9 +932,14 @@
                 }
                 return null
             },
-            saveLocalStorageTodos() {
-                localStorage.setItem("todos", JSON.stringify(this.orderTodos(this.todos)));
-                this.todos = JSON.parse(localStorage.getItem("todos"));
+            // saveLocalStorageTodos() {
+            //     // localStorage.setItem("todos", JSON.stringify(this.orderTodos(this.todos)));
+            //     // this.todos = JSON.parse(localStorage.getItem("todos"));
+            // },
+            saveOrderedTodos() {
+                // localStorage.setItem("todos", JSON.stringify(this.orderTodos(this.todos)));
+                // this.todos = JSON.parse(localStorage.getItem("todos"));
+                this.todos = this.orderTodos(this.todos);
             },
 
             onAddTodo(item) {
@@ -985,7 +990,8 @@
                     this.todos.push(res.data.new_todo);
 
                     // save the updated array in localstorage
-                    this.saveLocalStorageTodos();
+                    // this.saveLocalStorageTodos();
+                    this.saveOrderedTodos();
 
                     this.toast(res.data.message);
 
@@ -1046,7 +1052,8 @@
                     todo.remain_days = updatedTodo.remain_days;
 
                     // save the updated array in localstorage
-                    this.saveLocalStorageTodos();
+                    // this.saveLocalStorageTodos();
+                    this.saveOrderedTodos();
 
                 }).catch(err => {
                     console.log(err)
@@ -1086,8 +1093,8 @@
                             this.todos.splice(index, 1);
 
                             // save the updated array in localstorage
-                            this.saveLocalStorageTodos();
-                            ;
+                            // this.saveLocalStorageTodos();
+                            this.saveOrderedTodos();
 
                         }).catch(err => {
                             console.log(err)
@@ -1127,7 +1134,8 @@
                             // 완료안된 것만 필터링해서 넣어주기
                             this.todos = this.todos.filter((item) => !item.complete_date)
                             // save the updated array in localstorage
-                            this.saveLocalStorageTodos();
+                            // this.saveLocalStorageTodos();
+                            this.saveOrderedTodos();
                         }).catch(err => {
                             console.log(err)
                             this.toast(err.response ? err.response.data.message : '서버와 연결이 올바르지 않습니다.');
@@ -1166,10 +1174,11 @@
                     todo.complete_date = updatedTodo.complete_date;
 
                     // save the updated array in localstorage
-                    this.saveLocalStorageTodos();
+                    // this.saveLocalStorageTodos();
+                    this.saveOrderedTodos();
 
                 }).catch(err => {
-                    console.log(err)
+                    // console.log(err)
                     this.toast(err.response ? err.response.data.message : '서버와 연결이 올바르지 않습니다.');
 
                 }).finally(() => {
@@ -1205,7 +1214,8 @@
                     todo.complete_date = null;
 
                     // save the updated array in localstorage
-                    this.saveLocalStorageTodos();
+                    // this.saveLocalStorageTodos();
+                    this.saveOrderedTodos();
 
                 }).catch(err => {
                     console.log(err)
