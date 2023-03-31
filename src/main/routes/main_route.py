@@ -3,7 +3,7 @@ import random
 import re
 from functools import cmp_to_key
 
-from flask import Blueprint, render_template, request, url_for
+from flask import Blueprint, render_template, request, url_for, flash, redirect, g
 from sqlalchemy import select, and_, extract, or_
 
 from src.infra.config.connection import DBConnectionHandler
@@ -11,6 +11,8 @@ from src.infra.tutorial3 import Post, Category, Tag, Banner, PostPublishType, De
 from src.infra.tutorial3.categories import PostCount, Comment
 from src.infra.tutorial3.common.pagination import paginate
 from src.main.decorators.decorators import login_required
+from src.main.forms.admin import PostForm
+from src.main.utils import redirect_url
 from src.main.utils.format_date import format_date
 from src.main.utils.get_client_ip import get_client_ip
 
@@ -140,6 +142,7 @@ def category(id):
                            category_id=id  # base.html의 메뉴 불들어오게 하는 용도
                            )
 
+
 @main_bp.route("/department/<int:id>")
 @login_required
 def department(id):
@@ -151,9 +154,9 @@ def department(id):
         'category': 'selectin', 'tags': 'joined',
         'author': ('selectin', {
             'user': 'selectin',  # employee(author name) + user(for avatar)
-            },),
+        },),
         'comments': 'joined'  # 댓글 갯수 @h comment_count를 사용하기 위해
-        }
+    }
 
     # level 0 부서는 작성자의 상위부서 == level 1부서들을 post마다 나타내기용
     if department.level == 0:
@@ -168,7 +171,6 @@ def department(id):
         .paginate(page, per_page=5)
 
     post_list = pagination.items
-
 
     return render_template('main/department.html',
                            department=department,  # post 전에 상위entity 정보 뿌리기용 ?
@@ -360,9 +362,9 @@ def department_search(department_id):
         'category': 'selectin', 'tags': 'joined',
         'author': ('selectin', {
             'user': 'selectin',  # employee(author name) + user(for avatar)
-            },),
+        },),
         'comments': 'joined'  # 댓글 갯수 @h comment_count를 사용하기 위해
-        }
+    }
 
     # level 0 부서는 작성자의 상위부서 == level 1부서들을 post마다 나타내기용
     if department.level == 0:
@@ -407,8 +409,6 @@ def inject_archive():
     # # archieve와 별개로 역순 정렬된 posts에서 최근5개 포스트 추출
     # new_posts = posts[:10]
 
-
-
     # tag들을 뽑되, 동적으로 .style 필드를 줘서, view에서 이용한다.
     # tags = Tag.all()
     # for tag in tags:
@@ -417,7 +417,8 @@ def inject_archive():
 
     categories = Category.all()
 
-    recent_posts = Post.load({'category': 'selectin', 'author': ('selectin', {'upper_department': 'selectin'})}).filter_by(
+    recent_posts = Post.load(
+        {'category': 'selectin', 'author': ('selectin', {'upper_department': 'selectin'})}).filter_by(
         type=PostPublishType.SHOW
     ).order_by('-add_date').limit(5).all()
 
@@ -513,9 +514,9 @@ def department_archive(department_id, date):
         'category': 'selectin', 'tags': 'joined',
         'author': ('selectin', {
             'user': 'selectin',  # employee(author name) + user(for avatar)
-            },),
+        },),
         'comments': 'joined'  # 댓글 갯수 @h comment_count를 사용하기 위해
-        }
+    }
 
     # level 0 부서는 작성자의 상위부서 == level 1부서들을 post마다 나타내기용
     if department.level == 0:
@@ -581,9 +582,9 @@ def department_tag(department_id, id):
         'category': 'selectin', 'tags': 'joined',
         'author': ('selectin', {
             'user': 'selectin',  # employee(author name) + user(for avatar)
-            },),
+        },),
         'comments': 'joined'  # 댓글 갯수 @h comment_count를 사용하기 위해
-        }
+    }
 
     # level 0 부서는 작성자의 상위부서 == level 1부서들을 post마다 나타내기용
     if department.level == 0:
@@ -621,9 +622,9 @@ def department_category(department_id, id):
         'category': 'selectin', 'tags': 'joined',
         'author': ('selectin', {
             'user': 'selectin',  # employee(author name) + user(for avatar)
-            },),
+        },),
         'comments': 'joined'  # 댓글 갯수 @h comment_count를 사용하기 위해
-        }
+    }
 
     # level 0 부서는 작성자의 상위부서 == level 1부서들을 post마다 나타내기용
     if department.level == 0:
@@ -646,3 +647,29 @@ def department_category(department_id, id):
         post_list=post_list,
         pagination=pagination
     )
+
+
+@main_bp.route('/department/<int:department_id>/post/add', methods=['GET', 'POST'])
+def department_post_add(department_id):
+    department = Department.get(department_id)
+
+    form = PostForm()
+    if form.validate_on_submit():
+        data = form.data  # 따로 안빼놓으면 수정 안됨.
+        data['tags'] = [Tag.get(tag_id) for tag_id in data.get('tags', [])]
+        data['author'] = g.user.employee
+        result, msg = Post.create(**data)
+        if result:
+            flash(f'{result.title} 생성 성공!')
+            return redirect(url_for('main.department', id=department.id))
+
+        flash(f'{msg}')
+
+
+    errors = [{'field': key, 'messages': form.errors[key]} for key in form.errors.keys()] if form.errors else []
+
+    return render_template('main/department_post_form.html',
+                           department=department,
+                           form=form,
+                           errors=errors,
+                           )
