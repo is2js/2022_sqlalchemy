@@ -276,10 +276,7 @@
                             <small>보고</small>
                         </span>
                     </template>
-                    Nunc nec velit nec libero vestibulum eleifend.
-                    Curabitur pulvinar congue luctus.
-                    Nullam hendrerit iaculis augue vitae ornare.
-                    Maecenas vehicula pulvinar tellus, id sodales felis lobortis eget.
+                    test
                 </b-tab-item>
             </b-tabs>
         </section>
@@ -1266,7 +1263,7 @@
                         this.toast(res.data.message)
                         return;
                     }
-                    console.log('res.data.group_todos >> ', res.data.group_todos);
+                    // console.log('res.data.group_todos >> ', res.data.group_todos);
                     this.groupTodos = res.data.group_todos
 
                 }).catch(err => {
@@ -1284,7 +1281,6 @@
 
 {% block vue_mixins %}
 <script>
-
     const myMixin = {
         components: {
             TodoTable, GroupTodo

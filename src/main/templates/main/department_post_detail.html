@@ -16,17 +16,17 @@
 {% endblock extra_head_style %}
 
 {% block title %}
-    {{ post.title }}
+{{ post.title }}
 {% endblock title %}
 
 <!--<nav class="breadcrumb is-small" aria-label="breadcrumbs">-->
-    {% block breadcrumb %}
-    <ul>
-        <li><a href="/">Home</a></li>
-        <li ><a href="{{ url_for('main.department', id=department.id) }}" aria-current="page">{{ department.name }}</a></li>
-        <li class="is-active"><a href="#" aria-current="page">{{ post.title }}</a></li>
-    </ul>
-    {% endblock breadcrumb %}
+{% block breadcrumb %}
+<ul>
+    <li><a href="/">Home</a></li>
+    <li><a href="{{ url_for('main.department', id=department.id) }}" aria-current="page">{{ department.name }}</a></li>
+    <li class="is-active"><a href="#" aria-current="page">{{ post.title }}</a></li>
+</ul>
+{% endblock breadcrumb %}
 <!--</nav>-->
 
 {% block post_box %}
@@ -59,18 +59,35 @@
             <span class="icon"><i class="mdi mdi-clipboard-text-clock-outline"></i></span>
             {{ post.add_date | feed_datetime(is_feed=True) }}
             {% if post.add_date != post.pub_date %}
-             (수정: {{ post.pub_date | feed_datetime(is_feed=True) }})
+            (수정: {{ post.pub_date | feed_datetime(is_feed=True) }})
             {% endif %}
         </div>
     </div>
 
-    <!-- [우측정렬] 조회수 + 태그 -->
+    <!-- [우측정렬] 태그, 조회수, 드랍다운(수정/삭제) -->
     <div class="is-pulled-right mr-2">
+        <!--  태그있으면 + 조회수       -->
         <div class="has-text-grey is-size-7">
             {% if post.tags %}
             <span class="icon"><i class="mdi mdi-tag-heart-outline"></i></span>{{ post.tags|join(',') }}
             {% endif %}
             <span class="icon"><i class="mdi mdi-eye-outline"></i></span> {{ post.view_count }}
+            {% if post.author.id == g.user.employee.id %}
+            <!--  우측 수정/삭제 -->
+
+            <a href="{{ url_for('main.department_post_edit', department_id=department.id, id=post.id)}}"
+            >
+                <b-icon icon="square-edit-outline" size="is-small"></b-icon>
+                <small class="icon-text has-text-weight-bold">수정</small>
+            </a>
+
+            <a href="{{ url_for('main.department_post_delete', department_id=department.id, id=post.id)}}"
+            >
+                <b-icon icon="delete-outline" size="is-small"></b-icon>
+                <small class="icon-text has-text-weight-bold">삭제</small>
+            </a>
+
+            {% endif %}
         </div>
     </div>
     <!-- [좌우정렬 후 cleaerfix] -->
@@ -86,14 +103,14 @@
 <div class="level is-size-7">
     <div class="level-left">
         {% if prev_post %}
-            이전 글：<a href="{{ url_for('main.department_post_detail', department_id=department.id, id=prev_post.id) }}">
-            {{prev_post.title }}</a>
+        이전 글：<a href="{{ url_for('main.department_post_detail', department_id=department.id, id=prev_post.id) }}">
+        {{prev_post.title }}</a>
         {% endif %}
     </div>
     <div class="level-right">
         {% if next_post %}
-            다음 글：<a href="{{ url_for('main.department_post_detail', department_id=department.id, id=next_post.id) }}">
-            {{next_post.title }} </a>
+        다음 글：<a href="{{ url_for('main.department_post_detail', department_id=department.id, id=next_post.id) }}">
+        {{next_post.title }} </a>
         {% endif %}
     </div>
 </div>
@@ -102,15 +119,15 @@
 {% if g.user %}
 <div>
     <span class="is-size-6 has-text-weight-bold"> 댓글 </span>
-    <comments :comments="comments"/>
+    <comments/>
 </div>
-<pre>{$ comments $}</pre>
 {% endif %}
 {% endblock post_box %}
 
 
 <!-- 댓글 관련 소스 -->
 {% block extra_foot_script %}
+{{super()}}
 <script>
     var username = 'test'
 
@@ -517,8 +534,8 @@
                 }).finally(() => {
                 });
             },
-            blindComment(obj){
-                 const payload = {
+            blindComment(obj) {
+                const payload = {
                     id: obj.id
                 }
                 axios({
@@ -567,12 +584,7 @@
             Comment,
             NewComment
         },
-        props: {
-            comments: {
-                type: Array,
-                default: () => []
-            }
-        },
+
         methods: {
             toast(message, type = 'is-info', position = 'is-top') {
                 this.$buefy.toast.open({
@@ -694,77 +706,7 @@
                     this.toast(err.response ? err.response.data.message : '서버와 연결이 올바르지 않습니다.');
                 }).finally(() => {
                 });
-            }
-        }
-    }
-</script>
-{% endblock extra_foot_script %}
-
-{% block vue_mixins %}
-<script>
-    // Vue.component('tree', DraggableTree);
-    const myMixin = {
-        components: {
-            // 'tree': DraggableTree
-            // -> <comments :comments="comments" />
-            Comments
-        },
-
-        data() {
-            return {
-                comments: [],
-                // comments: [
-                //     {
-                //         avatar: 'https://bulma.io/images/placeholders/96x96.png',
-                //         author_name: '킴성태',
-                //         content:
-                //             'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis porta eros lacus, nec ultricies elit blandit non. Suspendisse pellentesque mauris sit amet dolor blandit rutrum. Nunc in tempus turpis.',
-                //         add_date: '3 hrs',
-                //         likes: ['jesuskinto', 'julioLugo', 'gerardPaez'],
-                //         replies: [
-                //             {
-                //                 avatar: 'https://bulma.io/images/placeholders/96x96.png',
-                //                 author_name: '관리자',
-                //                 content:
-                //                     'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis porta eros lacus, nec ultricies elit blandit non. Suspendisse pellentesque mauris sit amet dolor blandit rutrum. Nunc in tempus turpis.',
-                //                 add_date: '3 hrs',
-                //                 likes: ['jesuskinto', 'julioLugo', 'gerardPaez'],
-                //                 replies: [
-                //                     {
-                //                         avatar: 'https://bulma.io/images/placeholders/96x96.png',
-                //                         author_name: 'Barbara Middleton',
-                //                         content:
-                //                             'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis porta eros lacus, nec ultricies elit blandit non. Suspendisse pellentesque mauris sit amet dolor blandit rutrum. Nunc in tempus turpis.',
-                //                         add_date: '3 hrs',
-                //                         likes: ['jesuskinto', 'julioLugo', 'gerardPaez']
-                //                     }
-                //                 ]
-                //             },
-                //             {
-                //                 avatar: 'https://bulma.io/images/placeholders/96x96.png',
-                //                 author_name: 'Barbara Middleton',
-                //                 content:
-                //                     'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis porta eros lacus, nec ultricies elit blandit non. Suspendisse pellentesque mauris sit amet dolor blandit rutrum. Nunc in tempus turpis.',
-                //                 add_date: '3 hrs',
-                //                 likes: ['jesuskinto', 'julioLugo', 'gerardPaez']
-                //             }
-                //         ]
-                //     },
-                //     {
-                //         avatar: 'https://bulma.io/images/placeholders/96x96.png',
-                //         author_name: 'Barbara Middleton',
-                //         content:
-                //             'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis porta eros lacus, nec ultricies elit blandit non. Suspendisse pellentesque mauris sit amet dolor blandit rutrum. Nunc in tempus turpis.',
-                //         add_date: '3 hrs',
-                //         likes: ['jesuskinto', 'julioLugo', 'gerardPaez']
-                //     }
-                // ]
-            }
-        },
-        created() {
-            this.getComments()
-        },
-        methods: {
+            },
             getComments() {
                 axios({
                     url: '{{ url_for("comment.all", post_id=post.id) }}',
@@ -782,8 +724,26 @@
                 }).finally(() => {
                 });
             },
+        },
+        data() {
+            return {
+                comments: []
+            };
+        },
+        mounted() {
+            this.getComments()
         }
-    };
+    }
+</script>
+{% endblock extra_foot_script %}
+
+{% block vue_mixins %}
+{{super()}}
+<script>
+    // 자식에서도 mixin을 추가하는 방법
+    // 1. 원래 컴포넌트는 내부의  mounted에서 데이터 수급하기
+    // 2. spread object후 부모의 myMixin속 components들과 병합하기
+    myMixin.components = {...myMixin.components, Comments}
 </script>
 {% endblock vue_mixins %}
 
