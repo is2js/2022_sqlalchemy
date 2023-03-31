@@ -1,6 +1,19 @@
 {% extends 'main/department.html' %}
 
 {% block extra_head_style %}
+<!--<style>-->
+<!--    .is-bottom-bar {-->
+<!--        background-color: #fff;-->
+<!--        border-bottom: 1px solid rgba(24, 28, 33, .06);-->
+<!--        margin-bottom: 0.5rem;-->
+<!--    }-->
+
+<!--    .is-hero-background {-->
+<!--        background-image: url("{{url_for('static', filename='img/main/hero_background.png')}}");-->
+<!--        background-size: cover;-->
+<!--    }-->
+<!--</style>-->
+{{ super() }}
 <link
         rel="stylesheet"
         href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.1.0/github-markdown-light.min.css"
@@ -12,18 +25,6 @@
 <!--<script src="https://unpkg.com/axios/dist/axios.min.js"></script>-->
 <script src="{{url_for('static', filename='js/axios.min.js')}}"></script>
 
-<style>
-    .is-bottom-bar {
-        background-color: #fff;
-        border-bottom: 1px solid rgba(24, 28, 33, .06);
-        margin-bottom: 0.5rem;
-    }
-
-    .is-hero-background {
-        background-image: url("{{url_for('static', filename='img/main/hero_background.png')}}");
-        background-size: cover;
-    }
-</style>
 {% endblock extra_head_style %}
 
 {% block title %}
