@@ -206,23 +206,26 @@ class Post(BaseModel):
         Author_ = mapper.author.mapper.class_
 
         # IN은 1개라도 list를 요구함.
-        level_1_ids = [upper_department.id]
-
-        # level 0부서가 들어올 경우, scalar_subquery를 통해, 자식들의 id를 한큐에 구한 뒤, IN에 넣어준다
-        if upper_department.level == 0:
-            Department_ = Author_.upper_department.mapper.class_
-
-            level_1_ids = select(Department_.id) \
-                .where(
-                or_(
-                    Department_.id == upper_department.id,
-                    Department_.parent_id == upper_department.id
-                )
-            ) \
-                .scalar_subquery()
-
+        # level_1_ids = [upper_department.id]
+        #
+        # # level 0부서가 들어올 경우, scalar_subquery를 통해, 자식들의 id를 한큐에 구한 뒤, IN에 넣어준다
+        # if upper_department.level == 0:
+        #     Department_ = Author_.upper_department.mapper.class_
+        #
+        #     level_1_ids = select(Department_.id) \
+        #         .where(
+        #         or_(
+        #             Department_.id == upper_department.id,
+        #             Department_.parent_id == upper_department.id
+        #         )
+        #     ) \
+        #         .scalar_subquery()
+        #
+        # return mapper.author.has(
+        #     Author_.upper_department_id.in_(level_1_ids)
+        # )
         return mapper.author.has(
-            Author_.upper_department_id.in_(level_1_ids)
+            Author_.upper_department_id == upper_department.id
         )
 
     # refactor

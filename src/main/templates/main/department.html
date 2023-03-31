@@ -157,13 +157,13 @@
                 </b-button>
                 {% endif %}
 
-                <!-- level 0 부서일 경우만, 작성자의 상위부서(자식 부서인 level 1 부서) -->
-                {% if department.level == 0 %}
-                <a class="tag is-rounded is-size-7 is-grey"
-                   href="{{ url_for('main.department', id=post.author.upper_department.id) }}">
-                    {{ post.author.upper_department.name }}
-                </a>
-                {% endif %}
+<!--                &lt;!&ndash; level 0 부서일 경우만, 작성자의 상위부서(자식 부서인 level 1 부서) &ndash;&gt;-->
+<!--                {% if department.level == 0 %}-->
+<!--                <a class="tag is-rounded is-size-7 is-grey"-->
+<!--                   href="{{ url_for('main.department', id=post.author.upper_department.id) }}">-->
+<!--                    {{ post.author.upper_department.name }}-->
+<!--                </a>-->
+<!--                {% endif %}-->
             </div>
 
         </div>
@@ -307,7 +307,7 @@
             </form>
         </div>
 
-        <!-- tag  -->
+        <!-- category  -->
         <!--        <div class="box is-shadowless" style="border:solid 1px #eee ;">-->
         <div class="box is-shadowless my-1 py-3">
             <h1 class="icon-text is-size-7 has-text-weight-bold is-bottom-bar">
@@ -325,49 +325,28 @@
             </div>
         </div>
 
-        <!-- Archive  -->
-        <!--        <div class="box is-shadowless" style="border:solid 1px #eee ;">-->
-        <div class="box is-shadowless my-1 py-3">
-            <h1 class="icon-text is-size-7 has-text-weight-bold is-bottom-bar">
-                <span class="icon"><i class="mdi mdi-calendar-month-outline"></i></span>
-                {{ department.name }} Archive
-            </h1>
-            <!--            <div class="dropdown-divider"></div>-->
-            <ul>
-                {% for date in dates %}
-                <li class="pl-2 is-size-7 ">
-                    <span class="has-text-grey-light">•</span>
-                    <a href="{{ url_for('main.department_archive', department_id=department.id, date=date) }}">
-                        {{date}}
-                    </a>
-                </li>
-                <!--                <div class="dropdown-divider"></div>-->
-                {% endfor %}
-            </ul>
-        </div>
-
-        <!-- tag  -->
-        <!--        <div class="box is-shadowless" style="border:solid 1px #eee ;">-->
-        <div class="box is-shadowless my-1 py-3">
-            <h1 class="icon-text is-size-7 has-text-weight-bold is-bottom-bar">
-                <span class="icon"><i class="mdi mdi-tag-multiple-outline"></i></span>
-                {{ department.name }} Tag
-            </h1>
-            <!--            <div class=" dropdown-divider"></div>-->
-            <div class="tags pl-2">
-                {% for tag in tags %}
-                <a class="tag is-rounded is-size-7 "
-                   href="{{ url_for('main.department_tag', department_id=department.id, id=tag.id) }}">
-                    {{ tag.name }}
-                </a>
-                {% endfor %}
-            </div>
-        </div>
+<!--        &lt;!&ndash; tag  &ndash;&gt;-->
+<!--        &lt;!&ndash;        <div class="box is-shadowless" style="border:solid 1px #eee ;">&ndash;&gt;-->
+<!--        <div class="box is-shadowless my-1 py-3">-->
+<!--            <h1 class="icon-text is-size-7 has-text-weight-bold is-bottom-bar">-->
+<!--                <span class="icon"><i class="mdi mdi-tag-multiple-outline"></i></span>-->
+<!--                {{ department.name }} Tag-->
+<!--            </h1>-->
+<!--            &lt;!&ndash;            <div class=" dropdown-divider"></div>&ndash;&gt;-->
+<!--            <div class="tags pl-2">-->
+<!--                {% for tag in tags %}-->
+<!--                <a class="tag is-rounded is-size-7 "-->
+<!--                   href="{{ url_for('main.department_tag', department_id=department.id, id=tag.id) }}">-->
+<!--                    {{ tag.name }}-->
+<!--                </a>-->
+<!--                {% endfor %}-->
+<!--            </div>-->
+<!--        </div>-->
 
 
         <!-- root department 전체 게시물 최근 게시글 5개   -->
         <!--        <div class="box is-shadowless" style="border:solid 1px #eee ;">-->
-        {% if department.level != 0 %}
+
         <div class="box is-shadowless my-1 py-3">
             <h1 class="icon-text is-size-7  has-text-weight-bold is-bottom-bar">
                 <span class="icon"><i class="mdi mdi-earth"></i></span>
@@ -375,7 +354,7 @@
             </h1>
             <!--            <div class=" dropdown-divider"></div>-->
             <ul>
-                {% for post in new_posts %}
+                {% for post in recent_posts %}
                 <li class="pl-2 is-size-7">
                     <!--                    <span class="has-text-grey-light">{{ loop.index }}.</span>-->
                     <!--                    <span class="has-text-grey-light">-->
@@ -395,7 +374,6 @@
                 {% endfor %}
             </ul>
         </div>
-        {% endif %}
 
 
     </div>
@@ -1208,7 +1186,7 @@
                             class="tag ml-2"
                             :class="getPositionClass(groupTodo)"
                         >
-                            {$ (groupTodo.department_min_level === 0 || groupTodo.department_min_level === 1 ) && groupTodo.is_min_level_dept_leader ? '그룹장' : '간부' $}
+                            {$ (groupTodo.department_min_level === 0 || groupTodo.department_min_level === 1 ) && groupTodo.is_min_level_dept_leader ? '그룹장' : '부서장' $}
                         </strong>
                     </div>
                     <div class="level-right m-0">
