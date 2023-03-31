@@ -12,7 +12,7 @@ from src.infra.tutorial3.categories import PostCount, Comment
 from src.infra.tutorial3.common.pagination import paginate
 from src.main.decorators.decorators import login_required
 from src.main.forms.admin import PostForm
-from src.main.utils import redirect_url
+from src.main.utils import redirect_url, delete_files_in_img_tag
 from src.main.utils.format_date import format_date
 from src.main.utils.get_client_ip import get_client_ip
 
@@ -650,6 +650,7 @@ def department_category(department_id, id):
 
 
 @main_bp.route('/department/<int:department_id>/post/add', methods=['GET', 'POST'])
+@login_required
 def department_post_add(department_id):
     department = Department.get(department_id)
 
@@ -673,3 +674,48 @@ def department_post_add(department_id):
                            form=form,
                            errors=errors,
                            )
+
+@main_bp.route('/department/<int:department_id>/post/edit/<int:id>', methods=['GET', 'POST'])
+@login_required
+def department_post_edit(department_id, id):
+    department = Department.get(department_id)
+
+    post = Post.filter_by(id=id).load({'category':'selectin','tags': 'joined'}).first()
+    form = PostForm(post)
+
+    if form.validate_on_submit():
+        data = form.data
+        data['tags'] = [Tag.get(tag_id) for tag_id in data.get('tags', [])]
+        result, msg = post.update(**data)
+
+        if result:
+            flash(f'{result.title} 수정 완료.')
+            return redirect(url_for('main.department', id=department.id))
+
+        flash(msg)
+
+    errors = [{'field': key, 'messages': form.errors[key]} for key in form.errors.keys()] if form.errors else []
+
+    return render_template('main/department_post_form.html',
+                           department=department,
+                           form=form,
+                           errors=errors
+                           )
+
+
+@main_bp.route('/department/<int:department_id>/post/delete/<int:id>', methods=['GET', 'POST', 'DELETE'])
+@login_required
+def department_post_delete(department_id, id):
+    department = Department.get(department_id)
+
+    post = Post.get(id)
+
+    delete_files_in_img_tag(post.content)
+
+    result, msg = post.delete()
+    if result:
+        flash(f'{post.title} Post 삭제 완료.')
+    else:
+        flash(msg)
+
+    return redirect(url_for('main.department', id=department.id))
